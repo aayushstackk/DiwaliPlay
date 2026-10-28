@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import { AdminOverviewStats, GameSession, User, LeaderboardEntry } from '../../types/backend';
+import { AdminOverviewStats, GameSession, User } from '../../types/backend';
 import {
   FileText,
   Download,
@@ -16,7 +16,11 @@ import {
   Sparkles,
   Info,
   Printer,
-  Camera
+  Camera,
+  FileSpreadsheet,
+  FileJson,
+  Search,
+  X
 } from 'lucide-react';
 
 interface ReportsSectionProps {
@@ -26,13 +30,45 @@ interface ReportsSectionProps {
   isLoading: boolean;
 }
 
+// Helper to safely escape CSV values according to RFC 4180
+function escapeCsvValue(val: string | number | boolean | null | undefined): string {
+  if (val === null || val === undefined) return '""';
+  const str = String(val);
+  return `"${str.replace(/"/g, '""')}"`;
+}
+
+// Helper to trigger browser download for text/blob content
+function downloadBlob(content: string, mimeType: string, filename: string) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', filename);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+// Generate descriptive filename with export format and current date
+function getExportFilename(format: 'csv' | 'json' | 'pdf'): string {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `diwaliplay-report-${year}-${month}-${day}.${format}`;
+}
+
 export const ReportsSection: React.FC<ReportsSectionProps> = ({
   stats,
   sessions,
   users,
   isLoading
 }) => {
-  const [isExporting, setIsExporting] = useState(false);
+  const [exportingFormat, setExportingFormat] = useState<'pdf' | 'csv' | 'json' | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [exportSuccess, setExportSuccess] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState<string>('');
 
   // Map users for fast lookup
   const userMap = useMemo(() => {
@@ -59,16 +95,36 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
   const avgCrackers =
     completedSessions.length > 0 ? Math.round(totalCrackers / completedSessions.length) : 0;
 
-  // Real session export list sorted by score descending
+  // Real session export list sorted by score descending, reflecting active search filter
   const exportData = useMemo(() => {
-    return [...completedSessions].sort((a, b) => (b.score || 0) - (a.score || 0));
-  }, [completedSessions]);
+    let list = [...completedSessions].sort((a, b) => (b.score || 0) - (a.score || 0));
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      list = list.filter((s) => {
+        const playerName = userMap.get(s.userId) || 'Player';
+        return (
+          playerName.toLowerCase().includes(q) ||
+          (s.id && s.id.toLowerCase().includes(q)) ||
+          (s.userId && s.userId.toLowerCase().includes(q))
+        );
+      });
+    }
+    return list;
+  }, [completedSessions, searchQuery, userMap]);
 
-  // Handle Export PDF
+  // Handle Export PDF (Unchanged high-res printable commemorative document)
   const handleExportPDF = () => {
-    setIsExporting(true);
+    setExportError(null);
+    setExportSuccess(null);
+    setExportingFormat('pdf');
 
     try {
+      if (exportData.length === 0) {
+        setExportError('No completed session records available to export.');
+        setExportingFormat(null);
+        return;
+      }
+
       const generatedAt = new Date().toLocaleString([], {
         dateStyle: 'full',
         timeStyle: 'medium'
@@ -212,7 +268,7 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
             </div>
             <div class="meta">
               <div><strong>Generated:</strong> ${generatedAt}</div>
-              <div><strong>Total Records:</strong> ${exportData.length} Completed Matches</div>
+              <div><strong>Total Records:</strong> ${exportData.length} Completed Matches${searchQuery ? ` (Filtered: "${searchQuery}")` : ''}</div>
             </div>
           </div>
 
@@ -281,50 +337,339 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
         setTimeout(() => {
           printIframe.contentWindow?.focus();
           printIframe.contentWindow?.print();
+          setExportSuccess('PDF print dialog initiated.');
           setTimeout(() => {
-            document.body.removeChild(printIframe);
-            setIsExporting(false);
+            if (document.body.contains(printIframe)) {
+              document.body.removeChild(printIframe);
+            }
+            setExportingFormat(null);
+            setTimeout(() => setExportSuccess(null), 4000);
           }, 1500);
         }, 400);
       } else {
-        setIsExporting(false);
+        setExportingFormat(null);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('PDF export error:', err);
-      setIsExporting(false);
-      alert('Failed to generate printable PDF.');
+      setExportingFormat(null);
+      setExportError(err?.message || 'Failed to generate printable PDF.');
     }
   };
 
+  // Handle Export CSV
+  const handleExportCSV = () => {
+    setExportError(null);
+    setExportSuccess(null);
+    setExportingFormat('csv');
+
+    try {
+      if (exportData.length === 0) {
+        setExportError('No completed session records available to export.');
+        setExportingFormat(null);
+        return;
+      }
+
+      const headers = [
+        'Rank',
+        'Player Name',
+        'Score',
+        'Crackers Burst',
+        'Combos',
+        'Target Score',
+        'Target Achieved',
+        'Date',
+        'Time',
+        'Timestamp',
+        'Session ID',
+        'Photo URL'
+      ];
+
+      const csvRows = [headers.map(escapeCsvValue).join(',')];
+
+      exportData.forEach((s, idx) => {
+        const playerName = userMap.get(s.userId) || 'Player';
+        const startDate = s.startTime ? new Date(s.startTime) : new Date();
+        const dateStr = startDate.toLocaleDateString([], {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric'
+        });
+        const timeStr = startDate.toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+
+        const targetAchievedStr =
+          typeof s.targetAchieved === 'boolean'
+            ? s.targetAchieved
+              ? 'Yes'
+              : 'No'
+            : '';
+
+        const row = [
+          idx + 1,
+          playerName,
+          s.score ?? 0,
+          s.crackerCount ?? 0,
+          s.combosCount ?? s.comboCount ?? 0,
+          s.targetScore ?? '',
+          targetAchievedStr,
+          dateStr,
+          timeStr,
+          s.startTime || startDate.toISOString(),
+          s.id || '',
+          s.photoUrl || ''
+        ];
+
+        csvRows.push(row.map(escapeCsvValue).join(','));
+      });
+
+      // Prepend UTF-8 BOM so Microsoft Excel cleanly renders characters and accents
+      const csvContent = '\uFEFF' + csvRows.join('\r\n');
+      const filename = getExportFilename('csv');
+      downloadBlob(csvContent, 'text/csv;charset=utf-8;', filename);
+
+      setExportSuccess(`CSV report successfully downloaded as ${filename}`);
+      setTimeout(() => setExportSuccess(null), 4000);
+    } catch (err: any) {
+      console.error('CSV export error:', err);
+      setExportError(err?.message || 'Failed to generate and download CSV report.');
+    } finally {
+      setExportingFormat(null);
+    }
+  };
+
+  // Handle Export JSON
+  const handleExportJSON = () => {
+    setExportError(null);
+    setExportSuccess(null);
+    setExportingFormat('json');
+
+    try {
+      if (exportData.length === 0) {
+        setExportError('No completed session records available to export.');
+        setExportingFormat(null);
+        return;
+      }
+
+      const generatedAt = new Date().toISOString();
+      const records = exportData.map((s, idx) => {
+        const playerName = userMap.get(s.userId) || 'Player';
+        const startDate = s.startTime ? new Date(s.startTime) : new Date();
+        const dateStr = startDate.toLocaleDateString([], {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric'
+        });
+        const timeStr = startDate.toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+
+        return {
+          rank: idx + 1,
+          sessionId: s.id || '',
+          playerName,
+          score: s.score ?? 0,
+          crackersBurst: s.crackerCount ?? 0,
+          combos: s.combosCount ?? s.comboCount ?? 0,
+          targetScore: typeof s.targetScore === 'number' ? s.targetScore : null,
+          targetAchieved: typeof s.targetAchieved === 'boolean' ? s.targetAchieved : null,
+          date: dateStr,
+          time: timeStr,
+          timestamp: s.startTime || startDate.toISOString(),
+          photoUrl: s.photoUrl || null
+        };
+      });
+
+      const reportPayload = {
+        reportTitle: 'DiwaliPlay Official Session Report',
+        exportDate: getExportFilename('json').replace('diwaliplay-report-', '').replace('.json', ''),
+        generatedAt,
+        totalRecords: records.length,
+        filter: searchQuery.trim() ? searchQuery.trim() : null,
+        summary: {
+          completionRatePercent: completionRate,
+          totalRegistrations: users.length,
+          highestScore: stats?.highestScore || (exportData[0]?.score ?? 0),
+          averageCrackersBurst: avgCrackers
+        },
+        records
+      };
+
+      const jsonContent = JSON.stringify(reportPayload, null, 2);
+      const filename = getExportFilename('json');
+      downloadBlob(jsonContent, 'application/json;charset=utf-8;', filename);
+
+      setExportSuccess(`JSON report successfully downloaded as ${filename}`);
+      setTimeout(() => setExportSuccess(null), 4000);
+    } catch (err: any) {
+      console.error('JSON export error:', err);
+      setExportError(err?.message || 'Failed to generate and download JSON report.');
+    } finally {
+      setExportingFormat(null);
+    }
+  };
+
+  // Table rows: show search matches when searching, otherwise leaderboard top 10
+  const displayedTableRows = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return (stats?.leaderboard || []).map((e) => ({
+        rank: e.rank,
+        playerName: e.userName,
+        score: e.score,
+        crackerCount: e.crackerCount,
+        completedAt: e.completedAt,
+        sessionId: e.sessionId,
+      }));
+    }
+    return exportData.map((s, idx) => ({
+      rank: idx + 1,
+      playerName: userMap.get(s.userId) || 'Player',
+      score: s.score,
+      crackerCount: s.crackerCount || 0,
+      completedAt: s.endTime || s.startTime || new Date().toISOString(),
+      sessionId: s.id,
+    }));
+  }, [stats?.leaderboard, searchQuery, exportData, userMap]);
+
   return (
-    <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto">
+    <div className="p-4 sm:p-6 space-y-5 max-w-7xl mx-auto">
       {/* Export Action Banner */}
-      <div className="p-4 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+      <div className="p-4 sm:p-5 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-200 text-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-sm">
         <div className="flex items-start gap-3">
           <Info className="w-5 h-5 text-cyan-400 shrink-0 mt-0.5" />
           <div>
             <h3 className="font-semibold text-sm mb-1 text-slate-100">
-              Live Session Telemetry & PDF Export
+              Live Session Telemetry & Reports Export
             </h3>
-            <p className="text-cyan-300/80 leading-relaxed">
-              Export high-resolution commemorative PDF reports containing player names, scores, cracker bursts, dates, times, and souvenir photos.
+            <p className="text-cyan-300/80 leading-relaxed max-w-2xl">
+              Export official gameplay audit reports in PDF, CSV, and JSON formats. Includes player names, verified scores, cracker bursts, dates, times, and souvenir photos.
             </p>
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={handleExportPDF}
-          disabled={isExporting || isLoading}
-          className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-400 hover:to-teal-400 text-slate-950 text-xs font-bold flex items-center gap-2 shadow-[0_0_15px_rgba(6,182,212,0.3)] transition-all cursor-pointer disabled:opacity-50 shrink-0 self-start sm:self-auto"
-        >
-          {isExporting ? (
-            <div className="w-3.5 h-3.5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
-          ) : (
-            <Printer className="w-4 h-4" />
+        {/* 3 Download Action Buttons: PDF, CSV, JSON */}
+        <div className="flex flex-wrap items-center gap-2.5 shrink-0 self-start lg:self-auto">
+          {/* Download PDF */}
+          <button
+            type="button"
+            onClick={handleExportPDF}
+            disabled={exportingFormat !== null || isLoading}
+            className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-400 hover:to-teal-400 text-slate-950 text-xs font-bold flex items-center gap-2 shadow-[0_0_15px_rgba(6,182,212,0.3)] transition-all cursor-pointer disabled:opacity-50"
+            title="Download formatted printable PDF report"
+          >
+            {exportingFormat === 'pdf' ? (
+              <div className="w-3.5 h-3.5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <Printer className="w-4 h-4" />
+            )}
+            <span>{exportingFormat === 'pdf' ? 'Generating PDF...' : 'Download PDF'}</span>
+          </button>
+
+          {/* Download CSV */}
+          <button
+            type="button"
+            onClick={handleExportCSV}
+            disabled={exportingFormat !== null || isLoading}
+            className="px-3.5 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-emerald-500/40 hover:border-emerald-400 text-emerald-300 hover:text-emerald-200 text-xs font-bold flex items-center gap-2 shadow-sm transition-all cursor-pointer disabled:opacity-50"
+            title="Download CSV spreadsheet data"
+          >
+            {exportingFormat === 'csv' ? (
+              <div className="w-3.5 h-3.5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+            )}
+            <span>Download CSV</span>
+          </button>
+
+          {/* Download JSON */}
+          <button
+            type="button"
+            onClick={handleExportJSON}
+            disabled={exportingFormat !== null || isLoading}
+            className="px-3.5 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-amber-500/40 hover:border-amber-400 text-amber-300 hover:text-amber-200 text-xs font-bold flex items-center gap-2 shadow-sm transition-all cursor-pointer disabled:opacity-50"
+            title="Download structured JSON report data"
+          >
+            {exportingFormat === 'json' ? (
+              <div className="w-3.5 h-3.5 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <FileJson className="w-4 h-4 text-amber-400" />
+            )}
+            <span>Download JSON</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Success Status Banner */}
+      {exportSuccess && (
+        <div className="p-3 rounded-xl bg-emerald-950/70 border border-emerald-500/40 text-emerald-200 text-xs flex items-center justify-between gap-2 shadow-sm animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>{exportSuccess}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setExportSuccess(null)}
+            className="text-emerald-400 hover:text-white p-1 rounded cursor-pointer"
+            title="Dismiss"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Error Status Banner */}
+      {exportError && (
+        <div className="p-3 rounded-xl bg-rose-950/70 border border-rose-500/40 text-rose-200 text-xs flex items-center justify-between gap-2 shadow-sm animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <XCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            <span>{exportError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setExportError(null)}
+            className="text-rose-400 hover:text-white p-1 rounded cursor-pointer"
+            title="Dismiss"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Search & Filter Toolbar */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[#0F1B2E]/90 border border-slate-800 p-3 sm:p-4 rounded-2xl shadow-sm">
+        <div className="relative flex-1 max-w-md">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Filter records by player name or session ID..."
+            className="w-full pl-10 pr-9 py-2 bg-slate-950/80 border border-slate-800 focus:border-cyan-500/60 rounded-xl text-xs text-slate-200 placeholder-slate-500 outline-none transition-colors"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 p-1 rounded cursor-pointer"
+              title="Clear search"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
           )}
-          <span>{isExporting ? 'Generating PDF...' : 'Export PDF'}</span>
-        </button>
+        </div>
+
+        <div className="text-xs text-slate-400 flex items-center gap-2 font-mono self-start sm:self-auto">
+          <span>
+            Records: <strong className="text-cyan-300">{exportData.length}</strong> of {completedSessions.length} completed
+          </span>
+          {searchQuery && (
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+              Filtered
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Summary KPI Grid */}
@@ -384,11 +729,11 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
           <div className="flex items-center gap-2">
             <Trophy className="w-5 h-5 text-cyan-400" />
             <h2 className="text-sm font-bold text-slate-100 tracking-wide">
-              Official Leaderboard Rankings
+              {searchQuery ? 'Filtered Leaderboard Results' : 'Official Leaderboard Rankings'}
             </h2>
           </div>
           <span className="text-xs text-slate-400 font-mono">
-            Top 10 Performers
+            {searchQuery ? `${displayedTableRows.length} Matches` : 'Top 10 Performers'}
           </span>
         </div>
 
@@ -396,9 +741,11 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
           <div className="p-8 text-center text-slate-400 text-xs">
             Loading leaderboard data...
           </div>
-        ) : !stats || stats.leaderboard.length === 0 ? (
+        ) : displayedTableRows.length === 0 ? (
           <div className="p-8 text-center text-slate-500 text-xs">
-            No completed matches available for ranking.
+            {searchQuery
+              ? `No completed matches matching "${searchQuery}".`
+              : 'No completed matches available for ranking.'}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -414,15 +761,15 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {stats.leaderboard.map((entry) => {
+                {displayedTableRows.map((entry) => {
                   const entryDate = new Date(entry.completedAt);
                   return (
-                    <tr key={entry.sessionId} className="hover:bg-slate-900/50">
+                    <tr key={entry.sessionId || entry.rank} className="hover:bg-slate-900/50">
                       <td className="py-3 px-4 text-center font-mono font-bold text-cyan-400">
                         #{entry.rank}
                       </td>
                       <td className="py-3 px-4 font-semibold text-slate-100">
-                        {entry.userName}
+                        {entry.playerName}
                       </td>
                       <td className="py-3 px-4 text-right font-mono font-bold text-cyan-200">
                         {entry.score.toLocaleString()}
