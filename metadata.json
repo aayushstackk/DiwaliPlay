@@ -1,0 +1,10 @@
+{
+  "name": "Diwali Motion Challenge - Hand Tracking Prototype",
+  "description": "Real-time dual-hand tracking webcam prototype for interactive Diwali motion challenge.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

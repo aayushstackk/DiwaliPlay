@@ -1,0 +1,47 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# Local databases and backups
+data/db.json
+data/*.json
+*.sqlite
+*.sqlite3
+*.db
+*.bak
+*.backup
+
+# Private uploads and user-generated data
+uploads/
+private-uploads/
+user-uploads/
+
+# Logs and temporary files
+*.log
+logs/
+tmp/
+temp/
+
+# Build artifacts and dependencies
+node_modules/
+dist/
+build/
+coverage/
+
+# Signing keys and certificates
+*.keystore
+*.jks
+*.p12
+*.pem
+*.key
+
