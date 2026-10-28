@@ -63,6 +63,7 @@ export type GameState =
   | 'READY'
   | 'COUNTDOWN'
   | 'PLAYING'
+  | 'PHOTO_COUNTDOWN'
   | 'GAME_OVER';
 
 export type ChallengePhase = GameState | 'WAITING_HANDS' | 'HANDS_READY' | 'TEST_MODE' | 'LOADING';

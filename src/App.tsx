@@ -9,6 +9,7 @@ import { GameState } from './types/motion';
 import { HandTargetBoxes } from './components/HandTargetBoxes';
 import { CountdownOverlay } from './components/CountdownOverlay';
 import { GameOverModal } from './components/GameOverModal';
+import { PhotoCaptureModal } from './components/PhotoCaptureModal';
 import { KioskStartupScreen } from './components/KioskStartupScreen';
 import { DiwaliWallpaper } from './components/DiwaliWallpaper';
 import { BombGameOverlay } from './components/BombGameOverlay';
@@ -236,38 +237,12 @@ export default function App() {
         if (isSessionCompletedRef.current) return;
         isSessionCompletedRef.current = true;
 
-        setPhase('GAME_OVER');
         setIsCrackerModeActive(false);
+        setIsGameplayActive(false);
         gameStartTimeRef.current = null;
 
-        // Automatically capture ONE live photo of the player from the webcam feed
-        const photo = captureWebcamSnapshot();
-        setCapturedPhoto(photo);
-
-        playGameOverFanfare();
-
-        // Persist session completion to backend
-        const currentTargetSession = activeSessionIdRef.current || activeSessionId;
-        if (currentTargetSession) {
-          gameApi
-            .completeSession({
-              sessionId: currentTargetSession,
-              score: gameScore.score,
-              crackerCount: gameScore.crackersBurst,
-              maxSpeed: gameScore.maxSpeed,
-              comboCount: gameScore.combosAwarded ?? gameScore.comboCount,
-              punchCount: gameScore.punchCount,
-              photoData: photo || undefined,
-              combosCount: gameScore.combosAwarded ?? gameScore.comboCount,
-              penaltyDeductions: gameScore.penaltyDeductions ?? 0,
-              comboBonusPoints: gameScore.comboBonusPoints ?? 0,
-              targetScore: branding.targetScoreEnabled ? branding.targetScore : undefined,
-              targetAchieved: branding.targetScoreEnabled ? (gameScore.score >= branding.targetScore) : undefined,
-            })
-            .catch((err) => {
-              console.warn('Session complete note:', err);
-            });
-        }
+        // Automatic photo capture countdown on Game Over in BOTH Touch Mode & Camera Mode
+        setPhase('PHOTO_COUNTDOWN');
         return;
       }
 
@@ -280,7 +255,49 @@ export default function App() {
     return () => {
       if (rafId) cancelAnimationFrame(rafId);
     };
-  }, [phase, setIsCrackerModeActive, playGameOverFanfare, activeSessionId, gameScore, branding]);
+  }, [phase, setIsCrackerModeActive, setIsGameplayActive]);
+
+  // Handler when photo capture countdown finishes, user snaps, or skips
+  const handlePhotoCaptured = useCallback(
+    (photo: string | null) => {
+      setCapturedPhoto(photo);
+      playGameOverFanfare();
+
+      // Persist session completion to backend with captured photo
+      const currentTargetSession = activeSessionIdRef.current || activeSessionId;
+      if (currentTargetSession) {
+        gameApi
+          .completeSession({
+            sessionId: currentTargetSession,
+            score: gameScore.score,
+            crackerCount: gameScore.crackersBurst,
+            maxSpeed: gameScore.maxSpeed,
+            comboCount: gameScore.combosAwarded ?? gameScore.comboCount,
+            punchCount: gameScore.punchCount,
+            photoData: photo || undefined,
+            combosCount: gameScore.combosAwarded ?? gameScore.comboCount,
+            penaltyDeductions: gameScore.penaltyDeductions ?? 0,
+            comboBonusPoints: gameScore.comboBonusPoints ?? 0,
+            targetScore: branding.targetScoreEnabled ? branding.targetScore : undefined,
+            targetAchieved: branding.targetScoreEnabled ? (gameScore.score >= branding.targetScore) : undefined,
+          })
+          .catch((err) => {
+            console.warn('Session complete note:', err);
+          });
+      }
+
+      setPhase('GAME_OVER');
+    },
+    [playGameOverFanfare, activeSessionId, gameScore, branding]
+  );
+
+  const handlePlayTick = useCallback(() => {
+    playCountdownBeep(false);
+  }, [playCountdownBeep]);
+
+  const handlePlayCapture = useCallback(() => {
+    playCountdownBeep(true);
+  }, [playCountdownBeep]);
 
   // Restart / Return to Home Handler: Cleans state completely for the next player
   const handleResetToHome = useCallback(() => {
@@ -363,7 +380,7 @@ export default function App() {
       phase === 'COUNTDOWN' ||
       (!isWallpaperEnabled && (phase === 'PLAYING' || phase === 'GAME_OVER')));
   const isWallpaperVisible =
-    !isKioskStartup && (isTouchMode || isWallpaperEnabled) && (phase === 'PLAYING' || phase === 'GAME_OVER');
+    !isKioskStartup && (isTouchMode || isWallpaperEnabled) && (phase === 'PLAYING' || phase === 'GAME_OVER' || phase === 'PHOTO_COUNTDOWN');
 
   return (
     <div className="fixed inset-0 w-screen h-screen overflow-hidden bg-[#0A0713] text-neutral-100 flex flex-col font-['Plus_Jakarta_Sans',sans-serif] select-none">
@@ -679,6 +696,17 @@ export default function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Automatic Game-Over Photo Countdown Modal (Touch & Camera Modes) */}
+      {!isKioskStartup && phase === 'PHOTO_COUNTDOWN' && (
+        <PhotoCaptureModal
+          playerName={playerName}
+          existingStream={isCameraMode ? ((videoRef.current?.srcObject as MediaStream) || null) : null}
+          onPhotoCaptured={handlePhotoCaptured}
+          onPlayTick={handlePlayTick}
+          onPlayCapture={handlePlayCapture}
+        />
       )}
 
       {/* Game Over Modal */}
