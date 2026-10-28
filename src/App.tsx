@@ -398,14 +398,31 @@ export default function App() {
   const brandDisplayName = branding.brandName ? branding.brandName.toUpperCase() : 'ITSSPOTLIGHT';
   const isWallpaperEnabled = branding.wallpaperEnabled !== false;
   const isCameraPreviewVisible =
-    isCameraMode &&
     !isKioskStartup &&
-    (phase === 'IDLE' ||
-      phase === 'READY' ||
-      phase === 'COUNTDOWN' ||
-      (!isWallpaperEnabled && (phase === 'PLAYING' || phase === 'GAME_OVER')));
+    (
+      // When Camera Feed ("OFF - Live Camera Background") is selected, show camera feed during countdown, playing, and game-over
+      (!isWallpaperEnabled && (phase === 'PLAYING' || phase === 'COUNTDOWN' || phase === 'GAME_OVER')) ||
+      // In Camera Interactive Mode, show camera during calibration and countdown
+      (isCameraMode && (phase === 'IDLE' || phase === 'READY' || phase === 'COUNTDOWN'))
+    );
   const isWallpaperVisible =
-    !isKioskStartup && (isTouchMode || isWallpaperEnabled) && (phase === 'PLAYING' || phase === 'GAME_OVER' || phase === 'PHOTO_COUNTDOWN');
+    !isKioskStartup &&
+    isWallpaperEnabled &&
+    (phase === 'PLAYING' ||
+      phase === 'GAME_OVER' ||
+      phase === 'PHOTO_COUNTDOWN' ||
+      (isTouchMode && phase === 'COUNTDOWN'));
+
+  // Ensure camera stream is started whenever live camera background is required in Touch Mode
+  useEffect(() => {
+    if (!isKioskStartup && isTouchMode && !isWallpaperEnabled && (phase === 'COUNTDOWN' || phase === 'PLAYING')) {
+      if (!videoRef.current?.srcObject) {
+        startCamera().catch((err) => {
+          console.warn('Touch camera background auto-start notice:', err);
+        });
+      }
+    }
+  }, [isKioskStartup, isTouchMode, isWallpaperEnabled, phase, startCamera]);
 
   return (
     <div className="fixed inset-0 w-screen h-screen overflow-hidden bg-[#0A0713] text-neutral-100 flex flex-col font-['Plus_Jakarta_Sans',sans-serif] select-none">
@@ -430,7 +447,15 @@ export default function App() {
               await unlockAudio();
 
               if (isTouchMode) {
-                // Touch Gameplay Mode: No camera needed, skip calibration, go directly to countdown!
+                // Touch Gameplay Mode: If live camera background is selected, start camera feed
+                if (!isWallpaperEnabled) {
+                  try {
+                    await startCamera();
+                  } catch (err) {
+                    console.warn('Touch Mode camera start note:', err);
+                  }
+                }
+                // Skip calibration, go directly to countdown!
                 startCountdownSequence();
               } else {
                 // Camera Interactive Mode: Start camera and enter calibration
@@ -459,8 +484,8 @@ export default function App() {
         muted
         className={
           isCameraPreviewVisible
-            ? 'fixed inset-0 w-full h-full object-cover -scale-x-100 z-0 pointer-events-none'
-            : 'fixed inset-0 w-full h-full object-cover -scale-x-100 opacity-0 pointer-events-none -z-50'
+            ? 'fixed inset-0 w-full h-full object-cover -scale-x-100 z-0 pointer-events-none transition-opacity duration-300 opacity-100'
+            : 'fixed inset-0 w-full h-full object-cover -scale-x-100 opacity-0 pointer-events-none -z-50 transition-opacity duration-300'
         }
       />
 
@@ -727,7 +752,7 @@ export default function App() {
       {!isKioskStartup && phase === 'PHOTO_COUNTDOWN' && (
         <PhotoCaptureModal
           playerName={playerName}
-          existingStream={isCameraMode ? ((videoRef.current?.srcObject as MediaStream) || null) : null}
+          existingStream={(videoRef.current?.srcObject as MediaStream) || null}
           onPhotoCaptured={handlePhotoCaptured}
           onPlayTick={handlePlayTick}
           onPlayCapture={handlePlayCapture}

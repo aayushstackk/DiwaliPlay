@@ -191,6 +191,7 @@ export const BombGameOverlay: React.FC<BombGameOverlayProps> = ({
   const onBombTouchRef = useRef(onBombTouch);
   const onPlayBurstSoundRef = useRef(onPlayBurstSound);
   const onTriggerParticlesRef = useRef(onTriggerParticles);
+  const isTouchModeRef = useRef(isTouchMode);
 
   // Sync refs on every render
   useEffect(() => {
@@ -201,6 +202,7 @@ export const BombGameOverlay: React.FC<BombGameOverlayProps> = ({
     onBombTouchRef.current = onBombTouch;
     onPlayBurstSoundRef.current = onPlayBurstSound;
     onTriggerParticlesRef.current = onTriggerParticles;
+    isTouchModeRef.current = isTouchMode;
   });
 
   const lastSpawnTimeRef = useRef<number>(0);
@@ -552,23 +554,26 @@ export const BombGameOverlay: React.FC<BombGameOverlayProps> = ({
       }
 
       // 3. Collect hand touch points from refs (independent of React renders)
+      // Only active in Camera Mode. In Touch Mode, hand tracking collisions must remain strictly disabled.
       const touchPoints: Array<{ x: number; y: number; radius: number }> = [];
-      const lHand = leftHandRef.current;
-      const rHand = rightHandRef.current;
+      if (!isTouchModeRef.current) {
+        const lHand = leftHandRef.current;
+        const rHand = rightHandRef.current;
 
-      if (lHand && lHand.detected && lHand.pixelX > 0 && lHand.pixelY > 0) {
-        touchPoints.push({ x: lHand.pixelX, y: lHand.pixelY, radius: 36 });
-        if (lHand.landmarks && lHand.landmarks[8]) {
-          const lm = lHand.landmarks[8];
-          touchPoints.push({ x: (1 - lm.x) * screenW, y: lm.y * screenH, radius: 28 });
+        if (lHand && lHand.detected && lHand.pixelX > 0 && lHand.pixelY > 0) {
+          touchPoints.push({ x: lHand.pixelX, y: lHand.pixelY, radius: 36 });
+          if (lHand.landmarks && lHand.landmarks[8]) {
+            const lm = lHand.landmarks[8];
+            touchPoints.push({ x: (1 - lm.x) * screenW, y: lm.y * screenH, radius: 28 });
+          }
         }
-      }
 
-      if (rHand && rHand.detected && rHand.pixelX > 0 && rHand.pixelY > 0) {
-        touchPoints.push({ x: rHand.pixelX, y: rHand.pixelY, radius: 36 });
-        if (rHand.landmarks && rHand.landmarks[8]) {
-          const lm = rHand.landmarks[8];
-          touchPoints.push({ x: (1 - lm.x) * screenW, y: lm.y * screenH, radius: 28 });
+        if (rHand && rHand.detected && rHand.pixelX > 0 && rHand.pixelY > 0) {
+          touchPoints.push({ x: rHand.pixelX, y: rHand.pixelY, radius: 36 });
+          if (rHand.landmarks && rHand.landmarks[8]) {
+            const lm = rHand.landmarks[8];
+            touchPoints.push({ x: (1 - lm.x) * screenW, y: lm.y * screenH, radius: 28 });
+          }
         }
       }
 
@@ -626,10 +631,10 @@ export const BombGameOverlay: React.FC<BombGameOverlayProps> = ({
           continue;
         }
 
-        // Swept Collision Detection:
+        // Swept Collision Detection (Camera Interactive Mode):
         // Tests the line segment from (prevX, prevY) to (x, y) against each hand point.
         // Guarantees high-velocity bombs cannot pass through the tracked hand between frames!
-        if (bomb.scale >= 0.8 && touchPoints.length > 0) {
+        if (!isTouchModeRef.current && bomb.scale >= 0.8 && touchPoints.length > 0) {
           for (const pt of touchPoints) {
             const dist = distToSegment(pt.x, pt.y, bomb.prevX, bomb.prevY, bomb.x, bomb.y);
             if (dist <= bomb.radius + pt.radius) {

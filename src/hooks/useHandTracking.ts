@@ -385,11 +385,19 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
 
   // Start Webcam Stream (640x480 at up to 60fps for speed and responsiveness)
   const startCamera = useCallback(async () => {
-    if (!isEnabled) return;
     setCameraError(null);
     try {
       if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop());
+        const activeTracks = streamRef.current.getTracks();
+        if (activeTracks.length > 0 && activeTracks.some((t) => t.readyState === 'live')) {
+          if (videoRef.current && videoRef.current.srcObject !== streamRef.current) {
+            videoRef.current.srcObject = streamRef.current;
+            await videoRef.current.play().catch(() => {});
+          }
+          setIsCameraActive(true);
+          return streamRef.current;
+        }
+        activeTracks.forEach((track) => track.stop());
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -406,9 +414,12 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        await videoRef.current.play();
+        await videoRef.current.play().catch((playErr) => {
+          console.warn('Webcam initial play note:', playErr);
+        });
         setIsCameraActive(true);
       }
+      return stream;
     } catch (err: unknown) {
       console.error('Webcam access error:', err);
       const isDenied =
@@ -420,6 +431,7 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
           : 'Unable to access laptop webcam. Please ensure camera is connected and not used by another app.'
       );
       setIsCameraActive(false);
+      return null;
     }
   }, []);
 
@@ -459,7 +471,7 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
       const crackerEngine = crackerEngineRef.current;
       const soundEngine = soundEngineRef.current;
 
-      if (!video || !canvas || !landmarker || video.readyState < 2 || video.paused) {
+      if (!canvas) {
         animationFrameIdRef.current = requestAnimationFrame(processFrame);
         return;
       }
@@ -479,7 +491,13 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
 
       const currentTime = performance.now();
 
-      if (video.currentTime !== lastVideoTime && !isInferringRef.current) {
+      // Only perform hand tracking inference if hand tracking is enabled, landmarker is loaded, and video is active & ready
+      const canTrackHands =
+        isEnabled &&
+        Boolean(landmarker) &&
+        Boolean(video && video.readyState >= 2 && !video.paused);
+
+      if (canTrackHands && video && landmarker && video.currentTime !== lastVideoTime && !isInferringRef.current) {
         lastVideoTime = video.currentTime;
         isInferringRef.current = true;
         fpsCountersRef.current.camFrameCount++;
@@ -919,70 +937,72 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
       crackerEngine.update();
       crackerEngine.render(ctx, canvas.width, canvas.height);
 
-      if (isGameplayActiveRef.current) {
-        // -------------------------------------------------------------
-        // ACTIVE GAMEPLAY PHASE: SHOW ONLY ANIMATED FIRE FLAMES
-        // Hide all hand skeletons, finger landmarks, connecting lines,
-        // fingertip markers, debug overlays, and ordinary center markers.
-        // Display animated fire flames with glowing core, flicker, and embers.
-        // -------------------------------------------------------------
-        if (renderHistL.isDetected && renderHistL.prevPx > 0) {
-          renderHandFlame(
-            ctx,
-            renderHistL.prevPx,
-            renderHistL.prevPy,
-            'left',
-            renderHistL.smoothedSpeed,
-            renderHistL.vx,
-            renderHistL.vy
-          );
-        }
-        if (renderHistR.isDetected && renderHistR.prevPx > 0) {
-          renderHandFlame(
-            ctx,
-            renderHistR.prevPx,
-            renderHistR.prevPy,
-            'right',
-            renderHistR.smoothedSpeed,
-            renderHistR.vx,
-            renderHistR.vy
-          );
-        }
-      } else {
-        // Reset flame interpolation and embers when outside active gameplay
-        resetHandFlameState();
+      if (isEnabled) {
+        if (isGameplayActiveRef.current) {
+          // -------------------------------------------------------------
+          // ACTIVE GAMEPLAY PHASE: SHOW ONLY ANIMATED FIRE FLAMES
+          // Hide all hand skeletons, finger landmarks, connecting lines,
+          // fingertip markers, debug overlays, and ordinary center markers.
+          // Display animated fire flames with glowing core, flicker, and embers.
+          // -------------------------------------------------------------
+          if (renderHistL.isDetected && renderHistL.prevPx > 0) {
+            renderHandFlame(
+              ctx,
+              renderHistL.prevPx,
+              renderHistL.prevPy,
+              'left',
+              renderHistL.smoothedSpeed,
+              renderHistL.vx,
+              renderHistL.vy
+            );
+          }
+          if (renderHistR.isDetected && renderHistR.prevPx > 0) {
+            renderHandFlame(
+              ctx,
+              renderHistR.prevPx,
+              renderHistR.prevPy,
+              'right',
+              renderHistR.smoothedSpeed,
+              renderHistR.vx,
+              renderHistR.vy
+            );
+          }
+        } else {
+          // Reset flame interpolation and embers when outside active gameplay
+          resetHandFlameState();
 
-        // -------------------------------------------------------------
-        // CALIBRATION / ALIGNMENT PHASE (IDLE, READY, COUNTDOWN):
-        // Render full hand skeletons, guidance joints & glowing motion trails
-        // so the player can position their hands correctly into target zones.
-        // -------------------------------------------------------------
-        renderHandTrail(ctx, renderHistL.trail, 'left');
-        renderHandTrail(ctx, renderHistR.trail, 'right');
+          // -------------------------------------------------------------
+          // CALIBRATION / ALIGNMENT PHASE (IDLE, READY, COUNTDOWN):
+          // Render full hand skeletons, guidance joints & glowing motion trails
+          // so the player can position their hands correctly into target zones.
+          // -------------------------------------------------------------
+          renderHandTrail(ctx, renderHistL.trail, 'left');
+          renderHandTrail(ctx, renderHistR.trail, 'right');
 
-        if (renderHistL.isDetected && renderHistL.activeMarks && renderHistL.activeMarks.length > 0) {
-          renderHandSkeleton(
-            ctx,
-            renderHistL.activeMarks,
-            'left',
-            canvas.width,
-            canvas.height,
-            renderHistL.smoothedSpeed,
-            renderHistL.gesture,
-            renderHistL.isPredicted
-          );
-        }
-        if (renderHistR.isDetected && renderHistR.activeMarks && renderHistR.activeMarks.length > 0) {
-          renderHandSkeleton(
-            ctx,
-            renderHistR.activeMarks,
-            'right',
-            canvas.width,
-            canvas.height,
-            renderHistR.smoothedSpeed,
-            renderHistR.gesture,
-            renderHistR.isPredicted
-          );
+          if (renderHistL.isDetected && renderHistL.activeMarks && renderHistL.activeMarks.length > 0) {
+            renderHandSkeleton(
+              ctx,
+              renderHistL.activeMarks,
+              'left',
+              canvas.width,
+              canvas.height,
+              renderHistL.smoothedSpeed,
+              renderHistL.gesture,
+              renderHistL.isPredicted
+            );
+          }
+          if (renderHistR.isDetected && renderHistR.activeMarks && renderHistR.activeMarks.length > 0) {
+            renderHandSkeleton(
+              ctx,
+              renderHistR.activeMarks,
+              'right',
+              canvas.width,
+              canvas.height,
+              renderHistR.smoothedSpeed,
+              renderHistR.gesture,
+              renderHistR.isPredicted
+            );
+          }
         }
       }
 
