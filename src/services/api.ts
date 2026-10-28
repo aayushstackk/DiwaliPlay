@@ -47,6 +47,7 @@ async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const baseHeaders: Record<string, string> = {
     Accept: 'application/json'
   };
+  const token = sessionStorage.getItem('adminToken');
   if (!isFormData) {
     baseHeaders['Content-Type'] = 'application/json';
   }
@@ -55,9 +56,10 @@ async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
     res = await fetch(`${BASE_URL}${endpoint}`, {
       credentials: 'include',
       headers: {
-        ...baseHeaders,
-        ...options?.headers
-      },
+  ...baseHeaders,
+  ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  ...options?.headers
+},
       ...options
     });
   } catch (netErr: any) {
@@ -231,12 +233,20 @@ export const adminApi = {
   /**
    * Admin login with username and password. Sets HTTP-only session cookie.
    */
-  async login(req: AdminLoginRequest): Promise<AdminLoginResponse> {
-    return request<AdminLoginResponse>('/admin/auth/login', {
-      method: 'POST',
-      body: JSON.stringify(req)
-    });
-  },
+
+async login(req: AdminLoginRequest): Promise<AdminLoginResponse> {
+  const res = await request<AdminLoginResponse>('/admin/auth/login', {
+    method: 'POST',
+    body: JSON.stringify(req)
+  });
+
+  if (res.token) {
+    sessionStorage.setItem('adminToken', res.token);
+  }
+
+  return res;
+},
+
 
   /**
    * Admin logout. Clears session cookie and invalidates token.
