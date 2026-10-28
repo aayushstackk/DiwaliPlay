@@ -78,14 +78,23 @@ export const BrandingBlock: React.FC<BrandingBlockProps> = ({
 
       {/* LINE 3: [COMPANY LOGO] */}
       <div className={line3Classes}>
-        <BrandLogo
-          brandLogoUrl={effectiveLogoUrl}
-          brandName={effectiveBrandName}
-          width={effectiveWidth}
-          height={effectiveHeight}
-          position={effectivePosition}
-          size={size}
-        />
+        {dynamicBranding.isLoading ? (
+  <div
+    style={{
+      width: effectiveWidth || 160,
+      height: effectiveHeight || 48
+    }}
+  />
+) : (
+  <BrandLogo
+    brandLogoUrl={effectiveLogoUrl}
+    brandName={effectiveBrandName}
+    width={effectiveWidth}
+    height={effectiveHeight}
+    position={effectivePosition}
+    size={size}
+  />
+)}
       </div>
     </div>
   );
