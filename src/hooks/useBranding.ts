@@ -5,7 +5,8 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { gameApi } from '../services/api';
-import { GameplayInteractionMode } from '../types/backend';
+import { GameplayInteractionMode, GameAudioSettings, AchievementTier } from '../types/backend';
+import { DEFAULT_AUDIO_SETTINGS } from '../utils/audioDefaults';
 
 export interface WallpaperPlaylistItem {
   id: string;
@@ -28,6 +29,8 @@ export interface BrandingState {
   gameplayMode: GameplayInteractionMode;
   targetScoreEnabled: boolean;
   targetScore: number;
+  audioSettings: GameAudioSettings;
+  achievementTiers?: AchievementTier[];
   wallpaperPlaylist: WallpaperPlaylistItem[];
   currentWallpaperUrl: string;
   advanceWallpaper: () => void;
@@ -48,6 +51,8 @@ interface CachedData {
   gameplayMode: GameplayInteractionMode;
   targetScoreEnabled: boolean;
   targetScore: number;
+  audioSettings: GameAudioSettings;
+  achievementTiers?: AchievementTier[];
   wallpaperPlaylist: WallpaperPlaylistItem[];
   currentWallpaperUrl: string;
   rotationIndex: number;
@@ -69,6 +74,7 @@ const cachedBranding: CachedData = {
   gameplayMode: 'camera',
   targetScoreEnabled: false,
   targetScore: 5000,
+  audioSettings: DEFAULT_AUDIO_SETTINGS,
   wallpaperPlaylist: [],
   currentWallpaperUrl: '',
   rotationIndex: 0,
@@ -166,6 +172,12 @@ export function useBranding(): BrandingState {
         cachedBranding.gameplayMode = newGameplayMode;
         cachedBranding.targetScoreEnabled = newTargetScoreEnabled;
         cachedBranding.targetScore = newTargetScore;
+        if (s.audioSettings) {
+          cachedBranding.audioSettings = s.audioSettings;
+        }
+        if (s.achievementTiers) {
+          cachedBranding.achievementTiers = s.achievementTiers;
+        }
         cachedBranding.wallpaperPlaylist = newPlaylist;
         cachedBranding.isLoading = false;
 
@@ -217,6 +229,8 @@ export function useBranding(): BrandingState {
       gameplayMode: cachedBranding.gameplayMode || 'camera',
       targetScoreEnabled: cachedBranding.targetScoreEnabled,
       targetScore: cachedBranding.targetScore,
+      audioSettings: cachedBranding.audioSettings,
+      achievementTiers: cachedBranding.achievementTiers,
       wallpaperPlaylist: cachedBranding.wallpaperPlaylist,
       currentWallpaperUrl: cachedBranding.currentWallpaperUrl || cachedBranding.wallpaperUrl,
       advanceWallpaper: advanceRotation,

@@ -21,7 +21,6 @@ import { PlayersSection } from './sections/PlayersSection';
 import { SessionsSection } from './sections/SessionsSection';
 import { BrandingSection } from './sections/BrandingSection';
 import { SoundStudioSection } from './sections/SoundStudioSection';
-import { CrackerStudioSection } from './sections/CrackerStudioSection';
 import { BombManagementSection } from './sections/BombManagementSection';
 import { WishesSection } from './sections/WishesSection';
 import { GameSettingsSection } from './sections/GameSettingsSection';
@@ -46,7 +45,7 @@ export const AdminApp: React.FC = () => {
       const hash = window.location.hash.replace('#', '') as AdminSection;
       const validSections: AdminSection[] = [
         'overview', 'players', 'sessions', 'branding', 'wallpapers',
-        'sound', 'crackers', 'bombs', 'wishes', 'settings', 'reports'
+        'sound', 'bombs', 'wishes', 'settings', 'reports'
       ];
       if (validSections.includes(hash)) return hash;
     }
@@ -176,9 +175,9 @@ export const AdminApp: React.FC = () => {
   // Rendering during initial auth check
   if (authStatus === 'checking') {
     return (
-      <div className="min-h-screen bg-[#09070F] text-amber-100 flex flex-col items-center justify-center">
-        <div className="w-10 h-10 border-2 border-amber-400 border-t-transparent rounded-full animate-spin mb-4" />
-        <span className="font-['Cinzel',serif] tracking-wider text-sm font-semibold">
+      <div className="min-h-screen bg-[#0B1120] text-cyan-100 flex flex-col items-center justify-center">
+        <div className="w-10 h-10 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin mb-4 shadow-[0_0_15px_rgba(6,182,212,0.4)]" />
+        <span className="font-sans tracking-wider text-sm font-semibold text-slate-300">
           Verifying Admin Session...
         </span>
       </div>
@@ -192,7 +191,7 @@ export const AdminApp: React.FC = () => {
 
   // Authenticated Dashboard Layout
   return (
-    <div className="min-h-screen bg-[#09070F] text-neutral-100 flex">
+    <div className="min-h-screen bg-[#0B1120] text-slate-100 flex">
       {/* Sidebar Navigation */}
       <AdminSidebar
         activeSection={activeSection}
@@ -232,6 +231,7 @@ export const AdminApp: React.FC = () => {
               users={users}
               isLoading={isLoadingData}
               error={dataError}
+              onRefresh={() => loadAllData(true)}
             />
           )}
 
@@ -241,6 +241,7 @@ export const AdminApp: React.FC = () => {
               users={users}
               isLoading={isLoadingData}
               error={dataError}
+              onRefresh={() => loadAllData(true)}
             />
           )}
 
@@ -255,10 +256,6 @@ export const AdminApp: React.FC = () => {
 
           {activeSection === 'sound' && (
             <SoundStudioSection />
-          )}
-
-          {activeSection === 'crackers' && (
-            <CrackerStudioSection />
           )}
 
           {activeSection === 'bombs' && (

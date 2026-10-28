@@ -25,6 +25,7 @@ import {
 } from '../../src/types/backend';
 import { StorageAdapter, CompleteSessionParams } from './types';
 import { DEFAULT_BOMB_CONFIGS, DEFAULT_BOMB_SETTINGS } from './defaultBombs';
+import { DEFAULT_AUDIO_SETTINGS } from '../../src/utils/audioDefaults';
 
 export interface DatabaseSchema {
   users: Record<string, User>; // key: userId
@@ -57,7 +58,8 @@ const DEFAULT_SETTINGS: SystemSettings = {
   wallpaperEnabled: true,
   gameplayMode: 'camera',
   targetScoreEnabled: false,
-  targetScore: 5000
+  targetScore: 5000,
+  audioSettings: DEFAULT_AUDIO_SETTINGS
 };
 
 export const DATA_DIR = path.resolve(process.cwd(), 'data');
@@ -296,8 +298,23 @@ export class JsonFileStorageAdapter implements StorageAdapter {
         delete this.data.usersByMobile[user.mobileNumber];
       }
     }
+    // Also remove any active/unused codes belonging to this user
+    for (const [cId, code] of Object.entries(this.data.gameCodes)) {
+      if (code.userId === id) {
+        delete this.data.gameCodes[cId];
+      }
+    }
     this.persist();
     return true;
+  }
+
+  public async deleteAllUsers(): Promise<number> {
+    const count = Object.keys(this.data.users).length;
+    this.data.users = {};
+    this.data.usersByMobile = {};
+    this.data.gameCodes = {};
+    this.persist();
+    return count;
   }
 
   // --------------------------------------------------------------------------
@@ -562,6 +579,13 @@ export class JsonFileStorageAdapter implements StorageAdapter {
     delete this.data.sessions[sessionId];
     this.persist();
     return true;
+  }
+
+  public async deleteAllSessions(): Promise<number> {
+    const count = Object.keys(this.data.sessions).length;
+    this.data.sessions = {};
+    this.persist();
+    return count;
   }
 
   // --------------------------------------------------------------------------

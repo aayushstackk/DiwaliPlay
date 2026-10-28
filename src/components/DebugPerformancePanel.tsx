@@ -124,11 +124,6 @@ export const DebugPerformancePanel: React.FC<DebugPerformancePanelProps> = ({
           </span>
         </div>
 
-        <div className="flex justify-between items-center py-0.5">
-          <span className="text-neutral-400">Max Speed Recorded:</span>
-          <span className="font-bold text-amber-300">{metrics.maxSpeedRecorded} px/s</span>
-        </div>
-
         {/* ---------------- AUDIO ENGINE SECTION ---------------- */}
         <div className="border-t border-amber-500/30 pt-2 mt-2">
           <div className="flex items-center gap-1.5 text-amber-400 font-bold mb-1.5">

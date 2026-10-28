@@ -65,6 +65,86 @@ export interface GameSession {
 
 export type GameplayInteractionMode = 'camera' | 'touch';
 
+// ============================================================================
+// Sound Studio & Game Audio Management Models
+// ============================================================================
+export type SfxKey =
+  | 'firework_launch'
+  | 'explosion'
+  | 'sparkler'
+  | 'bomb_impact'
+  | 'points_score'
+  | 'game_over'
+  | 'photo_shutter';
+
+export interface SoundEffectConfig {
+  soundId: string; // built-in ID or custom asset URL
+  volume: number; // 0 to 100
+  customAssetId?: string | null;
+  customUrl?: string | null;
+}
+
+export interface BackgroundMusicConfig {
+  activeTrackId: string; // built-in ID, asset ID, or 'none'
+  activeTrackUrl?: string | null;
+  volume: number; // 0 to 100
+  isMuted: boolean;
+  loop: boolean;
+}
+
+export interface ComboAudioConfig {
+  soundId: string; // built-in ID ('combo_ding', 'combo_energy_burst', etc.) or custom asset URL
+  volume: number; // 0 to 100
+  customAssetId?: string | null;
+  customUrl?: string | null;
+}
+
+export interface AchievementTier {
+  id: string;
+  title: string;
+  subtitle?: string;
+  minScore: number;
+  maxScore: number | null; // null for open-ended max (e.g. 2000+)
+  emoji?: string;
+  badgeColor?: string;
+  wishes: string[];
+}
+
+export interface CountdownAudioConfig {
+  soundThree: string; // sound ID or custom URL
+  soundTwo: string;
+  soundOne: string;
+  soundGo: string;
+  volume: number; // 0 to 100
+  customUrls?: {
+    three?: string | null;
+    two?: string | null;
+    one?: string | null;
+    go?: string | null;
+  };
+}
+
+export interface SoundPreset {
+  id: string;
+  name: string;
+  description?: string;
+  isDefault?: boolean;
+  countdown: CountdownAudioConfig;
+  bgm: BackgroundMusicConfig;
+  sfx: Record<SfxKey, SoundEffectConfig>;
+}
+
+export interface GameAudioSettings {
+  activePresetId?: string; // e.g. 'festive_diwali' | 'classic_arcade' | 'premium_celebration'
+  masterVolume?: number; // 0 to 100
+  isMuted?: boolean;
+  bgm: BackgroundMusicConfig;
+  combo?: ComboAudioConfig;
+  countdown?: CountdownAudioConfig;
+  sfx?: Record<string, SoundEffectConfig>;
+  presets?: SoundPreset[];
+}
+
 export interface SystemSettings {
   allowMultiplePlaysPerUser: boolean;
   codeExpirySeconds: number; // default: 120 (2 minutes)
@@ -82,6 +162,8 @@ export interface SystemSettings {
   wallpaperEnabled?: boolean; // ON: show uploaded wallpaper; OFF: show live webcam background (default: true)
   targetScoreEnabled?: boolean; // ON: track target score progress bar and popup; OFF: disabled (default: false)
   targetScore?: number; // target points to achieve, e.g. 5000 (default: 5000)
+  audioSettings?: GameAudioSettings;
+  achievementTiers?: AchievementTier[];
 }
 
 // Request / Response DTOs

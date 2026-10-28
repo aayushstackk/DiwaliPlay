@@ -10,7 +10,6 @@ export type AdminSection =
   | 'branding'
   | 'wallpapers'
   | 'sound'
-  | 'crackers'
   | 'bombs'
   | 'wishes'
   | 'settings'

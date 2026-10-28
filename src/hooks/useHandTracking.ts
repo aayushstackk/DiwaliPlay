@@ -31,6 +31,7 @@ import {
 import { recognizeHandGesture } from '../utils/gestureRecognition';
 import { CrackerEngine } from '../utils/crackerEngine';
 import { SoundEngine, CrackerSoundType } from '../utils/soundEngine';
+import { SfxKey, GameAudioSettings } from '../types/backend';
 import { INITIAL_SCORE_STATE, calculateBurstPoints } from '../utils/scoreSystem';
 
 const DEFAULT_HAND = (side: 'left' | 'right'): TrackedHand => ({
@@ -1140,8 +1141,8 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
             setComboNotice(null);
           }, 1400);
 
-          // Play combo celebration sound
-          soundEngineRef.current.playSound('CHAKRI');
+          // Play configured combo celebration sound
+          soundEngineRef.current.playComboSound();
         } else {
           comboRewardHitsRef.current = validHits;
         }
@@ -1187,6 +1188,12 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
     triggerBombBurstParticles,
     playBombBurstSound,
     playCountdownBeep,
+    playCountdownStep: (step: 3 | 2 | 1 | 'GO') => soundEngineRef.current.playCountdownStep(step),
+    playSfx: (key: SfxKey, options?: { pitch?: number; vol?: number; pan?: number }) => soundEngineRef.current.playSfx(key, options),
+    startBgm: () => soundEngineRef.current.startBgm(),
+    stopBgm: () => soundEngineRef.current.stopBgm(),
+    applyAudioSettings: (settings: GameAudioSettings) => soundEngineRef.current.applyAudioSettings(settings),
+    soundEngine: soundEngineRef.current,
     playGameOverFanfare,
     isCrackerModeActive,
     setIsCrackerModeActive,

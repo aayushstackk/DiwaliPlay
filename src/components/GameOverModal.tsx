@@ -15,7 +15,7 @@ import {
   Timer
 } from 'lucide-react';
 import { GameScoreState } from '../types/motion';
-import { GameFeedback } from '../types/backend';
+import { GameFeedback, AchievementTier } from '../types/backend';
 import { gameApi } from '../services/api';
 import {
   calculateAchievement,
@@ -36,6 +36,7 @@ interface GameOverModalProps {
   onSubmitFeedback?: (feedback: GameFeedback) => Promise<void>;
   targetScoreEnabled?: boolean;
   targetScore?: number;
+  achievementTiers?: AchievementTier[];
 }
 
 const GameOverModalComponent: React.FC<GameOverModalProps> = ({
@@ -50,7 +51,8 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
   isTrial = false,
   onSubmitFeedback,
   targetScoreEnabled = false,
-  targetScore = 5000
+  targetScore = 5000,
+  achievementTiers
 }) => {
   // Smooth animated count-up for final score
   const [displayedScore, setDisplayedScore] = useState(0);
@@ -68,13 +70,13 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
 
   // Compute performance-based achievement
   const achievement = useMemo(() => {
-    return calculateAchievement(scoreState);
-  }, [scoreState]);
+    return calculateAchievement(scoreState, achievementTiers);
+  }, [scoreState, achievementTiers]);
 
   // Compute personalized wish
   const personalizedWish = useMemo(() => {
-    return getPersonalizedWish(scoreState, achievement, playerName, brandName);
-  }, [scoreState, achievement, playerName, brandName]);
+    return getPersonalizedWish(scoreState, achievement, playerName, brandName, achievementTiers);
+  }, [scoreState, achievement, playerName, brandName, achievementTiers]);
 
   // Computed game statistics
   const bombsBurst = scoreState.bombsBurst ?? scoreState.crackersBurst ?? 0;

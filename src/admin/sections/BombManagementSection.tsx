@@ -420,17 +420,17 @@ export const BombManagementSection: React.FC = () => {
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-8">
       {/* 1. Header Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-amber-500/15 pb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-cyan-500/15 pb-6">
         <div>
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400">
+            <div className="p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
               <Bomb className="w-6 h-6" />
             </div>
             <div>
-              <h1 className="text-xl sm:text-2xl font-black text-amber-100 font-['Cinzel',serif] tracking-wider">
+              <h1 className="text-xl sm:text-2xl font-bold text-slate-100 tracking-wider">
                 BOMB MANAGEMENT
               </h1>
-              <p className="text-xs sm:text-sm text-neutral-400">
+              <p className="text-xs sm:text-sm text-slate-400">
                 Configure colourful floating bomb targets, point rewards, penalty bombs, burst sounds & spawn rates.
               </p>
             </div>
@@ -441,14 +441,14 @@ export const BombManagementSection: React.FC = () => {
           <button
             onClick={loadData}
             disabled={isLoading}
-            className="px-3.5 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-300 text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer"
+            className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-cyan-400' : ''}`} />
             <span>Refresh</span>
           </button>
           <button
             onClick={handleOpenAdd}
-            className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-[0_0_20px_rgba(245,158,11,0.3)] cursor-pointer"
+            className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 via-cyan-400 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-slate-950 font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-[0_0_20px_rgba(6,182,212,0.3)] cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>Add New Bomb</span>
@@ -475,7 +475,7 @@ export const BombManagementSection: React.FC = () => {
           </div>
           <button
             onClick={() => setFeedback(null)}
-            className="text-neutral-400 hover:text-white cursor-pointer"
+            className="text-slate-400 hover:text-white cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -483,22 +483,22 @@ export const BombManagementSection: React.FC = () => {
       )}
 
       {/* 3. Global Spawn Dynamics Settings */}
-      <div className="bg-[#120E1E] border border-amber-500/20 rounded-2xl p-5 sm:p-6 shadow-xl">
-        <div className="flex items-center justify-between border-b border-amber-500/10 pb-4 mb-5">
+      <div className="bg-[#0F1B2E]/90 border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xl">
+        <div className="flex items-center justify-between border-b border-slate-800 pb-4 mb-5">
           <div className="flex items-center gap-2.5">
-            <Sliders className="w-5 h-5 text-amber-400" />
-            <h2 className="text-sm sm:text-base font-bold text-amber-200 uppercase tracking-wider font-['Cinzel',serif]">
+            <Sliders className="w-5 h-5 text-cyan-400" />
+            <h2 className="text-sm sm:text-base font-bold text-cyan-200 uppercase tracking-wider">
               Gameplay Spawn Settings
             </h2>
           </div>
-          <span className="text-[11px] font-mono text-neutral-400 bg-neutral-900/80 px-2.5 py-1 rounded-lg border border-neutral-800">
+          <span className="text-[11px] font-mono text-slate-400 bg-slate-900/80 px-2.5 py-1 rounded-lg border border-slate-800">
             Global Rules
           </span>
         </div>
 
         <form onSubmit={handleSaveSettings} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           <div>
-            <label className="block text-[11px] font-bold text-neutral-300 uppercase mb-1.5">
+            <label className="block text-[11px] font-bold text-slate-300 uppercase mb-1.5">
               Min Spawn Delay
             </label>
             <div className="relative">
@@ -511,17 +511,17 @@ export const BombManagementSection: React.FC = () => {
                 onChange={(e) =>
                   setSettings({ ...settings, minSpawnDelayMs: Number(e.target.value) })
                 }
-                className="w-full px-3 py-2 bg-neutral-950/80 border border-neutral-700 rounded-xl text-neutral-100 font-mono text-xs focus:border-amber-400 focus:outline-none"
+                className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 font-mono text-xs focus:border-cyan-400 focus:outline-none"
               />
-              <span className="absolute right-3 top-2.5 text-[11px] text-neutral-500 font-mono">
+              <span className="absolute right-3 top-2.5 text-[11px] text-slate-500 font-mono">
                 ms
               </span>
             </div>
-            <p className="text-[10px] text-neutral-500 mt-1">Minimum wait before spawning next launch</p>
+            <p className="text-[10px] text-slate-500 mt-1">Minimum wait before spawning next launch</p>
           </div>
 
           <div>
-            <label className="block text-[11px] font-bold text-neutral-300 uppercase mb-1.5">
+            <label className="block text-[11px] font-bold text-slate-300 uppercase mb-1.5">
               Max Spawn Delay
             </label>
             <div className="relative">
@@ -534,17 +534,17 @@ export const BombManagementSection: React.FC = () => {
                 onChange={(e) =>
                   setSettings({ ...settings, maxSpawnDelayMs: Number(e.target.value) })
                 }
-                className="w-full px-3 py-2 bg-neutral-950/80 border border-neutral-700 rounded-xl text-neutral-100 font-mono text-xs focus:border-amber-400 focus:outline-none"
+                className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 font-mono text-xs focus:border-cyan-400 focus:outline-none"
               />
-              <span className="absolute right-3 top-2.5 text-[11px] text-neutral-500 font-mono">
+              <span className="absolute right-3 top-2.5 text-[11px] text-slate-500 font-mono">
                 ms
               </span>
             </div>
-            <p className="text-[10px] text-neutral-500 mt-1">Maximum wait between launches</p>
+            <p className="text-[10px] text-slate-500 mt-1">Maximum wait between launches</p>
           </div>
 
           <div>
-            <label className="block text-[11px] font-bold text-neutral-300 uppercase mb-1.5">
+            <label className="block text-[11px] font-bold text-slate-300 uppercase mb-1.5">
               Max Concurrent Bombs
             </label>
             <div className="relative">
@@ -556,17 +556,17 @@ export const BombManagementSection: React.FC = () => {
                 onChange={(e) =>
                   setSettings({ ...settings, maxConcurrentBombs: Number(e.target.value) })
                 }
-                className="w-full px-3 py-2 bg-neutral-950/80 border border-neutral-700 rounded-xl text-neutral-100 font-mono text-xs focus:border-amber-400 focus:outline-none"
+                className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 font-mono text-xs focus:border-cyan-400 focus:outline-none"
               />
-              <span className="absolute right-3 top-2.5 text-[11px] text-neutral-500 font-mono">
+              <span className="absolute right-3 top-2.5 text-[11px] text-slate-500 font-mono">
                 active
               </span>
             </div>
-            <p className="text-[10px] text-neutral-500 mt-1">Maximum bombs simultaneously on screen</p>
+            <p className="text-[10px] text-slate-500 mt-1">Maximum bombs simultaneously on screen</p>
           </div>
 
           <div>
-            <label className="block text-[11px] font-bold text-neutral-300 uppercase mb-1.5">
+            <label className="block text-[11px] font-bold text-slate-300 uppercase mb-1.5">
               Max Burst Size
             </label>
             <div className="relative">
@@ -579,17 +579,17 @@ export const BombManagementSection: React.FC = () => {
                 onChange={(e) =>
                   setSettings({ ...settings, maxBurstSize: Number(e.target.value) })
                 }
-                className="w-full px-3 py-2 bg-neutral-950/80 border border-neutral-700 rounded-xl text-neutral-100 font-mono text-xs focus:border-amber-400 focus:outline-none"
+                className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 font-mono text-xs focus:border-cyan-400 focus:outline-none"
               />
-              <span className="absolute right-3 top-2.5 text-[11px] text-neutral-500 font-mono">
+              <span className="absolute right-3 top-2.5 text-[11px] text-slate-500 font-mono">
                 bombs
               </span>
             </div>
-            <p className="text-[10px] text-neutral-500 mt-1">Max bombs fired in one burst (1–3)</p>
+            <p className="text-[10px] text-slate-500 mt-1">Max bombs fired in one burst (1–3)</p>
           </div>
 
           <div>
-            <label className="block text-[11px] font-bold text-neutral-300 uppercase mb-1.5">
+            <label className="block text-[11px] font-bold text-slate-300 uppercase mb-1.5">
               Launch Speed Multiplier
             </label>
             <div className="relative">
@@ -602,17 +602,17 @@ export const BombManagementSection: React.FC = () => {
                 onChange={(e) =>
                   setSettings({ ...settings, launchSpeedMultiplier: Number(e.target.value) })
                 }
-                className="w-full px-3 py-2 bg-neutral-950/80 border border-neutral-700 rounded-xl text-neutral-100 font-mono text-xs focus:border-amber-400 focus:outline-none"
+                className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 font-mono text-xs focus:border-cyan-400 focus:outline-none"
               />
-              <span className="absolute right-3 top-2.5 text-[11px] text-neutral-500 font-mono">
+              <span className="absolute right-3 top-2.5 text-[11px] text-slate-500 font-mono">
                 x
               </span>
             </div>
-            <p className="text-[10px] text-neutral-500 mt-1">Arcade velocity (1.45 = +45% faster launch)</p>
+            <p className="text-[10px] text-slate-500 mt-1">Arcade velocity (1.45 = +45% faster launch)</p>
           </div>
 
           <div>
-            <label className="block text-[11px] font-bold text-neutral-300 uppercase mb-1.5">
+            <label className="block text-[11px] font-bold text-slate-300 uppercase mb-1.5">
               Burst Stagger Interval
             </label>
             <div className="relative">
@@ -625,20 +625,20 @@ export const BombManagementSection: React.FC = () => {
                 onChange={(e) =>
                   setSettings({ ...settings, burstIntervalMs: Number(e.target.value) })
                 }
-                className="w-full px-3 py-2 bg-neutral-950/80 border border-neutral-700 rounded-xl text-neutral-100 font-mono text-xs focus:border-amber-400 focus:outline-none"
+                className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 font-mono text-xs focus:border-cyan-400 focus:outline-none"
               />
-              <span className="absolute right-3 top-2.5 text-[11px] text-neutral-500 font-mono">
+              <span className="absolute right-3 top-2.5 text-[11px] text-slate-500 font-mono">
                 ms
               </span>
             </div>
-            <p className="text-[10px] text-neutral-500 mt-1">Delay between rapid burst shots (50–100ms)</p>
+            <p className="text-[10px] text-slate-500 mt-1">Delay between rapid burst shots (50–100ms)</p>
           </div>
 
           <div className="sm:col-span-2 lg:col-span-3 xl:col-span-2 flex flex-col justify-end">
             <button
               type="submit"
               disabled={isSavingSettings}
-              className="w-full py-2.5 px-4 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-[0_0_15px_rgba(245,158,11,0.25)] flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              className="w-full py-2.5 px-4 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-[0_0_15px_rgba(6,182,212,0.25)] flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
             >
               {isSavingSettings ? (
                 <RefreshCw className="w-3.5 h-3.5 animate-spin" />
@@ -655,22 +655,22 @@ export const BombManagementSection: React.FC = () => {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <h2 className="text-base sm:text-lg font-bold text-neutral-100 font-['Cinzel',serif] tracking-wider">
+            <h2 className="text-base sm:text-lg font-bold text-slate-100 tracking-wider">
               Configured Bomb Types
             </h2>
-            <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-neutral-800 text-amber-300 border border-amber-500/20">
+            <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-slate-800 text-cyan-300 border border-cyan-500/20">
               {activeBombs.length} Active
             </span>
           </div>
         </div>
 
         {isLoading ? (
-          <div className="p-12 text-center text-neutral-400 text-xs font-mono">
-            <RefreshCw className="w-6 h-6 animate-spin mx-auto text-amber-400 mb-2" />
+          <div className="p-12 text-center text-slate-400 text-xs font-mono">
+            <RefreshCw className="w-6 h-6 animate-spin mx-auto text-cyan-400 mb-2" />
             Loading bomb configurations...
           </div>
         ) : activeBombs.length === 0 ? (
-          <div className="p-8 text-center text-neutral-400 text-xs font-mono border border-neutral-800 rounded-2xl bg-neutral-950/40">
+          <div className="p-8 text-center text-slate-400 text-xs font-mono border border-slate-800 rounded-2xl bg-slate-950/40">
             No active bombs currently configured. Re-enable an archived bomb below or create a new bomb above.
           </div>
         ) : (
@@ -685,10 +685,10 @@ export const BombManagementSection: React.FC = () => {
               return (
                 <div
                   key={bomb.id}
-                  className={`bg-[#120E1E] border rounded-2xl p-5 flex flex-col justify-between transition-all duration-200 hover:shadow-2xl ${
+                  className={`bg-[#0F1B2E]/90 border rounded-2xl p-5 flex flex-col justify-between transition-all duration-200 hover:shadow-2xl ${
                     isPenalty
-                      ? 'border-rose-500/30 hover:border-rose-500/60 shadow-[0_4px_20px_rgba(239,68,68,0.15)]'
-                      : 'border-amber-500/25 hover:border-amber-500/50 shadow-[0_4px_20px_rgba(0,0,0,0.4)]'
+                      ? 'border-rose-500/30 hover:border-rose-500/60 shadow-[0_4px_20px_rgba(244,63,94,0.15)]'
+                      : 'border-slate-800 hover:border-cyan-500/50 shadow-[0_4px_20px_rgba(0,0,0,0.4)]'
                   }`}
                 >
                   <div>
@@ -700,7 +700,7 @@ export const BombManagementSection: React.FC = () => {
                             ? 'bg-rose-950/80 border-rose-500 text-rose-300'
                             : bomb.points >= 300
                             ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300'
-                            : 'bg-amber-950/80 border-amber-500 text-amber-300'
+                            : 'bg-cyan-950/80 border-cyan-500/40 text-cyan-300'
                         }`}
                       >
                         {isPenalty ? 'Penalty Target' : 'Reward Target'}
@@ -717,10 +717,10 @@ export const BombManagementSection: React.FC = () => {
 
                     {/* Centered Bomb Visual Preview */}
                     <div className="py-4 flex flex-col items-center justify-center">
-                      <div className="p-3 rounded-2xl bg-neutral-950/80 border border-neutral-800 shadow-inner">
+                      <div className="p-3 rounded-2xl bg-slate-950/80 border border-slate-800 shadow-inner">
                         <CartoonBombSvg bomb={bomb} size={84} showBadge={true} />
                       </div>
-                      <h3 className="text-base font-bold text-neutral-100 mt-3 text-center tracking-wide">
+                      <h3 className="text-base font-bold text-slate-100 mt-3 text-center tracking-wide">
                         {bomb.name}
                       </h3>
                       <div className="flex items-center gap-1.5 mt-1">
@@ -728,16 +728,16 @@ export const BombManagementSection: React.FC = () => {
                           className="w-2.5 h-2.5 rounded-full inline-block"
                           style={{ backgroundColor: bomb.color }}
                         />
-                        <span className="font-mono text-xs text-neutral-400">
+                        <span className="font-mono text-xs text-slate-400">
                           {bomb.color}
                         </span>
                       </div>
                     </div>
 
                     {/* Stats & Attributes */}
-                    <div className="mt-2 space-y-2 text-xs border-t border-neutral-800/80 pt-3">
+                    <div className="mt-2 space-y-2 text-xs border-t border-slate-800/80 pt-3">
                       <div className="flex items-center justify-between">
-                        <span className="text-neutral-400">Score Value:</span>
+                        <span className="text-slate-400">Score Value:</span>
                         <span
                           className={`font-mono font-bold text-sm ${
                             isPenalty ? 'text-rose-400' : 'text-emerald-400'
@@ -748,27 +748,27 @@ export const BombManagementSection: React.FC = () => {
                       </div>
 
                       <div className="flex items-center justify-between">
-                        <span className="text-neutral-400">Spawn Frequency:</span>
+                        <span className="text-slate-400">Spawn Frequency:</span>
                         <div className="flex items-center gap-1.5">
-                          <span className="font-mono text-neutral-200">
+                          <span className="font-mono text-slate-200">
                             Weight {bomb.spawnWeight}
                           </span>
-                          <span className="text-[10px] font-mono text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                          <span className="text-[10px] font-mono text-cyan-300 bg-cyan-500/10 px-1.5 py-0.5 rounded">
                             ~{probPercent}%
                           </span>
                         </div>
                       </div>
 
                       <div className="flex items-center justify-between">
-                        <span className="text-neutral-400">Burst Sound:</span>
+                        <span className="text-slate-400">Burst Sound:</span>
                         <div className="flex items-center gap-1.5">
-                          <span className="font-mono text-[11px] text-neutral-300 capitalize">
+                          <span className="font-mono text-[11px] text-slate-300 capitalize">
                             {bomb.soundPreset}
                           </span>
                           <button
                             onClick={() => previewSound(bomb.soundPreset, bomb.soundUrl)}
                             title="Play Audio Preview"
-                            className="p-1 rounded-md bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 cursor-pointer transition-all"
+                            className="p-1 rounded-md bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 cursor-pointer transition-all"
                           >
                             <Volume2 className="w-3 h-3" />
                           </button>
@@ -778,12 +778,12 @@ export const BombManagementSection: React.FC = () => {
                   </div>
 
                   {/* Actions Footer */}
-                  <div className="flex items-center gap-2 mt-4 pt-3 border-t border-neutral-800/80">
+                  <div className="flex items-center gap-2 mt-4 pt-3 border-t border-slate-800/80">
                     <button
                       onClick={() => handleOpenEdit(bomb)}
-                      className="flex-1 py-1.5 px-3 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-200 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                      className="flex-1 py-1.5 px-3 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                     >
-                      <Edit2 className="w-3.5 h-3.5 text-amber-400" />
+                      <Edit2 className="w-3.5 h-3.5 text-cyan-400" />
                       <span>Edit</span>
                     </button>
                     <button
@@ -808,17 +808,17 @@ export const BombManagementSection: React.FC = () => {
 
       {/* 5. Disabled / Archived Bombs */}
       {disabledBombs.length > 0 && (
-        <div className="space-y-4 pt-6 border-t border-neutral-800/80">
+        <div className="space-y-4 pt-6 border-t border-slate-800/80">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <h2 className="text-base sm:text-lg font-bold text-neutral-300 font-['Cinzel',serif] tracking-wider">
+              <h2 className="text-base sm:text-lg font-bold text-slate-300 tracking-wider">
                 Disabled / Archived Bomb Types
               </h2>
-              <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-neutral-900 text-rose-300 border border-rose-500/30">
+              <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-slate-900 text-rose-300 border border-rose-500/30">
                 {disabledBombs.length} Inactive
               </span>
             </div>
-            <p className="hidden sm:block text-xs text-neutral-500">
+            <p className="hidden sm:block text-xs text-slate-500">
               Archived records are excluded from gameplay. Click Re-enable to restore.
             </p>
           </div>
@@ -829,12 +829,12 @@ export const BombManagementSection: React.FC = () => {
               return (
                 <div
                   key={bomb.id}
-                  className="bg-[#0e0a16] border border-neutral-800/80 rounded-2xl p-5 flex flex-col justify-between opacity-80 hover:opacity-100 transition-all duration-200"
+                  className="bg-[#0b1322] border border-slate-800 rounded-2xl p-5 flex flex-col justify-between opacity-80 hover:opacity-100 transition-all duration-200"
                 >
                   <div>
                     {/* Top Status & Point Tag */}
                     <div className="flex items-center justify-between mb-3">
-                      <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md border bg-neutral-900 border-neutral-700 text-neutral-400">
+                      <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md border bg-slate-900 border-slate-700 text-slate-400">
                         {isPenalty ? 'Penalty Target' : 'Reward Target'}
                       </span>
                       <span className="text-[10px] font-mono px-2 py-0.5 rounded-md border bg-rose-950/60 border-rose-500/40 text-rose-300">
@@ -844,10 +844,10 @@ export const BombManagementSection: React.FC = () => {
 
                     {/* Centered Bomb Visual Preview */}
                     <div className="py-4 flex flex-col items-center justify-center grayscale opacity-60">
-                      <div className="p-3 rounded-2xl bg-neutral-950/80 border border-neutral-800 shadow-inner">
+                      <div className="p-3 rounded-2xl bg-slate-950/80 border border-slate-800 shadow-inner">
                         <CartoonBombSvg bomb={bomb} size={72} showBadge={false} />
                       </div>
-                      <h3 className="text-base font-bold text-neutral-300 mt-3 text-center tracking-wide line-through decoration-rose-500/50">
+                      <h3 className="text-base font-bold text-slate-300 mt-3 text-center tracking-wide line-through decoration-rose-500/50">
                         {bomb.name}
                       </h3>
                       <div className="flex items-center gap-1.5 mt-1">
@@ -855,23 +855,23 @@ export const BombManagementSection: React.FC = () => {
                           className="w-2.5 h-2.5 rounded-full inline-block"
                           style={{ backgroundColor: bomb.color }}
                         />
-                        <span className="font-mono text-xs text-neutral-500">
+                        <span className="font-mono text-xs text-slate-500">
                           {bomb.isDefault ? 'Default Preset' : 'Custom Bomb'}
                         </span>
                       </div>
                     </div>
 
                     {/* Stats & Attributes */}
-                    <div className="mt-2 space-y-2 text-xs border-t border-neutral-800/80 pt-3 text-neutral-400">
+                    <div className="mt-2 space-y-2 text-xs border-t border-slate-800/80 pt-3 text-slate-400">
                       <div className="flex items-center justify-between">
                         <span>Score Value:</span>
-                        <span className="font-mono font-bold text-xs text-neutral-300">
+                        <span className="font-mono font-bold text-xs text-slate-300">
                           {bomb.points > 0 ? `+${bomb.points}` : bomb.points} pts
                         </span>
                       </div>
                       <div className="flex items-center justify-between">
                         <span>Burst Sound:</span>
-                        <span className="font-mono text-[11px] text-neutral-400 capitalize">
+                        <span className="font-mono text-[11px] text-slate-400 capitalize">
                           {bomb.soundPreset}
                         </span>
                       </div>
@@ -879,7 +879,7 @@ export const BombManagementSection: React.FC = () => {
                   </div>
 
                   {/* Actions Footer */}
-                  <div className="flex items-center gap-2 mt-4 pt-3 border-t border-neutral-800/80">
+                  <div className="flex items-center gap-2 mt-4 pt-3 border-t border-slate-800/80">
                     <button
                       type="button"
                       onClick={() => handleReEnableBomb(bomb)}
@@ -899,17 +899,17 @@ export const BombManagementSection: React.FC = () => {
       {/* 5. Add / Edit Bomb Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[#120E1E] border border-amber-500/30 rounded-2xl max-w-2xl w-full p-6 shadow-2xl relative">
-            <div className="flex items-center justify-between border-b border-amber-500/15 pb-4 mb-5">
+          <div className="bg-[#0F1B2E] border border-cyan-500/30 rounded-2xl max-w-2xl w-full p-6 shadow-2xl relative">
+            <div className="flex items-center justify-between border-b border-cyan-500/15 pb-4 mb-5">
               <div className="flex items-center gap-2.5">
-                <Bomb className="w-5 h-5 text-amber-400" />
-                <h3 className="text-base sm:text-lg font-black text-amber-100 font-['Cinzel',serif] tracking-wider">
+                <Bomb className="w-5 h-5 text-cyan-400" />
+                <h3 className="text-base sm:text-lg font-bold text-slate-100 tracking-wider">
                   {editingBomb ? `Edit Bomb: ${editingBomb.name}` : 'Create New Bomb Type'}
                 </h3>
               </div>
               <button
                 onClick={() => setIsModalOpen(false)}
-                className="text-neutral-400 hover:text-white cursor-pointer"
+                className="text-slate-400 hover:text-white cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -921,7 +921,7 @@ export const BombManagementSection: React.FC = () => {
                 <div className="sm:col-span-2 space-y-4">
                   {/* Name */}
                   <div>
-                    <label className="block text-xs font-bold text-neutral-300 uppercase mb-1">
+                    <label className="block text-xs font-bold text-slate-300 uppercase mb-1">
                       Bomb Name
                     </label>
                     <input
@@ -930,14 +930,14 @@ export const BombManagementSection: React.FC = () => {
                       value={formName}
                       onChange={(e) => setFormName(e.target.value)}
                       placeholder="e.g. Red Bomb, Golden Bomb"
-                      className="w-full px-3 py-2 bg-neutral-950 border border-neutral-700 rounded-xl text-neutral-100 text-xs focus:border-amber-400 focus:outline-none"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 text-xs focus:border-cyan-400 focus:outline-none"
                     />
                   </div>
 
                   {/* Points & Weight */}
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs font-bold text-neutral-300 uppercase mb-1">
+                      <label className="block text-xs font-bold text-slate-300 uppercase mb-1">
                         Point Value
                       </label>
                       <input
@@ -945,27 +945,27 @@ export const BombManagementSection: React.FC = () => {
                         required
                         value={formPoints}
                         onChange={(e) => setFormPoints(Number(e.target.value))}
-                        className="w-full px-3 py-2 bg-neutral-950 border border-neutral-700 rounded-xl text-neutral-100 font-mono text-xs focus:border-amber-400 focus:outline-none"
+                        className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 font-mono text-xs focus:border-cyan-400 focus:outline-none"
                       />
                       <div className="flex flex-wrap gap-1 mt-1.5">
                         <button
                           type="button"
                           onClick={() => setFormPoints(100)}
-                          className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-300 hover:text-white"
+                          className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 hover:text-white"
                         >
                           +100
                         </button>
                         <button
                           type="button"
                           onClick={() => setFormPoints(150)}
-                          className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-300 hover:text-white"
+                          className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 hover:text-white"
                         >
                           +150
                         </button>
                         <button
                           type="button"
                           onClick={() => setFormPoints(300)}
-                          className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-300 hover:text-white"
+                          className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 hover:text-white"
                         >
                           +300
                         </button>
@@ -980,7 +980,7 @@ export const BombManagementSection: React.FC = () => {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-bold text-neutral-300 uppercase mb-1">
+                      <label className="block text-xs font-bold text-slate-300 uppercase mb-1">
                         Spawn Weight (1 - 50)
                       </label>
                       <input
@@ -990,15 +990,15 @@ export const BombManagementSection: React.FC = () => {
                         required
                         value={formSpawnWeight}
                         onChange={(e) => setFormSpawnWeight(Number(e.target.value))}
-                        className="w-full px-3 py-2 bg-neutral-950 border border-neutral-700 rounded-xl text-neutral-100 font-mono text-xs focus:border-amber-400 focus:outline-none"
+                        className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 font-mono text-xs focus:border-cyan-400 focus:outline-none"
                       />
-                      <p className="text-[10px] text-neutral-500 mt-1">Relative random likelihood</p>
+                      <p className="text-[10px] text-slate-500 mt-1">Relative random likelihood</p>
                     </div>
                   </div>
 
                   {/* Theme Color */}
                   <div>
-                    <label className="block text-xs font-bold text-neutral-300 uppercase mb-1">
+                    <label className="block text-xs font-bold text-slate-300 uppercase mb-1">
                       Theme Color
                     </label>
                     <div className="flex items-center gap-2">
@@ -1006,13 +1006,13 @@ export const BombManagementSection: React.FC = () => {
                         type="color"
                         value={formColor}
                         onChange={(e) => setFormColor(e.target.value)}
-                        className="w-10 h-8 rounded-lg cursor-pointer bg-neutral-900 border border-neutral-700"
+                        className="w-10 h-8 rounded-lg cursor-pointer bg-slate-900 border border-slate-700"
                       />
                       <input
                         type="text"
                         value={formColor}
                         onChange={(e) => setFormColor(e.target.value)}
-                        className="w-28 px-2 py-1.5 bg-neutral-950 border border-neutral-700 rounded-xl text-neutral-100 font-mono text-xs"
+                        className="w-28 px-2 py-1.5 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 font-mono text-xs"
                       />
                       <div className="flex items-center gap-1 ml-2">
                         {PRESET_COLORS.map((c) => (
@@ -1030,13 +1030,13 @@ export const BombManagementSection: React.FC = () => {
 
                   {/* Cartoon Preset / Custom Image */}
                   <div>
-                    <label className="block text-xs font-bold text-neutral-300 uppercase mb-1">
+                    <label className="block text-xs font-bold text-slate-300 uppercase mb-1">
                       Visual Style & Preset
                     </label>
                     <select
                       value={formImagePreset}
                       onChange={(e) => setFormImagePreset(e.target.value as BombImagePreset)}
-                      className="w-full px-3 py-2 bg-neutral-950 border border-neutral-700 rounded-xl text-neutral-100 text-xs focus:border-amber-400 focus:outline-none"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 text-xs focus:border-cyan-400 focus:outline-none"
                     >
                       {IMAGE_PRESETS.map((p) => (
                         <option key={p.id} value={p.id}>
@@ -1046,9 +1046,9 @@ export const BombManagementSection: React.FC = () => {
                     </select>
 
                     {formImagePreset === 'custom' && (
-                      <div className="mt-2.5 p-3 rounded-xl bg-neutral-950 border border-neutral-800 space-y-2">
+                      <div className="mt-2.5 p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
                         <div className="flex items-center justify-between">
-                          <span className="text-[11px] text-neutral-400">Custom Image Asset:</span>
+                          <span className="text-[11px] text-slate-400">Custom Image Asset:</span>
                           <input
                             ref={imageFileInputRef}
                             type="file"
@@ -1060,14 +1060,14 @@ export const BombManagementSection: React.FC = () => {
                             type="button"
                             onClick={() => imageFileInputRef.current?.click()}
                             disabled={isUploadingAsset}
-                            className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs rounded-lg flex items-center gap-1.5 cursor-pointer"
+                            className="px-2.5 py-1 bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 text-xs rounded-lg flex items-center gap-1.5 cursor-pointer"
                           >
                             <Upload className="w-3 h-3" />
                             <span>{isUploadingAsset ? 'Uploading...' : 'Upload Image'}</span>
                           </button>
                         </div>
                         {formImageUrl && (
-                          <div className="text-[10px] font-mono text-neutral-400 truncate">
+                          <div className="text-[10px] font-mono text-slate-400 truncate">
                             URL: {formImageUrl}
                           </div>
                         )}
@@ -1077,7 +1077,7 @@ export const BombManagementSection: React.FC = () => {
 
                   {/* Burst Sound Effect */}
                   <div>
-                    <label className="block text-xs font-bold text-neutral-300 uppercase mb-1">
+                    <label className="block text-xs font-bold text-slate-300 uppercase mb-1">
                       Burst Sound Effect
                     </label>
                     <div className="flex items-center gap-2">
@@ -1088,7 +1088,7 @@ export const BombManagementSection: React.FC = () => {
                           setFormSoundPreset(val);
                           previewSound(val, formSoundUrl);
                         }}
-                        className="flex-1 px-3 py-2 bg-neutral-950 border border-neutral-700 rounded-xl text-neutral-100 text-xs focus:border-amber-400 focus:outline-none"
+                        className="flex-1 px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 text-xs focus:border-cyan-400 focus:outline-none"
                       >
                         {SOUND_PRESETS.map((s) => (
                           <option key={s.id} value={s.id}>
@@ -1100,18 +1100,18 @@ export const BombManagementSection: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => previewSound(formSoundPreset, formSoundUrl)}
-                        className="px-3 py-2 bg-neutral-800 hover:bg-neutral-700 border border-neutral-600 text-neutral-200 text-xs rounded-xl flex items-center gap-1.5 cursor-pointer"
+                        className="px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 text-xs rounded-xl flex items-center gap-1.5 cursor-pointer"
                         title="Test Sound"
                       >
-                        <Play className="w-3 h-3 text-amber-400" />
+                        <Play className="w-3 h-3 text-cyan-400" />
                         <span>Test</span>
                       </button>
                     </div>
 
                     {formSoundPreset === 'custom' && (
-                      <div className="mt-2.5 p-3 rounded-xl bg-neutral-950 border border-neutral-800 space-y-2">
+                      <div className="mt-2.5 p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
                         <div className="flex items-center justify-between">
-                          <span className="text-[11px] text-neutral-400">Custom Audio File:</span>
+                          <span className="text-[11px] text-slate-400">Custom Audio File:</span>
                           <input
                             ref={audioFileInputRef}
                             type="file"
@@ -1123,14 +1123,14 @@ export const BombManagementSection: React.FC = () => {
                             type="button"
                             onClick={() => audioFileInputRef.current?.click()}
                             disabled={isUploadingAsset}
-                            className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs rounded-lg flex items-center gap-1.5 cursor-pointer"
+                            className="px-2.5 py-1 bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 text-xs rounded-lg flex items-center gap-1.5 cursor-pointer"
                           >
                             <Upload className="w-3 h-3" />
                             <span>{isUploadingAsset ? 'Uploading...' : 'Upload Audio'}</span>
                           </button>
                         </div>
                         {formSoundUrl && (
-                          <div className="text-[10px] font-mono text-neutral-400 truncate">
+                          <div className="text-[10px] font-mono text-slate-400 truncate">
                             URL: {formSoundUrl}
                           </div>
                         )}
@@ -1145,20 +1145,20 @@ export const BombManagementSection: React.FC = () => {
                       id="formIsActive"
                       checked={formIsActive}
                       onChange={(e) => setFormIsActive(e.target.checked)}
-                      className="w-4 h-4 rounded text-amber-500 bg-neutral-950 border-neutral-700 focus:ring-0 cursor-pointer"
+                      className="w-4 h-4 rounded text-cyan-500 bg-slate-900 border-slate-700 focus:ring-0 cursor-pointer"
                     />
-                    <label htmlFor="formIsActive" className="text-xs text-neutral-200 cursor-pointer">
+                    <label htmlFor="formIsActive" className="text-xs text-slate-200 cursor-pointer">
                       Enable this bomb in active gameplay
                     </label>
                   </div>
                 </div>
 
                 {/* Right Interactive Live Preview Card */}
-                <div className="sm:col-span-1 flex flex-col items-center justify-center p-4 rounded-2xl bg-neutral-950/90 border border-neutral-800">
-                  <span className="text-[10px] font-bold text-amber-400 uppercase tracking-widest mb-3">
+                <div className="sm:col-span-1 flex flex-col items-center justify-center p-4 rounded-2xl bg-slate-950/90 border border-slate-800">
+                  <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-widest mb-3">
                     Live Preview
                   </span>
-                  <div className="p-4 rounded-2xl bg-[#0A0713] border border-amber-500/20 shadow-inner flex flex-col items-center">
+                  <div className="p-4 rounded-2xl bg-[#090D1A] border border-cyan-500/20 shadow-inner flex flex-col items-center">
                     <CartoonBombSvg
                       bomb={{
                         id: 'modal_preview',
@@ -1171,7 +1171,7 @@ export const BombManagementSection: React.FC = () => {
                       showBadge={true}
                     />
                   </div>
-                  <span className="text-xs font-bold text-neutral-200 mt-3 text-center">
+                  <span className="text-xs font-bold text-slate-200 mt-3 text-center">
                     {formName || 'Bomb Preview'}
                   </span>
                   <span
@@ -1185,16 +1185,16 @@ export const BombManagementSection: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => previewSound(formSoundPreset, formSoundUrl)}
-                    className="mt-4 px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-300 text-xs rounded-xl flex items-center gap-1.5 cursor-pointer"
+                    className="mt-4 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 text-xs rounded-xl flex items-center gap-1.5 cursor-pointer"
                   >
-                    <Volume2 className="w-3.5 h-3.5 text-amber-400" />
+                    <Volume2 className="w-3.5 h-3.5 text-cyan-400" />
                     <span>Play Sound</span>
                   </button>
                 </div>
               </div>
 
               {/* Form Footer */}
-              <div className="flex items-center justify-between pt-4 border-t border-neutral-800">
+              <div className="flex items-center justify-between pt-4 border-t border-slate-800">
                 {editingBomb ? (
                   <button
                     type="button"
@@ -1216,14 +1216,14 @@ export const BombManagementSection: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setIsModalOpen(false)}
-                    className="px-4 py-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-300 text-xs rounded-xl cursor-pointer"
+                    className="px-4 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 text-xs rounded-xl cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={isSavingBomb}
-                    className="px-5 py-2 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-[0_0_20px_rgba(245,158,11,0.3)] flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    className="px-5 py-2 bg-gradient-to-r from-cyan-500 via-cyan-400 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-slate-950 font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-[0_0_20px_rgba(6,182,212,0.3)] flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                   >
                     {isSavingBomb ? (
                       <RefreshCw className="w-3.5 h-3.5 animate-spin" />
@@ -1241,7 +1241,7 @@ export const BombManagementSection: React.FC = () => {
       {/* 6. Dedicated Delete Confirmation Modal */}
       {confirmDeleteBomb && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-          <div className="bg-[#120E1E] border border-rose-500/30 rounded-2xl max-w-md w-full p-6 shadow-2xl relative overflow-hidden">
+          <div className="bg-[#0F1B2E] border border-rose-500/30 rounded-2xl max-w-md w-full p-6 shadow-2xl relative overflow-hidden">
             <div className="absolute -right-10 -top-10 w-32 h-32 bg-rose-500/10 rounded-full blur-2xl pointer-events-none" />
 
             <div className="flex items-start gap-4">
@@ -1249,34 +1249,34 @@ export const BombManagementSection: React.FC = () => {
                 <Trash2 className="w-6 h-6" />
               </div>
               <div className="flex-1 min-w-0">
-                <h3 className="text-lg font-bold text-neutral-100 font-['Cinzel',serif] tracking-wide">
+                <h3 className="text-lg font-bold text-slate-100 tracking-wide">
                   Delete Bomb Configuration
                 </h3>
-                <p className="text-xs text-neutral-400 mt-1">
+                <p className="text-xs text-slate-400 mt-1">
                   Are you sure you want to remove <span className="text-rose-300 font-semibold font-mono">"{confirmDeleteBomb.name}"</span>?
                 </p>
               </div>
             </div>
 
             {/* Bomb Mini Preview */}
-            <div className="mt-4 p-3 rounded-xl bg-neutral-950/70 border border-neutral-800 flex items-center gap-3">
-              <div className="p-1.5 rounded-lg bg-neutral-900 border border-neutral-800 shrink-0">
+            <div className="mt-4 p-3 rounded-xl bg-slate-950/70 border border-slate-800 flex items-center gap-3">
+              <div className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 shrink-0">
                 <CartoonBombSvg bomb={confirmDeleteBomb} size={48} showBadge={false} />
               </div>
               <div className="flex-1 text-xs">
-                <div className="font-bold text-neutral-200">{confirmDeleteBomb.name}</div>
-                <div className="text-neutral-400 text-[11px] mt-0.5">
+                <div className="font-bold text-slate-200">{confirmDeleteBomb.name}</div>
+                <div className="text-slate-400 text-[11px] mt-0.5">
                   Value:{' '}
                   <span className="font-mono text-emerald-400">
                     {confirmDeleteBomb.points > 0 ? `+${confirmDeleteBomb.points}` : confirmDeleteBomb.points} pts
                   </span>{' '}
-                  • Weight: <span className="font-mono text-amber-300">{confirmDeleteBomb.spawnWeight}</span>
+                  • Weight: <span className="font-mono text-cyan-300">{confirmDeleteBomb.spawnWeight}</span>
                 </div>
               </div>
             </div>
 
-            <div className="mt-4 p-3 rounded-xl bg-amber-500/5 border border-amber-500/20 text-[11px] text-amber-300/90 leading-relaxed flex items-start gap-2">
-              <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <div className="mt-4 p-3 rounded-xl bg-cyan-500/5 border border-cyan-500/20 text-[11px] text-cyan-300/90 leading-relaxed flex items-start gap-2">
+              <ShieldAlert className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
               <span>
                 {confirmDeleteBomb.isDefault
                   ? 'This is a default bomb type. It will be safely disabled and hidden from new games without affecting historical player scores.'
@@ -1284,12 +1284,12 @@ export const BombManagementSection: React.FC = () => {
               </span>
             </div>
 
-            <div className="flex items-center justify-end gap-3 mt-6 pt-4 border-t border-neutral-800">
+            <div className="flex items-center justify-end gap-3 mt-6 pt-4 border-t border-slate-800">
               <button
                 type="button"
                 disabled={deletingBombId !== null}
                 onClick={() => setConfirmDeleteBomb(null)}
-                className="px-4 py-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-300 text-xs rounded-xl cursor-pointer disabled:opacity-50 transition-all"
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 text-xs rounded-xl cursor-pointer disabled:opacity-50 transition-all"
               >
                 Cancel
               </button>

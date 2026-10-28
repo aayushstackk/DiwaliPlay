@@ -79,6 +79,7 @@ export interface StorageAdapter {
   updateUser(id: string, updates: Partial<User>): Promise<User | undefined>;
   getAllUsers(): Promise<User[]>;
   deleteUser(id: string): Promise<boolean>;
+  deleteAllUsers(): Promise<number>;
 
   // --------------------------------------------------------------------------
   // Game Codes
@@ -112,6 +113,7 @@ export interface StorageAdapter {
   abandonSession(sessionId: string, reason?: string): Promise<GameSession | undefined>;
   getAllSessions(): Promise<GameSession[]>;
   deleteSession(sessionId: string): Promise<boolean>;
+  deleteAllSessions(): Promise<number>;
 
   // --------------------------------------------------------------------------
   // Leaderboard & Analytics

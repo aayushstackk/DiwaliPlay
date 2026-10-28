@@ -800,10 +800,88 @@ apiRouter.get('/admin/users', authenticateAdmin, async (_req: Request, res: Resp
   }
 });
 
+apiRouter.delete('/admin/users/:id', authenticateAdmin, async (req: Request, res: Response) => {
+  try {
+    const userId = req.params.id;
+    const user = await db.findUserById(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Player record not found.' });
+    }
+    const deleted = await db.deleteUser(userId);
+    if (req.adminUser) {
+      await db.recordAuditLog({
+        adminId: req.adminUser.id,
+        username: req.adminUser.username,
+        action: 'DELETE_USER',
+        details: { userId, userName: user.name, mobile: user.mobileNumber }
+      });
+    }
+    return res.json({ success: deleted, message: 'Player registration deleted successfully.' });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+apiRouter.delete('/admin/users', authenticateAdmin, async (req: Request, res: Response) => {
+  try {
+    const count = await db.deleteAllUsers();
+    if (req.adminUser) {
+      await db.recordAuditLog({
+        adminId: req.adminUser.id,
+        username: req.adminUser.username,
+        action: 'DELETE_ALL_USERS',
+        details: { deletedCount: count }
+      });
+    }
+    return res.json({ success: true, count, message: `Successfully deleted ${count} player registrations.` });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 apiRouter.get('/admin/sessions', authenticateAdmin, async (_req: Request, res: Response) => {
   try {
     const sessions = await db.getAllSessions();
     return res.json({ success: true, sessions, count: sessions.length });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+apiRouter.delete('/admin/sessions/:id', authenticateAdmin, async (req: Request, res: Response) => {
+  try {
+    const sessionId = req.params.id;
+    const session = await db.getSessionById(sessionId);
+    if (!session) {
+      return res.status(404).json({ success: false, message: 'Session record not found.' });
+    }
+    const deleted = await db.deleteSession(sessionId);
+    if (req.adminUser) {
+      await db.recordAuditLog({
+        adminId: req.adminUser.id,
+        username: req.adminUser.username,
+        action: 'DELETE_SESSION',
+        details: { sessionId, score: session.score, userId: session.userId }
+      });
+    }
+    return res.json({ success: deleted, message: 'Game session deleted successfully.' });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+apiRouter.delete('/admin/sessions', authenticateAdmin, async (req: Request, res: Response) => {
+  try {
+    const count = await db.deleteAllSessions();
+    if (req.adminUser) {
+      await db.recordAuditLog({
+        adminId: req.adminUser.id,
+        username: req.adminUser.username,
+        action: 'DELETE_ALL_SESSIONS',
+        details: { deletedCount: count }
+      });
+    }
+    return res.json({ success: true, count, message: `Successfully deleted ${count} game sessions.` });
   } catch (err: any) {
     return res.status(500).json({ success: false, message: err.message });
   }

@@ -142,10 +142,6 @@ export const FastMovementTestModal: React.FC<FastMovementTestModalProps> = ({
       {/* Benchmark Summary Bar */}
       <div className="flex items-center justify-between bg-neutral-900/90 border border-neutral-800 rounded-xl px-4 py-2.5 mb-4 font-mono text-xs">
         <div className="flex items-center gap-2">
-          <span className="text-neutral-400">Max Speed Recorded:</span>
-          <span className="text-amber-300 font-bold">{metrics.maxSpeedRecorded} px/s</span>
-        </div>
-        <div className="flex items-center gap-2">
           <span className="text-neutral-400">Total Tracking Losses:</span>
           <span
             className={`font-bold ${

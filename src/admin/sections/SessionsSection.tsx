@@ -5,12 +5,17 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { GameSession, User } from '../../types/backend';
+import { adminApi } from '../../services/api';
 import {
   Search,
   ChevronLeft,
   ChevronRight,
   Camera,
-  X
+  X,
+  Trash2,
+  AlertTriangle,
+  CheckCircle2,
+  AlertCircle
 } from 'lucide-react';
 
 interface SessionsSectionProps {
@@ -18,13 +23,15 @@ interface SessionsSectionProps {
   users: User[];
   isLoading: boolean;
   error: string | null;
+  onRefresh?: () => void;
 }
 
 export const SessionsSection: React.FC<SessionsSectionProps> = ({
   sessions,
   users,
   isLoading,
-  error
+  error,
+  onRefresh
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'newest' | 'oldest'>('newest');
@@ -36,6 +43,13 @@ export const SessionsSection: React.FC<SessionsSectionProps> = ({
   } | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 12;
+
+  // Deletion States
+  const [sessionToDelete, setSessionToDelete] = useState<GameSession | null>(null);
+  const [isDeletingSingle, setIsDeletingSingle] = useState(false);
+  const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
+  const [isDeletingAll, setIsDeletingAll] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Escape key listener for photo modal
   useEffect(() => {
@@ -59,55 +73,48 @@ export const SessionsSection: React.FC<SessionsSectionProps> = ({
       const d = new Date(dateString);
       if (isNaN(d.getTime())) return '—';
       return d.toLocaleString([], {
-        day: '2-digit',
         month: 'short',
-        year: 'numeric',
+        day: 'numeric',
         hour: '2-digit',
         minute: '2-digit',
-        second: '2-digit',
-        hour12: true
+        second: '2-digit'
       });
     } catch {
       return '—';
     }
   };
 
-  // Build userId -> userName map
+  // Pre-index users for instant O(1) lookup by ID
   const userMap = useMemo(() => {
     const map = new Map<string, string>();
-    for (const u of users) {
-      map.set(u.id, u.name);
-    }
+    users.forEach((u) => {
+      if (u.id) map.set(u.id, u.name);
+    });
     return map;
   }, [users]);
 
+  // Filter and sort sessions
   const filteredSessions = useMemo(() => {
-    const list = sessions.filter((s) => {
-      // Search query
+    const result = sessions.filter((s) => {
       if (searchQuery.trim()) {
         const query = searchQuery.trim().toLowerCase();
-        const userName = (userMap.get(s.userId) || '').toLowerCase();
+        const playerName = (userMap.get(s.userId) || '').toLowerCase();
         const codeMatch = (s.code || '').toLowerCase().includes(query);
+        const nameMatch = playerName.includes(query);
         const idMatch = (s.id || '').toLowerCase().includes(query);
-        const nameMatch = userName.includes(query);
-
-        if (!codeMatch && !idMatch && !nameMatch) return false;
+        if (!nameMatch && !codeMatch && !idMatch) return false;
       }
-
       return true;
     });
 
-    // Sort by session start/creation timestamp
-    return list.sort((a, b) => {
+    result.sort((a, b) => {
       const timeA = new Date(a.startTime || 0).getTime();
       const timeB = new Date(b.startTime || 0).getTime();
-      if (sortBy === 'newest') {
-        return timeB - timeA;
-      } else {
-        return timeA - timeB;
-      }
+      return sortBy === 'newest' ? timeB - timeA : timeA - timeB;
     });
-  }, [sessions, searchQuery, userMap, sortBy]);
+
+    return result;
+  }, [sessions, sortBy, searchQuery, userMap]);
 
   const totalPages = Math.max(1, Math.ceil(filteredSessions.length / pageSize));
   const paginatedSessions = useMemo(() => {
@@ -115,14 +122,96 @@ export const SessionsSection: React.FC<SessionsSectionProps> = ({
     return filteredSessions.slice(start, start + pageSize);
   }, [filteredSessions, currentPage, pageSize]);
 
+  // Handle Single Session Deletion
+  const handleConfirmDeleteSingle = async () => {
+    if (!sessionToDelete) return;
+    setIsDeletingSingle(true);
+    setFeedback(null);
+
+    try {
+      const res = await adminApi.deleteSession(sessionToDelete.id);
+      if (res.success) {
+        setFeedback({
+          type: 'success',
+          message: 'Game session record deleted successfully.'
+        });
+        setSessionToDelete(null);
+        if (onRefresh) onRefresh();
+      } else {
+        setFeedback({ type: 'error', message: res.message || 'Failed to delete session.' });
+      }
+    } catch (err: any) {
+      setFeedback({
+        type: 'error',
+        message: err.data?.message || err.message || 'Error deleting game session.'
+      });
+    } finally {
+      setIsDeletingSingle(false);
+    }
+  };
+
+  // Handle Delete All Sessions
+  const handleConfirmDeleteAll = async () => {
+    setIsDeletingAll(true);
+    setFeedback(null);
+
+    try {
+      const res = await adminApi.deleteAllSessions();
+      if (res.success) {
+        setFeedback({
+          type: 'success',
+          message: res.message || `All ${res.count ?? ''} game sessions deleted successfully.`
+        });
+        setShowDeleteAllModal(false);
+        if (onRefresh) onRefresh();
+      } else {
+        setFeedback({ type: 'error', message: res.message || 'Failed to delete all sessions.' });
+      }
+    } catch (err: any) {
+      setFeedback({
+        type: 'error',
+        message: err.data?.message || err.message || 'Error deleting all game sessions.'
+      });
+    } finally {
+      setIsDeletingAll(false);
+    }
+  };
+
   return (
     <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto">
-      {/* Search & Filter Controls */}
-      <div className="bg-[#14101F]/70 border border-amber-500/15 rounded-2xl p-4 flex flex-col md:flex-row gap-4 justify-between items-stretch md:items-center">
+      {/* Feedback Banner */}
+      {feedback && (
+        <div
+          className={`p-3.5 rounded-xl border text-xs flex items-center justify-between gap-3 ${
+            feedback.type === 'success'
+              ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-200'
+              : 'bg-rose-950/60 border-rose-500/40 text-rose-200'
+          }`}
+        >
+          <div className="flex items-center gap-2.5">
+            {feedback.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            )}
+            <span>{feedback.message}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFeedback(null)}
+            className="p-1 hover:opacity-75 transition-opacity"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Controls & Filter Bar */}
+      <div className="bg-[#0F1B2E]/90 border border-slate-800 rounded-2xl p-4 flex flex-col md:flex-row gap-4 justify-between items-stretch md:items-center shadow-sm">
         {/* Search Input */}
         <div className="relative flex-1 max-w-md">
-          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-neutral-500">
-            <Search className="w-4 h-4 text-amber-400/80" />
+          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+            <Search className="w-4 h-4 text-cyan-400/80" />
           </div>
           <input
             type="text"
@@ -131,121 +220,145 @@ export const SessionsSection: React.FC<SessionsSectionProps> = ({
               setSearchQuery(e.target.value);
               setCurrentPage(1);
             }}
-            placeholder="Search by player, code, or session ID..."
-            className="w-full pl-10 pr-4 py-2 bg-neutral-900/90 border border-neutral-700 focus:border-amber-400 rounded-xl text-neutral-100 text-xs placeholder-neutral-500 transition-colors outline-none"
+            placeholder="Search by player, code (#8536), or session ID..."
+            className="w-full pl-10 pr-4 py-2 bg-slate-900/90 border border-slate-700 focus:border-cyan-400 rounded-xl text-slate-100 text-xs placeholder-slate-500 transition-colors outline-none"
           />
         </div>
 
-        {/* Sort By Dropdown Control */}
-        <div className="flex items-center gap-2 self-start md:self-auto">
-          <label htmlFor="session-sort" className="text-xs font-semibold text-neutral-400 whitespace-nowrap">
-            Sort By:
-          </label>
-          <select
-            id="session-sort"
-            value={sortBy}
-            onChange={(e) => {
-              setSortBy(e.target.value as 'newest' | 'oldest');
-              setCurrentPage(1);
-            }}
-            className="px-3.5 py-2 bg-neutral-900 border border-neutral-700 focus:border-amber-400 rounded-xl text-neutral-100 text-xs font-medium transition-colors outline-none cursor-pointer"
-          >
-            <option value="newest">Newest First</option>
-            <option value="oldest">Oldest First</option>
-          </select>
+        {/* Right Action Controls: Sort + Delete All */}
+        <div className="flex items-center gap-3 self-start md:self-auto">
+          {/* Sort Controls */}
+          <div className="flex items-center gap-1 p-1 bg-slate-900/90 rounded-xl border border-slate-800">
+            <button
+              type="button"
+              onClick={() => {
+                setSortBy('newest');
+                setCurrentPage(1);
+              }}
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors cursor-pointer ${
+                sortBy === 'newest'
+                  ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-500/40 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Newest First
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSortBy('oldest');
+                setCurrentPage(1);
+              }}
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors cursor-pointer ${
+                sortBy === 'oldest'
+                  ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-500/40 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Oldest First
+            </button>
+          </div>
+
+          {/* Delete All Sessions Button */}
+          {sessions.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowDeleteAllModal(true)}
+              className="px-3.5 py-2 rounded-xl bg-rose-500/10 border border-rose-500/30 hover:bg-rose-500/20 text-rose-300 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+              <span>Delete All Sessions</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Sessions Table */}
-      <div className="bg-[#14101F]/70 border border-amber-500/15 rounded-2xl overflow-hidden shadow-xl">
+      {/* Sessions Table Card */}
+      <div className="bg-[#0F1B2E]/90 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
         {isLoading ? (
-          <div className="p-12 text-center text-neutral-400 text-xs flex flex-col items-center">
-            <div className="w-8 h-8 border-2 border-amber-400 border-t-transparent rounded-full animate-spin mb-3" />
+          <div className="p-12 text-center text-slate-400 text-xs flex flex-col items-center">
+            <div className="w-8 h-8 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin mb-3 shadow-[0_0_15px_rgba(6,182,212,0.4)]" />
             <span>Loading gameplay sessions...</span>
           </div>
         ) : error ? (
-          <div className="p-8 text-center text-red-300 text-xs">
+          <div className="p-8 text-center text-rose-300 text-xs">
             {error}
           </div>
         ) : filteredSessions.length === 0 ? (
-          <div className="p-12 text-center text-neutral-500 text-xs">
+          <div className="p-12 text-center text-slate-500 text-xs">
             No gameplay sessions match the selected filters.
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
-                <tr className="border-b border-amber-500/15 bg-neutral-950/60 text-neutral-400 uppercase tracking-wider text-[10px]">
+                <tr className="border-b border-cyan-500/15 bg-slate-950/60 text-slate-400 uppercase tracking-wider text-[10px]">
                   <th className="py-3.5 px-4 font-semibold">Player</th>
                   <th className="py-3.5 px-4 font-semibold">Code</th>
                   <th className="py-3.5 px-4 font-semibold">Start Time</th>
                   <th className="py-3.5 px-4 font-semibold">End Time</th>
                   <th className="py-3.5 px-4 font-semibold text-right">Score</th>
                   <th className="py-3.5 px-4 font-semibold text-right">Crackers</th>
-                  <th className="py-3.5 px-4 font-semibold text-right">Max Speed</th>
                   <th className="py-3.5 px-4 font-semibold text-right">Combos</th>
                   <th className="py-3.5 px-4 font-semibold text-right">Punches</th>
                   <th className="py-3.5 px-4 font-semibold text-center">Photo</th>
+                  <th className="py-3.5 px-4 font-semibold text-center w-16">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-800/60">
+              <tbody className="divide-y divide-slate-800/60">
                 {paginatedSessions.map((session) => {
                   const playerName = userMap.get(session.userId) || 'Anonymous Player';
 
                   return (
                     <tr
                       key={session.id}
-                      className="hover:bg-neutral-900/50 transition-colors"
+                      className="hover:bg-slate-900/50 transition-colors"
                     >
-                      <td className="py-3 px-4 font-medium text-neutral-100">
+                      <td className="py-3 px-4 font-medium text-slate-100">
                         <div className="font-semibold">{playerName}</div>
-                        <div className="text-[10px] text-neutral-500 font-mono truncate max-w-[130px]">
+                        <div className="text-[10px] text-slate-500 font-mono truncate max-w-[130px]">
                           {session.id}
                         </div>
                       </td>
 
-                      <td className="py-3 px-4 text-neutral-300">
-                        <span className="font-mono text-amber-300/90 font-bold text-xs">
+                      <td className="py-3 px-4 text-slate-300">
+                        <span className="font-mono text-cyan-300 font-bold text-xs">
                           #{session.code}
                         </span>
                       </td>
 
-                      <td className="py-3 px-4 text-neutral-300 font-mono text-[11px] whitespace-nowrap">
+                      <td className="py-3 px-4 text-slate-300 font-mono text-[11px] whitespace-nowrap">
                         {formatTimestamp(session.startTime)}
                       </td>
 
                       <td className="py-3 px-4 text-[11px] whitespace-nowrap">
                         {session.status === 'PLAYING' || session.status === 'INITIALIZED' ? (
-                          <span className="inline-flex items-center gap-1.5 text-amber-300 font-medium">
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                          <span className="inline-flex items-center gap-1.5 text-cyan-300 font-medium">
+                            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
                             <span>In Progress</span>
                           </span>
                         ) : session.endTime ? (
-                          <span className="text-neutral-300 font-mono">
+                          <span className="text-slate-300 font-mono">
                             {formatTimestamp(session.endTime)}
                           </span>
                         ) : (
-                          <span className="text-neutral-500 font-mono">—</span>
+                          <span className="text-slate-500 font-mono">—</span>
                         )}
                       </td>
 
-                      <td className="py-3 px-4 text-right font-mono font-bold text-amber-200 text-sm">
+                      <td className="py-3 px-4 text-right font-mono font-bold text-cyan-200 text-sm">
                         {session.score}
                       </td>
 
-                      <td className="py-3 px-4 text-right font-mono text-neutral-300">
+                      <td className="py-3 px-4 text-right font-mono text-slate-300">
                         {session.crackerCount || 0}
                       </td>
 
-                      <td className="py-3 px-4 text-right font-mono text-neutral-300">
-                        {session.maxSpeed || 0} px/s
-                      </td>
-
-                      <td className="py-3 px-4 text-right font-mono text-neutral-300">
+                      <td className="py-3 px-4 text-right font-mono text-slate-300">
                         {session.comboCount || 0}
                       </td>
 
-                      <td className="py-3 px-4 text-right font-mono text-neutral-300">
+                      <td className="py-3 px-4 text-right font-mono text-slate-300">
                         {session.punchCount || 0}
                       </td>
 
@@ -261,7 +374,7 @@ export const SessionsSection: React.FC<SessionsSectionProps> = ({
                                 code: session.code
                               })
                             }
-                            className="group relative w-10 h-10 rounded-lg overflow-hidden border border-amber-500/30 hover:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-400/50 transition-all cursor-pointer shadow-sm hover:scale-105 active:scale-95 mx-auto block bg-neutral-900"
+                            className="group relative w-10 h-10 rounded-lg overflow-hidden border border-cyan-500/30 hover:border-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-400/50 transition-all cursor-pointer shadow-sm hover:scale-105 active:scale-95 mx-auto block bg-slate-900"
                             title={`Click to preview photo for ${playerName}`}
                           >
                             <img
@@ -272,11 +385,23 @@ export const SessionsSection: React.FC<SessionsSectionProps> = ({
                             />
                           </button>
                         ) : (
-                          <div className="inline-flex items-center gap-1 px-2 py-1 rounded bg-neutral-900/60 border border-neutral-800 text-neutral-500 text-[11px] italic">
-                            <Camera className="w-3 h-3 text-neutral-600 shrink-0" />
+                          <div className="inline-flex items-center gap-1 px-2 py-1 rounded bg-slate-900/60 border border-slate-800 text-slate-500 text-[11px] italic">
+                            <Camera className="w-3 h-3 text-slate-600 shrink-0" />
                             <span>No photo</span>
                           </div>
                         )}
+                      </td>
+
+                      {/* Individual Delete Button */}
+                      <td className="py-3 px-4 text-center">
+                        <button
+                          type="button"
+                          onClick={() => setSessionToDelete(session)}
+                          className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 hover:border-rose-500/50 text-slate-400 hover:text-rose-400 transition-colors"
+                          title="Delete session record"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </td>
                     </tr>
                   );
@@ -288,18 +413,18 @@ export const SessionsSection: React.FC<SessionsSectionProps> = ({
 
         {/* Pagination Footer */}
         {filteredSessions.length > 0 && (
-          <div className="p-4 border-t border-amber-500/15 bg-neutral-950/40 flex items-center justify-between text-xs text-neutral-400">
+          <div className="p-4 border-t border-slate-800 bg-slate-950/40 flex items-center justify-between text-xs text-slate-400">
             <div>
               Showing{' '}
-              <span className="font-semibold text-neutral-200">
+              <span className="font-semibold text-slate-200">
                 {(currentPage - 1) * pageSize + 1}
               </span>{' '}
               to{' '}
-              <span className="font-semibold text-neutral-200">
+              <span className="font-semibold text-slate-200">
                 {Math.min(currentPage * pageSize, filteredSessions.length)}
               </span>{' '}
               of{' '}
-              <span className="font-semibold text-neutral-200">
+              <span className="font-semibold text-slate-200">
                 {filteredSessions.length}
               </span>{' '}
               sessions
@@ -309,20 +434,20 @@ export const SessionsSection: React.FC<SessionsSectionProps> = ({
               <button
                 disabled={currentPage <= 1}
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                className="p-1.5 rounded-lg bg-neutral-900 border border-neutral-800 hover:border-amber-500/30 text-neutral-300 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 hover:border-cyan-500/30 text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
                 aria-label="Previous page"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
 
-              <span className="px-2 font-mono text-neutral-300">
+              <span className="px-2 font-mono text-slate-300">
                 {currentPage} / {totalPages}
               </span>
 
               <button
                 disabled={currentPage >= totalPages}
                 onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                className="p-1.5 rounded-lg bg-neutral-900 border border-neutral-800 hover:border-amber-500/30 text-neutral-300 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 hover:border-cyan-500/30 text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
                 aria-label="Next page"
               >
                 <ChevronRight className="w-4 h-4" />
@@ -332,6 +457,118 @@ export const SessionsSection: React.FC<SessionsSectionProps> = ({
         )}
       </div>
 
+      {/* Confirmation Modal: Delete Single Session */}
+      {sessionToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-[#0F1B2E] border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400 shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-100">
+                  Delete Game Session
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Are you sure you want to delete this session record? Unrelated player registrations will not be affected.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 text-xs space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Player:</span>
+                <span className="font-bold text-slate-100">
+                  {userMap.get(sessionToDelete.userId) || 'Anonymous'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Final Score:</span>
+                <span className="font-mono text-cyan-300 font-bold">{sessionToDelete.score} pts</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Code / Session ID:</span>
+                <span className="font-mono text-slate-300">#{sessionToDelete.code}</span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setSessionToDelete(null)}
+                disabled={isDeletingSingle}
+                className="px-4 py-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 text-xs font-semibold transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteSingle}
+                disabled={isDeletingSingle}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-[0_0_15px_rgba(244,63,94,0.3)] transition-all disabled:opacity-50"
+              >
+                {isDeletingSingle ? (
+                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Trash2 className="w-3.5 h-3.5" />
+                )}
+                <span>{isDeletingSingle ? 'Deleting...' : 'Confirm Delete'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal: Delete ALL Sessions */}
+      {showDeleteAllModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-[#0F1B2E] border border-rose-500/40 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-rose-200">
+                  Delete All Game Sessions?
+                </h3>
+                <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                  This will permanently clear <strong className="text-slate-200">all {sessions.length} game sessions and match scores</strong>. Registered player accounts will remain intact.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-rose-950/30 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+              <span>This action is permanent and cannot be undone.</span>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowDeleteAllModal(false)}
+                disabled={isDeletingAll}
+                className="px-4 py-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 text-xs font-semibold transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteAll}
+                disabled={isDeletingAll}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-[0_0_20px_rgba(244,63,94,0.4)] transition-all disabled:opacity-50"
+              >
+                {isDeletingAll ? (
+                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Trash2 className="w-3.5 h-3.5" />
+                )}
+                <span>{isDeletingAll ? 'Deleting All...' : 'Yes, Delete All Sessions'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Photo Preview Modal */}
       {selectedPhoto && (
         <div
@@ -339,34 +576,34 @@ export const SessionsSection: React.FC<SessionsSectionProps> = ({
           onClick={() => setSelectedPhoto(null)}
         >
           <div
-            className="bg-[#14101F] border border-amber-500/30 rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl relative"
+            className="bg-[#0F1B2E] border border-cyan-500/30 rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl relative"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="p-4 border-b border-neutral-800 flex items-center justify-between">
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-bold text-neutral-100 font-['Cinzel',serif] flex items-center gap-2">
-                  <Camera className="w-4 h-4 text-amber-400" />
+                <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                  <Camera className="w-4 h-4 text-cyan-400" />
                   <span>Captured Player Photo</span>
                 </h3>
-                <p className="text-[11px] text-amber-300/80 mt-0.5">
+                <p className="text-[11px] text-cyan-300/80 mt-0.5">
                   {selectedPhoto.playerName} {selectedPhoto.code ? `(Code: #${selectedPhoto.code})` : ''} · {selectedPhoto.score} Points
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setSelectedPhoto(null)}
-                className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800 transition-colors cursor-pointer"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors cursor-pointer"
                 title="Close photo preview"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-4 bg-neutral-950 flex items-center justify-center max-h-[70vh] overflow-hidden">
+            <div className="p-4 bg-slate-950 flex items-center justify-center max-h-[70vh] overflow-hidden">
               <img
                 src={selectedPhoto.url}
                 alt={`Photo for ${selectedPhoto.playerName}`}
-                className="max-h-[60vh] w-auto rounded-xl object-contain border border-neutral-800 shadow-lg"
+                className="max-h-[60vh] w-auto rounded-xl object-contain border border-slate-800 shadow-lg"
               />
             </div>
           </div>

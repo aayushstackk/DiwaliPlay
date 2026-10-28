@@ -26,6 +26,7 @@ import {
 } from '../../src/types/backend';
 import { StorageAdapter, CompleteSessionParams } from './types';
 import { DEFAULT_BOMB_CONFIGS, DEFAULT_BOMB_SETTINGS } from './defaultBombs';
+import { DEFAULT_AUDIO_SETTINGS } from '../../src/utils/audioDefaults';
 
 const DEFAULT_SETTINGS: SystemSettings = {
   allowMultiplePlaysPerUser: false,
@@ -43,7 +44,8 @@ const DEFAULT_SETTINGS: SystemSettings = {
   wallpaperEnabled: true,
   gameplayMode: 'camera',
   targetScoreEnabled: false,
-  targetScore: 5000
+  targetScore: 5000,
+  audioSettings: DEFAULT_AUDIO_SETTINGS
 };
 
 export class MongoStorageAdapter implements StorageAdapter {
@@ -288,8 +290,15 @@ export class MongoStorageAdapter implements StorageAdapter {
   }
 
   public async deleteUser(id: string): Promise<boolean> {
+    await this.codesCol.deleteMany({ userId: id });
     const res = await this.usersCol.deleteOne({ id });
     return res.deletedCount > 0;
+  }
+
+  public async deleteAllUsers(): Promise<number> {
+    await this.codesCol.deleteMany({});
+    const res = await this.usersCol.deleteMany({});
+    return res.deletedCount || 0;
   }
 
   // --------------------------------------------------------------------------
@@ -545,6 +554,11 @@ export class MongoStorageAdapter implements StorageAdapter {
   public async deleteSession(sessionId: string): Promise<boolean> {
     const res = await this.sessionsCol.deleteOne({ id: sessionId });
     return res.deletedCount > 0;
+  }
+
+  public async deleteAllSessions(): Promise<number> {
+    const res = await this.sessionsCol.deleteMany({});
+    return res.deletedCount || 0;
   }
 
   // --------------------------------------------------------------------------

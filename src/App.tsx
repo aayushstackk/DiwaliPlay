@@ -43,6 +43,11 @@ export default function App() {
     triggerBombBurstParticles,
     playBombBurstSound,
     playCountdownBeep,
+    playCountdownStep,
+    playSfx,
+    startBgm,
+    stopBgm,
+    applyAudioSettings,
     playGameOverFanfare,
     isCrackerModeActive,
     setIsCrackerModeActive,
@@ -132,6 +137,25 @@ export default function App() {
       });
   }, [phase]);
 
+  // Synchronize audio settings from branding / backend to SoundEngine
+  useEffect(() => {
+    if (branding.audioSettings) {
+      applyAudioSettings(branding.audioSettings);
+    }
+  }, [branding.audioSettings, applyAudioSettings]);
+
+  // Background Music Controller: Play during PLAYING phase, stop otherwise
+  useEffect(() => {
+    if (phase === 'PLAYING') {
+      startBgm();
+    } else {
+      stopBgm();
+    }
+    return () => {
+      stopBgm();
+    };
+  }, [phase, startBgm, stopBgm]);
+
   // 1-second hold detection logic for IDLE phase
   useEffect(() => {
     if (phase !== 'IDLE') return;
@@ -174,17 +198,17 @@ export default function App() {
   const startCountdownSequence = () => {
     setCountdownValue(3);
     setPhase('COUNTDOWN');
-    playCountdownBeep(false);
+    playCountdownStep(3);
 
     let currentStep = 3;
     const stepInterval = setInterval(() => {
       currentStep -= 1;
       if (currentStep > 0) {
         setCountdownValue(currentStep);
-        playCountdownBeep(false);
+        playCountdownStep(currentStep as 3 | 2 | 1);
       } else if (currentStep === 0) {
         setCountdownValue('GO!');
-        playCountdownBeep(true);
+        playCountdownStep('GO');
       } else {
         clearInterval(stepInterval);
         setCountdownValue(null);
@@ -261,7 +285,7 @@ export default function App() {
   const handlePhotoCaptured = useCallback(
     (photo: string | null) => {
       setCapturedPhoto(photo);
-      playGameOverFanfare();
+      playSfx('game_over');
 
       // Persist session completion to backend with captured photo
       const currentTargetSession = activeSessionIdRef.current || activeSessionId;
@@ -288,16 +312,16 @@ export default function App() {
 
       setPhase('GAME_OVER');
     },
-    [playGameOverFanfare, activeSessionId, gameScore, branding]
+    [playSfx, activeSessionId, gameScore, branding]
   );
 
   const handlePlayTick = useCallback(() => {
-    playCountdownBeep(false);
-  }, [playCountdownBeep]);
+    playCountdownStep(1);
+  }, [playCountdownStep]);
 
   const handlePlayCapture = useCallback(() => {
-    playCountdownBeep(true);
-  }, [playCountdownBeep]);
+    playSfx('photo_shutter');
+  }, [playSfx]);
 
   // Restart / Return to Home Handler: Cleans state completely for the next player
   const handleResetToHome = useCallback(() => {
@@ -322,6 +346,7 @@ export default function App() {
     resetStats();
     resetGameScore();
     setIsCrackerModeActive(false);
+    stopBgm();
 
     // Stop webcam stream completely
     stopCamera();
@@ -334,7 +359,7 @@ export default function App() {
 
     setPhase('IDLE');
     branding.advanceWallpaper();
-  }, [stopCamera, resetStats, resetGameScore, setIsCrackerModeActive, branding]);
+  }, [stopCamera, stopBgm, resetStats, resetGameScore, setIsCrackerModeActive, branding]);
 
   // Target Achieved Celebration Trigger: triggers strictly ONCE per game round
   useEffect(() => {
@@ -724,6 +749,7 @@ export default function App() {
           isTrial={activeCode === TRIAL_CODE || (activeSessionIdRef.current?.startsWith('trial_') ?? false)}
           targetScoreEnabled={branding.targetScoreEnabled}
           targetScore={branding.targetScore}
+          achievementTiers={branding.achievementTiers}
         />
       )}
     </div>

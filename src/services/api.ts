@@ -299,10 +299,46 @@ async login(req: AdminLoginRequest): Promise<AdminLoginResponse> {
   },
 
   /**
+   * Delete an individual player registration.
+   */
+  async deleteUser(userId: string): Promise<{ success: boolean; message: string }> {
+    return request(`/admin/users/${userId}`, {
+      method: 'DELETE'
+    });
+  },
+
+  /**
+   * Delete all registered players.
+   */
+  async deleteAllUsers(): Promise<{ success: boolean; count: number; message: string }> {
+    return request('/admin/users', {
+      method: 'DELETE'
+    });
+  },
+
+  /**
    * Fetch all game sessions.
    */
   async getSessions(): Promise<{ success: boolean; sessions: GameSession[]; count: number }> {
     return request('/admin/sessions');
+  },
+
+  /**
+   * Delete an individual game session.
+   */
+  async deleteSession(sessionId: string): Promise<{ success: boolean; message: string }> {
+    return request(`/admin/sessions/${sessionId}`, {
+      method: 'DELETE'
+    });
+  },
+
+  /**
+   * Delete all game sessions.
+   */
+  async deleteAllSessions(): Promise<{ success: boolean; count: number; message: string }> {
+    return request('/admin/sessions', {
+      method: 'DELETE'
+    });
   },
 
   /**

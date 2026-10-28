@@ -82,39 +82,39 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onLoginSuccess }) => {
   };
 
   return (
-    <div className="min-h-screen w-full bg-[#09070F] text-neutral-100 flex flex-col justify-center items-center px-4 py-8 relative overflow-hidden select-none">
-      {/* Subtle festive background lighting */}
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-amber-500/10 rounded-full blur-[130px] pointer-events-none" />
-      <div className="absolute bottom-10 left-10 w-72 h-72 bg-red-600/5 rounded-full blur-[100px] pointer-events-none" />
+    <div className="min-h-screen w-full bg-[#0B1120] text-slate-100 flex flex-col justify-center items-center px-4 py-8 relative overflow-hidden select-none">
+      {/* Subtle background lighting */}
+      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[540px] h-[540px] bg-cyan-500/10 rounded-full blur-[140px] pointer-events-none" />
+      <div className="absolute bottom-10 right-10 w-80 h-80 bg-rose-500/10 rounded-full blur-[120px] pointer-events-none" />
 
       {/* Main Container */}
       <div className="w-full max-w-md relative z-10">
         {/* Branding Header */}
         <div className="mb-6 flex flex-col items-center">
           <BrandingBlock size="compact" className="mb-4" />
-          <div className="flex items-center gap-2 text-xs text-amber-300/80 font-medium tracking-widest uppercase">
-            <Shield className="w-4 h-4 text-amber-400" />
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-950/60 border border-cyan-500/30 text-[11px] text-cyan-300 font-semibold tracking-widest uppercase">
+            <Shield className="w-3.5 h-3.5 text-cyan-400" />
             <span>Management Console</span>
           </div>
         </div>
 
         {/* Card */}
-        <div className="bg-[#14101F]/80 backdrop-blur-xl border border-amber-500/25 rounded-2xl p-6 sm:p-8 shadow-[0_20px_50px_rgba(0,0,0,0.6)]">
+        <div className="bg-[#0F1B2E]/90 backdrop-blur-xl border border-cyan-500/20 rounded-2xl p-6 sm:p-8 shadow-[0_20px_50px_rgba(0,0,0,0.7)]">
           <div className="mb-6 text-center">
-            <h2 className="text-xl sm:text-2xl font-bold font-['Cinzel',serif] text-amber-100">
+            <h2 className="text-xl sm:text-2xl font-bold text-slate-100">
               {isSetupMode ? 'Initial Superadmin Setup' : 'Admin Portal Login'}
             </h2>
-            <p className="text-xs text-neutral-400 mt-1">
+            <p className="text-xs text-slate-400 mt-1.5">
               {isSetupMode
                 ? 'Create the primary administrator account (at least 10 chars, mixed symbols).'
-                : 'Sign in to access kiosk telemetry, game sessions, and configuration.'}
+                : 'Sign in to access telemetry, game sessions, and live configuration.'}
             </p>
           </div>
 
           {/* Feedback messages */}
           {errorMessage && (
-            <div className="mb-5 p-3 rounded-xl bg-red-950/60 border border-red-500/40 text-red-200 text-xs flex items-start gap-2.5">
-              <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+            <div className="mb-5 p-3 rounded-xl bg-rose-950/60 border border-rose-500/40 text-rose-200 text-xs flex items-start gap-2.5">
+              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
               <span>{errorMessage}</span>
             </div>
           )}
@@ -131,13 +131,13 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onLoginSuccess }) => {
             <div>
               <label
                 htmlFor="admin-username"
-                className="block text-xs font-semibold uppercase tracking-wider text-neutral-300 mb-1.5"
+                className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5"
               >
                 Username
               </label>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-neutral-500">
-                  <UserIcon className="w-4 h-4 text-amber-400/70" />
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                  <UserIcon className="w-4 h-4 text-cyan-400/80" />
                 </div>
                 <input
                   id="admin-username"
@@ -147,7 +147,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onLoginSuccess }) => {
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder="admin username"
                   disabled={isLoading}
-                  className="w-full pl-10 pr-4 py-2.5 bg-neutral-900/90 border border-neutral-700 focus:border-amber-400 focus:ring-1 focus:ring-amber-400 rounded-xl text-neutral-100 text-sm placeholder-neutral-500 transition-colors outline-none"
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-900/90 border border-slate-700 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 rounded-xl text-slate-100 text-sm placeholder-slate-500 transition-colors outline-none"
                   required
                 />
               </div>
@@ -156,13 +156,13 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onLoginSuccess }) => {
             <div>
               <label
                 htmlFor="admin-password"
-                className="block text-xs font-semibold uppercase tracking-wider text-neutral-300 mb-1.5"
+                className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5"
               >
                 Password
               </label>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-neutral-500">
-                  <Lock className="w-4 h-4 text-amber-400/70" />
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                  <Lock className="w-4 h-4 text-cyan-400/80" />
                 </div>
                 <input
                   id="admin-password"
@@ -172,12 +172,12 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onLoginSuccess }) => {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••••••"
                   disabled={isLoading}
-                  className="w-full pl-10 pr-4 py-2.5 bg-neutral-900/90 border border-neutral-700 focus:border-amber-400 focus:ring-1 focus:ring-amber-400 rounded-xl text-neutral-100 text-sm placeholder-neutral-500 transition-colors outline-none"
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-900/90 border border-slate-700 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 rounded-xl text-slate-100 text-sm placeholder-slate-500 transition-colors outline-none"
                   required
                 />
               </div>
               {isSetupMode && (
-                <p className="text-[11px] text-amber-300/80 mt-1">
+                <p className="text-[11px] text-cyan-300/80 mt-1">
                   Must be at least 10 characters with numbers and special characters.
                 </p>
               )}
@@ -186,7 +186,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onLoginSuccess }) => {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full mt-2 py-3 px-4 rounded-xl font-semibold text-sm tracking-wide bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:from-amber-400 hover:to-amber-500 text-neutral-950 shadow-[0_4px_20px_rgba(245,158,11,0.3)] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2"
+              className="w-full mt-2 py-3 px-4 rounded-xl font-bold text-sm tracking-wide bg-gradient-to-r from-cyan-500 via-cyan-400 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-slate-950 shadow-[0_4px_20px_rgba(6,182,212,0.35)] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2"
             >
               {isLoading ? (
                 <span>Authenticating...</span>
@@ -205,7 +205,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onLoginSuccess }) => {
           </form>
 
           {/* Toggle setup mode */}
-          <div className="mt-6 pt-5 border-t border-neutral-800 text-center">
+          <div className="mt-6 pt-5 border-t border-slate-800 text-center">
             <button
               type="button"
               onClick={() => {
@@ -213,7 +213,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onLoginSuccess }) => {
                 setErrorMessage(null);
                 setSetupSuccessMessage(null);
               }}
-              className="text-xs text-amber-300/80 hover:text-amber-200 underline underline-offset-4 cursor-pointer transition-colors"
+              className="text-xs text-cyan-400 hover:text-cyan-300 underline underline-offset-4 cursor-pointer transition-colors"
             >
               {isSetupMode
                 ? 'Back to regular sign in'
@@ -231,7 +231,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onLoginSuccess }) => {
               window.history.pushState({}, '', '/');
               window.dispatchEvent(new PopStateEvent('popstate'));
             }}
-            className="text-xs text-neutral-500 hover:text-neutral-300 transition-colors"
+            className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
           >
             ← Return to Kiosk Display
           </a>

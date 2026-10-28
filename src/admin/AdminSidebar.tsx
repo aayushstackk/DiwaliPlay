@@ -11,7 +11,6 @@ import {
   Gamepad2,
   Palette,
   Music,
-  Flame,
   Bomb,
   Trophy,
   Sliders,
@@ -62,13 +61,7 @@ const NAV_ITEMS: {
     id: 'sound',
     label: 'Sound Studio',
     icon: Music,
-    description: 'Audio cues & combinations'
-  },
-  {
-    id: 'crackers',
-    label: 'Cracker & Effects',
-    icon: Flame,
-    description: 'Interactive motion effects'
+    description: 'Audio Control Center'
   },
   {
     id: 'bombs',
@@ -86,13 +79,13 @@ const NAV_ITEMS: {
     id: 'settings',
     label: 'Game Settings',
     icon: Sliders,
-    description: 'Timer & multi-play rules'
+    description: 'Timer & gameplay mode'
   },
   {
     id: 'reports',
     label: 'Reports',
     icon: FileText,
-    description: 'Leaderboard & export summary'
+    description: 'Leaderboard & exports'
   }
 ];
 
@@ -109,31 +102,31 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
       {/* Mobile backdrop overlay */}
       {isOpenMobile && (
         <div
-          className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40 lg:hidden"
+          className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-40 lg:hidden"
           onClick={onCloseMobile}
         />
       )}
 
       {/* Sidebar container */}
       <aside
-        className={`fixed top-0 bottom-0 left-0 z-50 w-64 bg-[#0F0B1A] border-r border-amber-500/15 flex flex-col transition-transform duration-200 lg:translate-x-0 ${
+        className={`fixed top-0 bottom-0 left-0 z-50 w-64 bg-[#0B132B] border-r border-slate-800/90 flex flex-col transition-transform duration-200 lg:translate-x-0 ${
           isOpenMobile ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
         {/* Brand Header */}
-        <div className="p-4 border-b border-amber-500/15 flex items-center justify-between shrink-0">
+        <div className="p-4 border-b border-slate-800 flex items-center justify-between shrink-0">
           <div className="flex flex-col">
-            <span className="font-['Cinzel',serif] font-black text-sm text-amber-100 tracking-wider">
-              DIWALI FUN PLAY
+            <span className="font-['Cinzel',serif] font-black text-sm text-transparent bg-clip-text bg-gradient-to-r from-cyan-200 via-cyan-400 to-teal-300 tracking-wider">
+              DIWALI PLAY
             </span>
-            <span className="text-[10px] text-amber-400/80 font-mono tracking-widest uppercase">
-              Admin Console
+            <span className="text-[10px] text-cyan-400/80 font-mono tracking-widest uppercase">
+              Control Panel
             </span>
           </div>
 
           <button
             onClick={onCloseMobile}
-            className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800 lg:hidden cursor-pointer"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 lg:hidden cursor-pointer"
             aria-label="Close sidebar"
           >
             <X className="w-5 h-5" />
@@ -141,7 +134,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
         </div>
 
         {/* Dynamic Organization / Brand Logo Area */}
-        <div className="px-4 py-3.5 bg-neutral-950/60 border-b border-amber-500/10 flex items-center justify-center shrink-0">
+        <div className="px-4 py-3 bg-[#080D1D] border-b border-slate-800/80 flex items-center justify-center shrink-0">
           <BrandLogo
             brandLogoUrl={branding.brandLogoUrl}
             brandName={branding.brandName}
@@ -165,23 +158,23 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
                 }}
                 className={`w-full text-left px-3 py-2.5 rounded-xl transition-all duration-150 flex items-center gap-3 group cursor-pointer ${
                   isActive
-                    ? 'bg-amber-500/15 text-amber-200 border border-amber-500/30 shadow-[0_0_15px_rgba(245,158,11,0.1)]'
-                    : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900/60 border border-transparent'
+                    ? 'bg-gradient-to-r from-cyan-500/15 to-teal-500/10 text-cyan-200 border border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.15)] font-semibold'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent'
                 }`}
               >
                 <Icon
                   className={`w-4 h-4 shrink-0 transition-colors ${
-                    isActive ? 'text-amber-400' : 'text-neutral-500 group-hover:text-amber-300/80'
+                    isActive ? 'text-cyan-400' : 'text-slate-500 group-hover:text-cyan-300/80'
                   }`}
                 />
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs font-medium truncate">{item.label}</div>
-                  <div className="text-[10px] text-neutral-500 truncate hidden xl:block">
+                  <div className="text-xs truncate">{item.label}</div>
+                  <div className="text-[10px] text-slate-500 truncate hidden xl:block">
                     {item.description}
                   </div>
                 </div>
                 {isActive && (
-                  <div className="w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(245,158,11,0.9)] shrink-0" />
+                  <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.9)] shrink-0" />
                 )}
               </button>
             );
