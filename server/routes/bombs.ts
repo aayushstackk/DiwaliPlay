@@ -155,6 +155,7 @@ bombsRouter.post(
         imagePreset,
         imageAssetId,
         imageUrl,
+        sizePercent,
         isActive
       } = req.body || {};
 
@@ -177,6 +178,7 @@ bombsRouter.post(
         imagePreset: imagePreset || 'red_classic',
         imageAssetId: imageAssetId || null,
         imageUrl: imageUrl || null,
+        sizePercent: Math.max(40, Math.min(180, Number(sizePercent) || 100)),
         isActive: isActive !== undefined ? Boolean(isActive) : true,
         isDefault: false
       });
@@ -243,6 +245,10 @@ bombsRouter.put(
 
       if (updates.spawnWeight !== undefined) {
         updates.spawnWeight = Math.max(1, Math.min(100, Number(updates.spawnWeight) || 5));
+      }
+
+      if (updates.sizePercent !== undefined) {
+        updates.sizePercent = Math.max(40, Math.min(180, Number(updates.sizePercent) || 100));
       }
 
       const updated = await db.updateBombConfig(id, updates);

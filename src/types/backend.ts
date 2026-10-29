@@ -443,6 +443,7 @@ export interface BombConfig {
   imagePreset: BombImagePreset;
   imageAssetId?: string | null;
   imageUrl?: string | null;
+  sizePercent?: number;
   isActive: boolean;
   isDefault?: boolean;
   isDeleted?: boolean;

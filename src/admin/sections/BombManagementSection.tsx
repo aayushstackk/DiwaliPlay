@@ -33,6 +33,7 @@ import {
   X,
   ShieldAlert,
   Zap,
+  RotateCcw,
 } from 'lucide-react';
 
 const PRESET_COLORS = [
@@ -87,6 +88,7 @@ export const BombManagementSection: React.FC = () => {
   const [formColor, setFormColor] = useState('#EF4444');
   const [formPoints, setFormPoints] = useState(100);
   const [formSpawnWeight, setFormSpawnWeight] = useState(10);
+  const [formSizePercent, setFormSizePercent] = useState<number>(100);
   const [formSoundPreset, setFormSoundPreset] = useState<BombSoundPreset>('pop');
   const [formSoundUrl, setFormSoundUrl] = useState<string | null>(null);
   const [formImagePreset, setFormImagePreset] = useState<BombImagePreset>('red_classic');
@@ -193,6 +195,7 @@ export const BombManagementSection: React.FC = () => {
     setFormColor('#F59E0B');
     setFormPoints(200);
     setFormSpawnWeight(8);
+    setFormSizePercent(100);
     setFormSoundPreset('pop');
     setFormSoundUrl(null);
     setFormImagePreset('red_classic');
@@ -208,6 +211,7 @@ export const BombManagementSection: React.FC = () => {
     setFormColor(bomb.color);
     setFormPoints(bomb.points);
     setFormSpawnWeight(bomb.spawnWeight);
+    setFormSizePercent(bomb.sizePercent ?? 100);
     setFormSoundPreset(bomb.soundPreset);
     setFormSoundUrl(bomb.soundUrl || null);
     setFormImagePreset(bomb.imagePreset);
@@ -275,6 +279,7 @@ export const BombManagementSection: React.FC = () => {
       color: formColor,
       points: Number(formPoints),
       spawnWeight: Number(formSpawnWeight),
+      sizePercent: Math.max(40, Math.min(180, Number(formSizePercent) || 100)),
       soundPreset: formSoundPreset,
       soundUrl: formSoundPreset === 'custom' ? formSoundUrl : null,
       imagePreset: formImagePreset,
@@ -760,6 +765,13 @@ export const BombManagementSection: React.FC = () => {
                       </div>
 
                       <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Bomb Size:</span>
+                        <span className="font-mono text-cyan-300 font-bold text-xs">
+                          {bomb.sizePercent ?? 100}%
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between">
                         <span className="text-slate-400">Burst Sound:</span>
                         <div className="flex items-center gap-1.5">
                           <span className="font-mono text-[11px] text-slate-300 capitalize">
@@ -875,6 +887,12 @@ export const BombManagementSection: React.FC = () => {
                           {bomb.soundPreset}
                         </span>
                       </div>
+                      <div className="flex items-center justify-between">
+                        <span>Bomb Size:</span>
+                        <span className="font-mono text-xs text-slate-400">
+                          {bomb.sizePercent ?? 100}%
+                        </span>
+                      </div>
                     </div>
                   </div>
 
@@ -898,27 +916,30 @@ export const BombManagementSection: React.FC = () => {
 
       {/* 5. Add / Edit Bomb Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[#0F1B2E] border border-cyan-500/30 rounded-2xl max-w-2xl w-full p-6 shadow-2xl relative">
-            <div className="flex items-center justify-between border-b border-cyan-500/15 pb-4 mb-5">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
+          <div className="bg-[#0F1B2E] border border-cyan-500/30 rounded-2xl max-w-4xl w-full p-4 sm:p-6 shadow-2xl relative my-auto max-h-[92vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-cyan-500/15 pb-4 mb-4 shrink-0">
               <div className="flex items-center gap-2.5">
-                <Bomb className="w-5 h-5 text-cyan-400" />
+                <Bomb className="w-5 h-5 text-cyan-400 shrink-0" />
                 <h3 className="text-base sm:text-lg font-bold text-slate-100 tracking-wider">
                   {editingBomb ? `Edit Bomb: ${editingBomb.name}` : 'Create New Bomb Type'}
                 </h3>
               </div>
               <button
+                type="button"
                 onClick={() => setIsModalOpen(false)}
-                className="text-slate-400 hover:text-white cursor-pointer"
+                className="text-slate-400 hover:text-white cursor-pointer p-1 rounded-lg hover:bg-slate-800 transition-colors"
+                title="Close modal"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveBomb} className="space-y-5">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-                {/* Left Form Columns */}
-                <div className="sm:col-span-2 space-y-4">
+            <form onSubmit={handleSaveBomb} className="flex-1 overflow-y-auto pr-1 space-y-5">
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
+                {/* Left Form Column (7 cols) */}
+                <div className="md:col-span-7 space-y-4">
                   {/* Name */}
                   <div>
                     <label className="block text-xs font-bold text-slate-300 uppercase mb-1">
@@ -935,7 +956,7 @@ export const BombManagementSection: React.FC = () => {
                   </div>
 
                   {/* Points & Weight */}
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-bold text-slate-300 uppercase mb-1">
                         Point Value
@@ -996,6 +1017,52 @@ export const BombManagementSection: React.FC = () => {
                     </div>
                   </div>
 
+                  {/* Bomb Size Slider */}
+                  <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                          Bomb Size
+                        </label>
+                        <span className="text-[10px] font-mono text-slate-500">(40% – 180%)</span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className="px-2.5 py-0.5 rounded-md text-xs font-mono font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                          {formSizePercent}%
+                        </span>
+                        {formSizePercent !== 100 && (
+                          <button
+                            type="button"
+                            onClick={() => setFormSizePercent(100)}
+                            className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-600 transition-colors cursor-pointer flex items-center gap-1"
+                            title="Reset to 100% default size"
+                          >
+                            <RotateCcw className="w-2.5 h-2.5 text-cyan-400" />
+                            <span>Reset</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <input
+                        type="range"
+                        min={40}
+                        max={180}
+                        step={1}
+                        value={formSizePercent}
+                        onChange={(e) => setFormSizePercent(Number(e.target.value))}
+                        className="w-full h-2 bg-slate-900 rounded-lg appearance-none cursor-pointer accent-cyan-400 border border-slate-700"
+                      />
+                      <div className="flex justify-between text-[10px] font-mono text-slate-500">
+                        <span>40% (Compact)</span>
+                        <span className={formSizePercent === 100 ? 'text-cyan-400 font-bold' : ''}>100% (Default)</span>
+                        <span>180% (Massive)</span>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Theme Color */}
                   <div>
                     <label className="block text-xs font-bold text-slate-300 uppercase mb-1">
@@ -1020,7 +1087,7 @@ export const BombManagementSection: React.FC = () => {
                             key={c}
                             type="button"
                             onClick={() => setFormColor(c)}
-                            className="w-5 h-5 rounded-full border border-white/20 transition-transform hover:scale-125"
+                            className="w-5 h-5 rounded-full border border-white/20 transition-transform hover:scale-125 cursor-pointer"
                             style={{ backgroundColor: c }}
                           />
                         ))}
@@ -1075,7 +1142,7 @@ export const BombManagementSection: React.FC = () => {
                     )}
                   </div>
 
-                  {/* Burst Sound Effect */}
+                  {/* Burst Sound Effect (Clean unclipped row) */}
                   <div>
                     <label className="block text-xs font-bold text-slate-300 uppercase mb-1">
                       Burst Sound Effect
@@ -1088,7 +1155,7 @@ export const BombManagementSection: React.FC = () => {
                           setFormSoundPreset(val);
                           previewSound(val, formSoundUrl);
                         }}
-                        className="flex-1 px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 text-xs focus:border-cyan-400 focus:outline-none"
+                        className="min-w-0 flex-1 px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 text-xs focus:border-cyan-400 focus:outline-none truncate"
                       >
                         {SOUND_PRESETS.map((s) => (
                           <option key={s.id} value={s.id}>
@@ -1100,10 +1167,10 @@ export const BombManagementSection: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => previewSound(formSoundPreset, formSoundUrl)}
-                        className="px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 text-xs rounded-xl flex items-center gap-1.5 cursor-pointer"
+                        className="shrink-0 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 text-xs rounded-xl flex items-center gap-1.5 cursor-pointer transition-colors"
                         title="Test Sound"
                       >
-                        <Play className="w-3 h-3 text-cyan-400" />
+                        <Play className="w-3.5 h-3.5 text-cyan-400" />
                         <span>Test</span>
                       </button>
                     </div>
@@ -1139,7 +1206,7 @@ export const BombManagementSection: React.FC = () => {
                   </div>
 
                   {/* Active Toggle */}
-                  <div className="flex items-center gap-2 pt-2">
+                  <div className="flex items-center gap-2 pt-1">
                     <input
                       type="checkbox"
                       id="formIsActive"
@@ -1147,60 +1214,87 @@ export const BombManagementSection: React.FC = () => {
                       onChange={(e) => setFormIsActive(e.target.checked)}
                       className="w-4 h-4 rounded text-cyan-500 bg-slate-900 border-slate-700 focus:ring-0 cursor-pointer"
                     />
-                    <label htmlFor="formIsActive" className="text-xs text-slate-200 cursor-pointer">
+                    <label htmlFor="formIsActive" className="text-xs text-slate-200 cursor-pointer select-none">
                       Enable this bomb in active gameplay
                     </label>
                   </div>
                 </div>
 
-                {/* Right Interactive Live Preview Card */}
-                <div className="sm:col-span-1 flex flex-col items-center justify-center p-4 rounded-2xl bg-slate-950/90 border border-slate-800">
-                  <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-widest mb-3">
-                    Live Preview
-                  </span>
-                  <div className="p-4 rounded-2xl bg-[#090D1A] border border-cyan-500/20 shadow-inner flex flex-col items-center">
-                    <CartoonBombSvg
-                      bomb={{
-                        id: 'modal_preview',
-                        color: formColor,
-                        points: formPoints,
-                        imagePreset: formImagePreset,
-                        imageUrl: formImageUrl,
-                      }}
-                      size={100}
-                      showBadge={true}
-                    />
+                {/* Right Interactive Live Preview Card (5 cols on desktop, responsive) */}
+                <div className="md:col-span-5 flex flex-col items-center p-4 sm:p-5 rounded-2xl bg-slate-950/90 border border-slate-800/90 shadow-lg md:sticky md:top-2">
+                  <div className="w-full flex items-center justify-between pb-2.5 mb-3 border-b border-slate-800/60">
+                    <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-widest flex items-center gap-1.5">
+                      <Sparkles className="w-3 h-3 text-cyan-400" />
+                      Live Preview
+                    </span>
+                    <span className="text-[10px] font-mono font-bold text-cyan-300 bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/30">
+                      Size: {formSizePercent}%
+                    </span>
                   </div>
-                  <span className="text-xs font-bold text-slate-200 mt-3 text-center">
+
+                  {/* Contained Stage that comfortably encloses bombs up to 180% size */}
+                  <div className="w-full h-56 sm:h-64 rounded-2xl bg-[#090D1A] border border-cyan-500/20 shadow-inner flex items-center justify-center p-3 relative overflow-hidden">
+                    {/* Subtle 100% standard baseline reference ring */}
+                    <div
+                      className="absolute w-24 h-24 rounded-full border border-dashed border-slate-700/60 pointer-events-none"
+                      title="100% standard baseline reference size"
+                    />
+
+                    {/* Scaled Cartoon Bomb Visual */}
+                    <div className="relative flex items-center justify-center transition-transform duration-75">
+                      <CartoonBombSvg
+                        bomb={{
+                          id: 'modal_preview',
+                          color: formColor,
+                          points: formPoints,
+                          imagePreset: formImagePreset,
+                          imageUrl: formImageUrl,
+                          sizePercent: formSizePercent,
+                        }}
+                        size={Math.round(96 * (formSizePercent / 100))}
+                        showBadge={true}
+                      />
+                    </div>
+                  </div>
+
+                  <span className="text-sm font-bold text-slate-100 mt-3 text-center truncate max-w-full px-2">
                     {formName || 'Bomb Preview'}
                   </span>
-                  <span
-                    className={`text-xs font-mono font-bold mt-1 ${
-                      formPoints < 0 ? 'text-rose-400' : 'text-emerald-400'
-                    }`}
-                  >
-                    {formPoints > 0 ? `+${formPoints}` : formPoints} pts
-                  </span>
+
+                  <div className="flex items-center gap-2 mt-1">
+                    <span
+                      className={`text-xs font-mono font-bold px-2 py-0.5 rounded ${
+                        formPoints < 0
+                          ? 'bg-rose-950/60 text-rose-300 border border-rose-500/30'
+                          : 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/30'
+                      }`}
+                    >
+                      {formPoints > 0 ? `+${formPoints}` : formPoints} pts
+                    </span>
+                    <span className="text-[11px] font-mono text-slate-400">
+                      Radius: ~{Math.round(52 * (formSizePercent / 100))}px
+                    </span>
+                  </div>
 
                   <button
                     type="button"
                     onClick={() => previewSound(formSoundPreset, formSoundUrl)}
-                    className="mt-4 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 text-xs rounded-xl flex items-center gap-1.5 cursor-pointer"
+                    className="mt-3.5 w-full py-2 bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-cyan-500/40 text-slate-300 hover:text-white text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-all shadow-sm"
                   >
                     <Volume2 className="w-3.5 h-3.5 text-cyan-400" />
-                    <span>Play Sound</span>
+                    <span>Play Sound Effect</span>
                   </button>
                 </div>
               </div>
 
               {/* Form Footer */}
-              <div className="flex items-center justify-between pt-4 border-t border-slate-800">
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-800 shrink-0">
                 {editingBomb ? (
                   <button
                     type="button"
                     disabled={deletingBombId !== null}
                     onClick={() => handleRequestDelete(editingBomb)}
-                    className="px-3 py-2 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/50 text-rose-300 hover:text-rose-100 text-xs rounded-xl flex items-center gap-1.5 cursor-pointer transition-all disabled:opacity-50"
+                    className="px-3.5 py-2 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/50 text-rose-300 hover:text-rose-100 text-xs font-semibold rounded-xl flex items-center gap-1.5 cursor-pointer transition-all disabled:opacity-50"
                   >
                     {deletingBombId === editingBomb.id ? (
                       <RefreshCw className="w-3.5 h-3.5 animate-spin" />
@@ -1212,11 +1306,11 @@ export const BombManagementSection: React.FC = () => {
                 ) : (
                   <div />
                 )}
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 ml-auto">
                   <button
                     type="button"
                     onClick={() => setIsModalOpen(false)}
-                    className="px-4 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 text-xs rounded-xl cursor-pointer"
+                    className="px-4 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-medium rounded-xl cursor-pointer transition-colors"
                   >
                     Cancel
                   </button>

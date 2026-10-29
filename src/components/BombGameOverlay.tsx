@@ -286,6 +286,10 @@ export const BombGameOverlay: React.FC<BombGameOverlayProps> = ({
       const vRot = (Math.random() - 0.5) * 85;
       const rot0 = (Math.random() - 0.5) * 25;
 
+      const baseRadius = curSettings.bombRadius || 52;
+      const sizeMultiplier = Math.max(0.4, Math.min(1.8, (config.sizePercent ?? 100) / 100));
+      const effectiveRadius = Math.round(baseRadius * sizeMultiplier);
+
       const newBomb: LaunchedBombEntity = {
         uid: `bomb_${now}_${Math.random().toString(36).substring(2, 7)}`,
         config,
@@ -297,7 +301,7 @@ export const BombGameOverlay: React.FC<BombGameOverlayProps> = ({
         vy: vy0,
         rot: rot0,
         vRot,
-        radius: curSettings.bombRadius || 52,
+        radius: effectiveRadius,
         scale: 0.65, // starts slightly smaller as it emerges from tube nozzle
         launchTime: now,
         isBursting: false,
@@ -465,7 +469,7 @@ export const BombGameOverlay: React.FC<BombGameOverlayProps> = ({
       const now = performance.now();
       for (const bomb of activeBombsRef.current) {
         if (bomb.isBursting || bomb.scale < 0.5) continue;
-        const hitRadius = Math.max(bomb.radius, 48) * 1.25;
+        const hitRadius = Math.max(20, bomb.radius * 1.25);
         const dist = Math.hypot(clientX - bomb.x, clientY - bomb.y);
         if (dist <= hitRadius) {
           handleBurst(bomb, now);
