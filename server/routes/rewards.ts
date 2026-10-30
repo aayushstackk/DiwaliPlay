@@ -71,7 +71,11 @@ rewardsRouter.get('/rewards', async (_req: Request, res: Response) => {
  */
 rewardsRouter.post('/rewards/spin', async (req: Request<{}, {}, SpinWheelRequest>, res: Response) => {
   try {
-    const settings = await db.getRewardsSettings();
+    const [settings, allRewards] = await Promise.all([
+      db.getRewardsSettings(),
+      db.getRewards(false)
+    ]);
+
     if (!settings.enabled) {
       return res.status(403).json({
         success: false,
@@ -79,7 +83,6 @@ rewardsRouter.post('/rewards/spin', async (req: Request<{}, {}, SpinWheelRequest
       });
     }
 
-    const allRewards = await db.getRewards(false);
     // Filter strictly to active Chance Based rewards for lucky spin
     const rewards = allRewards.filter(
       (r) => r.isActive !== false && (r.mode || 'chance') === 'chance'
@@ -227,13 +230,13 @@ rewardsRouter.put('/admin/rewards/settings', authenticateAdmin, async (req: Requ
     const updated = await db.updateRewardsSettings({ enabled: Boolean(enabled) });
 
     if (req.adminUser) {
-      await db.recordAuditLog({
+      db.recordAuditLog({
         adminId: req.adminUser.id,
         username: req.adminUser.username,
         action: 'UPDATE_REWARDS_SETTINGS',
         details: { enabled: updated.enabled },
         ip: req.ip
-      });
+      }).catch((logErr: any) => console.error('[Rewards Admin API] Audit log error:', logErr));
     }
 
     return res.json({
@@ -284,14 +287,14 @@ rewardsRouter.put('/admin/rewards/:id', authenticateAdmin, async (req: Request, 
     const updated = await db.updateReward(id, updates);
 
     if (req.adminUser) {
-      await db.recordAuditLog({
+      db.recordAuditLog({
         adminId: req.adminUser.id,
         username: req.adminUser.username,
         action: 'UPDATE_REWARD',
         target: id,
         details: { changes: Object.keys(updates) },
         ip: req.ip
-      });
+      }).catch((logErr: any) => console.error('[Rewards Admin API] Audit log error:', logErr));
     }
 
     return res.json({

@@ -58,6 +58,18 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
 
   const audioCtxRef = useRef<AudioContext | null>(null);
   const animFrameRef = useRef<number | null>(null);
+  const isSpinningRef = useRef<boolean>(false);
+  const rotationRef = useRef<number>(0);
+  const wheelSvgRef = useRef<SVGSVGElement | null>(null);
+  const lastTickTimeRef = useRef<number>(0);
+
+  // Sync rotationRef when rotation state changes or on initial mount
+  useEffect(() => {
+    rotationRef.current = rotation;
+    if (wheelSvgRef.current) {
+      wheelSvgRef.current.style.transform = `rotate(${rotation}deg)`;
+    }
+  }, [rotation]);
 
   // Initialize or resume shared Web Audio Context
   const getAudioContext = useCallback(() => {
@@ -75,10 +87,14 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
 
   // Realistic mechanical "kt kt kt" flapper tick sound
   const playRealisticTick = useCallback(() => {
+    const now = performance.now();
+    if (now - lastTickTimeRef.current < 28) return; // Prevent audio overload
+    lastTickTimeRef.current = now;
+
     try {
       const ctx = getAudioContext();
       if (!ctx) return;
-      const now = ctx.currentTime;
+      const t = ctx.currentTime;
 
       // Realistic flapper click: fast pitch drop + bandpass filter
       const osc = ctx.createOscillator();
@@ -86,22 +102,22 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
       const filter = ctx.createBiquadFilter();
 
       osc.type = 'triangle';
-      osc.frequency.setValueAtTime(850, now);
-      osc.frequency.exponentialRampToValueAtTime(140, now + 0.018);
+      osc.frequency.setValueAtTime(850, t);
+      osc.frequency.exponentialRampToValueAtTime(140, t + 0.018);
 
       filter.type = 'bandpass';
-      filter.frequency.setValueAtTime(1200, now);
-      filter.Q.setValueAtTime(2.2, now);
+      filter.frequency.setValueAtTime(1200, t);
+      filter.Q.setValueAtTime(2.2, t);
 
-      gain.gain.setValueAtTime(0.3, now);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.018);
+      gain.gain.setValueAtTime(0.25, t);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.018);
 
       osc.connect(filter);
       filter.connect(gain);
       gain.connect(ctx.destination);
 
-      osc.start(now);
-      osc.stop(now + 0.02);
+      osc.start(t);
+      osc.stop(t + 0.02);
     } catch {}
   }, [getAudioContext]);
 
@@ -161,75 +177,164 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
       if (animFrameRef.current) {
         cancelAnimationFrame(animFrameRef.current);
       }
+      isSpinningRef.current = false;
     };
   }, []);
 
-  // Spin Wheel Execution
-  const handleSpinClick = async () => {
-    if (isSpinning || rewards.length === 0) return;
+  // Spin Wheel Execution (Immediate animation + Parallel Backend Processing)
+  const handleSpinClick = () => {
+    // 1. Guard against duplicate spin triggers
+    if (isSpinningRef.current || isSpinning || rewards.length === 0) return;
+    isSpinningRef.current = true;
     setIsSpinning(true);
     setWinningReward(null);
     setShowPrizeModal(false);
     setErrorMessage(null);
 
-    // Warm up audio
+    // Warm up Web Audio Context immediately
     getAudioContext();
 
-    try {
-      // 1. Secure backend outcome selection
-      const res: SpinWheelResponse = await gameApi.spinWheel({
+    const numSlices = Math.max(1, rewards.length);
+    const sliceAngle = 360 / numSlices;
+    const initialAngle = rotationRef.current;
+
+    // 2. Launch backend API request in parallel
+    interface SpinServerResult {
+      success: boolean;
+      reward?: RewardItem;
+      rewardIndex?: number;
+      errorMessage?: string;
+    }
+    let serverResult: SpinServerResult | null = null;
+
+    gameApi
+      .spinWheel({
         playerName,
         mobileNumber,
         sessionId: sessionId || undefined
+      })
+      .then((res) => {
+        if (res.success && res.reward) {
+          serverResult = {
+            success: true,
+            reward: res.reward,
+            rewardIndex: res.rewardIndex
+          };
+        } else {
+          serverResult = {
+            success: false,
+            errorMessage: res.message || 'Spin failed on server.'
+          };
+        }
+      })
+      .catch((err: any) => {
+        serverResult = {
+          success: false,
+          errorMessage: err.message || 'Network error while spinning.'
+        };
       });
 
-      if (!res.success || !res.reward) {
-        throw new Error(res.message || 'Spin failed on server.');
-      }
+    // 3. Start wheel animation IMMEDIATELY on this exact frame (0ms delay)
+    const cruiseSpeed = 1200; // degrees per second
+    const accelDuration = 300; // ms to reach full cruise speed
+    const minCruiseTime = 1100; // ms of thrilling fast spin before slowing down
+    const animStartTime = performance.now();
 
-      const targetReward = res.reward;
-      const numSlices = rewards.length;
-      let targetIdx = rewards.findIndex((r) => r.id === targetReward.id);
-      if (targetIdx === -1) {
-        targetIdx = res.rewardIndex ?? 0;
-      }
+    let lastSegmentIndex = Math.floor(initialAngle / sliceAngle);
 
-      // Wheel Geometry:
-      // Pointer is at 12 o'clock (0° from top).
-      // Slice k spans [k * sliceAngle, (k + 1) * sliceAngle].
-      // Slice center is at (k + 0.5) * sliceAngle.
-      // To bring slice k to 12 o'clock (0°), wheel must stop at:
-      // (360 - sliceCenter) % 360
-      const sliceAngle = 360 / numSlices;
-      const sliceCenterAngle = (targetIdx + 0.5) * sliceAngle;
-      const targetStopAngle = (360 - (sliceCenterAngle % 360)) % 360;
+    // Deceleration trajectory state
+    let decelInitiated = false;
+    let decelStartAngle = 0;
+    let decelStartTime = 0;
+    let decelDuration = 3000;
+    let totalDecelDegrees = 0;
+    let winningTargetReward: RewardItem | null = null;
+    let hasFailed = false;
+    let failureMessage = '';
 
-      // Clockwise-Only Rotation Math:
-      const startAngle = rotation;
-      const currentMod = ((startAngle % 360) + 360) % 360;
-      let delta = (targetStopAngle - currentMod) % 360;
-      if (delta <= 0) delta += 360;
+    const animate = (time: number) => {
+      const elapsed = time - animStartTime;
 
-      // 6 full clockwise rotations + delta ensures strictly clockwise rotation
-      const totalSpinDegrees = 6 * 360 + delta;
-      const finalTargetAngle = startAngle + totalSpinDegrees;
+      if (!decelInitiated) {
+        // --- PHASE 1: Immediate Acceleration & Constant Cruising ---
+        let currentAngle: number;
+        if (elapsed < accelDuration) {
+          const p = elapsed / accelDuration;
+          const currentSpeed = cruiseSpeed * p;
+          currentAngle = initialAngle + 0.5 * currentSpeed * (elapsed / 1000);
+        } else {
+          const accelDistance = 0.5 * cruiseSpeed * (accelDuration / 1000);
+          const cruiseElapsed = (elapsed - accelDuration) / 1000;
+          currentAngle = initialAngle + accelDistance + cruiseSpeed * cruiseElapsed;
+        }
 
-      // Smooth Animation with real-time segment-crossing ticks
-      const durationMs = 4600;
-      const startTime = performance.now();
-      let lastSegmentIndex = Math.floor(startAngle / sliceAngle);
+        // Apply rotation directly to DOM for zero-latency 60+ FPS
+        rotationRef.current = currentAngle;
+        if (wheelSvgRef.current) {
+          wheelSvgRef.current.style.transform = `rotate(${currentAngle}deg)`;
+        }
 
-      const animate = (time: number) => {
-        const elapsed = time - startTime;
-        const progress = Math.min(1, elapsed / durationMs);
+        // Realistic flapper sound as segments pass
+        const currentSegmentIndex = Math.floor(currentAngle / sliceAngle);
+        if (currentSegmentIndex > lastSegmentIndex) {
+          playRealisticTick();
+          lastSegmentIndex = currentSegmentIndex;
+        }
 
-        // Smooth physics-like deceleration (power 3.5 ease-out)
-        const eased = 1 - Math.pow(1 - progress, 3.5);
-        const currentAngle = startAngle + totalSpinDegrees * eased;
+        // Check if we can begin smooth deceleration:
+        // Requires minimum excitement duration AND received server response
+        if (elapsed >= minCruiseTime && serverResult !== null) {
+          decelInitiated = true;
+          decelStartTime = time;
+          decelStartAngle = currentAngle;
 
-        setRotation(currentAngle);
+          if (serverResult.success && serverResult.reward) {
+            winningTargetReward = serverResult.reward;
+            let targetIdx = rewards.findIndex((r) => r.id === serverResult!.reward!.id);
+            if (targetIdx === -1) {
+              targetIdx = serverResult.rewardIndex ?? 0;
+            }
 
-        // Check if pointer crossed a segment boundary for "kt kt kt" tick
+            // Target alignment math:
+            // Slice center: (targetIdx + 0.5) * sliceAngle
+            // Marker is at 12 o'clock (0 degrees)
+            const sliceCenterAngle = (targetIdx + 0.5) * sliceAngle;
+            const targetStopAngle = (360 - (sliceCenterAngle % 360)) % 360;
+
+            const currentMod = ((decelStartAngle % 360) + 360) % 360;
+            let forwardDelta = (targetStopAngle - currentMod) % 360;
+            if (forwardDelta <= 0) forwardDelta += 360;
+
+            // Compute seamless cubic ease-out deceleration matching incoming cruiseSpeed
+            const idealDecelDistance = (cruiseSpeed * 2.8) / 3;
+            const fullTurns = Math.max(3, Math.ceil((idealDecelDistance - forwardDelta) / 360));
+            totalDecelDegrees = fullTurns * 360 + forwardDelta;
+            decelDuration = ((3 * totalDecelDegrees) / cruiseSpeed) * 1000;
+          } else {
+            // Server error: ease to a graceful stop
+            hasFailed = true;
+            failureMessage = serverResult.errorMessage || 'Unable to spin. Please try again.';
+            totalDecelDegrees = 360;
+            decelDuration = 1200;
+          }
+        }
+
+        animFrameRef.current = requestAnimationFrame(animate);
+      } else {
+        // --- PHASE 2: Smooth Deceleration to Target Angle ---
+        const decelElapsed = time - decelStartTime;
+        const progress = Math.min(1, decelElapsed / decelDuration);
+
+        // Smooth cubic ease-out: 1 - (1 - u)^3
+        const eased = 1 - Math.pow(1 - progress, 3);
+        const currentAngle = decelStartAngle + totalDecelDegrees * eased;
+
+        rotationRef.current = currentAngle;
+        if (wheelSvgRef.current) {
+          wheelSvgRef.current.style.transform = `rotate(${currentAngle}deg)`;
+        }
+
+        // Realistic flapper sound during slowdown
         const currentSegmentIndex = Math.floor(currentAngle / sliceAngle);
         if (currentSegmentIndex > lastSegmentIndex) {
           playRealisticTick();
@@ -239,28 +344,33 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
         if (progress < 1) {
           animFrameRef.current = requestAnimationFrame(animate);
         } else {
-          // Wheel has completely stopped
-          setRotation(finalTargetAngle);
+          // --- Complete Stop on Winner ---
+          const finalAngle = decelStartAngle + totalDecelDegrees;
+          rotationRef.current = finalAngle;
+          setRotation(finalAngle);
           setIsSpinning(false);
-          setWinningReward(targetReward);
-          playVictoryChime();
+          isSpinningRef.current = false;
 
-          if (onRewardWon) {
-            onRewardWon(targetReward);
+          if (hasFailed) {
+            setErrorMessage(failureMessage);
+          } else if (winningTargetReward) {
+            setWinningReward(winningTargetReward);
+            playVictoryChime();
+
+            if (onRewardWon) {
+              onRewardWon(winningTargetReward);
+            }
+
+            // Open winning popup smoothly
+            setTimeout(() => {
+              setShowPrizeModal(true);
+            }, 300);
           }
-
-          // Open direct winning popup
-          setTimeout(() => {
-            setShowPrizeModal(true);
-          }, 350);
         }
-      };
+      }
+    };
 
-      animFrameRef.current = requestAnimationFrame(animate);
-    } catch (err: any) {
-      setIsSpinning(false);
-      setErrorMessage(err.message || 'Unable to spin. Please try again.');
-    }
+    animFrameRef.current = requestAnimationFrame(animate);
   };
 
   if (!isOpen) return null;
@@ -316,8 +426,9 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
               style={{ width: '320px', height: '320px', maxWidth: '82vw', maxHeight: '82vw' }}
             >
               <svg
+                ref={wheelSvgRef}
                 viewBox="0 0 500 500"
-                className="w-full h-full select-none"
+                className="w-full h-full select-none will-change-transform"
                 style={{
                   transform: `rotate(${rotation}deg)`
                 }}

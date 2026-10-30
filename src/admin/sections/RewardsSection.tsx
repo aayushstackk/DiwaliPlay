@@ -108,60 +108,100 @@ export const RewardsSection: React.FC = () => {
     loadData();
   }, [loadData]);
 
-  // Master ON/OFF toggle (placed right beside title)
-  const handleToggleMaster = async () => {
-    const newStatus = !settings.enabled;
+  const isTogglingMasterRef = useRef<boolean>(false);
+
+  // Master ON/OFF toggle (Optimistic Instant Update)
+  const handleToggleMaster = () => {
+    if (isTogglingMasterRef.current) return;
+
+    const previousStatus = Boolean(settings.enabled);
+    const newStatus = !previousStatus;
+
+    // 1. Instantly update UI visually (0ms delay)
+    setSettings((prev) => ({ ...prev, enabled: newStatus }));
+    isTogglingMasterRef.current = true;
     setIsTogglingMaster(true);
-    try {
-      const res = await adminApi.updateRewardsSettings({ enabled: newStatus });
-      if (res.success && res.settings) {
-        setSettings(res.settings);
-        showToast(
-          'success',
-          newStatus ? 'Spin Wheel Enabled' : 'Spin Wheel Disabled',
-          newStatus ? 'Spin & Win is now visible to players.' : 'Spin & Win is now hidden from players.'
-        );
-      } else {
-        showToast('error', 'Toggle Error', res.message || 'Could not update Spin Wheel status.');
-      }
-    } catch (err: any) {
-      showToast('error', 'Toggle Error', err.message || 'Server error.');
-    } finally {
-      setIsTogglingMaster(false);
-    }
+
+    // 2. Dispatch background API call
+    adminApi
+      .updateRewardsSettings({ enabled: newStatus })
+      .then((res) => {
+        if (res.success && res.settings) {
+          setSettings(res.settings);
+          showToast(
+            'success',
+            newStatus ? 'Spin Wheel Enabled' : 'Spin Wheel Disabled',
+            newStatus ? 'Spin & Win is now visible to players.' : 'Spin & Win is now hidden from players.'
+          );
+        } else {
+          throw new Error(res.message || 'Could not update Spin Wheel status.');
+        }
+      })
+      .catch((err: any) => {
+        // Revert on failure
+        setSettings((prev) => ({ ...prev, enabled: previousStatus }));
+        showToast('error', 'Toggle Error', err.message || 'Server error. Reverted changes.');
+      })
+      .finally(() => {
+        isTogglingMasterRef.current = false;
+        setIsTogglingMaster(false);
+      });
   };
 
-  const [togglingRewardId, setTogglingRewardId] = useState<string | null>(null);
+  // Set of reward IDs with active in-flight requests to prevent duplicate requests
+  const pendingRewardTogglesRef = useRef<Set<string>>(new Set());
 
-  // Individual Reward Activate / Deactivate Toggle
-  const handleToggleActive = async (reward: RewardItem) => {
+  // Individual Reward Activate / Deactivate Toggle (Optimistic Instant Update)
+  const handleToggleActive = (reward: RewardItem) => {
     if (!reward || !reward.id) {
       showToast('error', 'Toggle Error', 'Reward ID is missing.');
       return;
     }
-    const newActive = reward.isActive === false;
-    setTogglingRewardId(reward.id);
-    try {
-      const res = await adminApi.updateReward(reward.id, { isActive: newActive });
-      if (res.success && res.reward) {
-        setRewards((prev) =>
-          prev.map((r) => (r.id === res.reward.id ? { ...r, ...res.reward } : r))
-        );
-        showToast(
-          'success',
-          newActive ? 'Reward Activated' : 'Reward Deactivated',
-          newActive
-            ? `"${res.reward.name}" is now active and eligible for winning.`
-            : `"${res.reward.name}" is now inactive and will not appear on the wheel.`
-        );
-      } else {
-        showToast('error', 'Toggle Error', res.message || 'Could not update reward status.');
-      }
-    } catch (err: any) {
-      showToast('error', 'Toggle Error', err.message || 'Could not update reward status.');
-    } finally {
-      setTogglingRewardId(null);
+
+    if (pendingRewardTogglesRef.current.has(reward.id)) {
+      return; // Prevent duplicate clicks while request is in flight
     }
+
+    const previousActive = reward.isActive !== false;
+    const newActive = !previousActive;
+
+    // 1. Instantly update UI visually (0ms delay)
+    setRewards((prev) =>
+      prev.map((r) => (r.id === reward.id ? { ...r, isActive: newActive } : r))
+    );
+
+    pendingRewardTogglesRef.current.add(reward.id);
+
+    // 2. Dispatch background API call
+    adminApi
+      .updateReward(reward.id, { isActive: newActive })
+      .then((res) => {
+        if (res.success && res.reward) {
+          // Reconcile with verified backend state
+          setRewards((prev) =>
+            prev.map((r) => (r.id === res.reward.id ? { ...r, ...res.reward } : r))
+          );
+          showToast(
+            'success',
+            newActive ? 'Reward Activated' : 'Reward Deactivated',
+            newActive
+              ? `"${res.reward.name}" is now active and eligible for winning.`
+              : `"${res.reward.name}" is now inactive and will not appear on the wheel.`
+          );
+        } else {
+          throw new Error(res.message || 'Could not update reward status.');
+        }
+      })
+      .catch((err: any) => {
+        // 3. Revert on failure
+        setRewards((prev) =>
+          prev.map((r) => (r.id === reward.id ? { ...r, isActive: previousActive } : r))
+        );
+        showToast('error', 'Toggle Error', err.message || 'Could not update reward status. Reverted change.');
+      })
+      .finally(() => {
+        pendingRewardTogglesRef.current.delete(reward.id);
+      });
   };
 
   // ---------------------------------------------------------------------------
@@ -593,12 +633,11 @@ export const RewardsSection: React.FC = () => {
                       {/* Activate / Deactivate Toggle Button */}
                       <button
                         type="button"
-                        disabled={togglingRewardId === reward.id}
                         onClick={(e) => {
                           e.stopPropagation();
                           handleToggleActive(reward);
                         }}
-                        className={`p-1 rounded-md border text-xs cursor-pointer transition disabled:opacity-50 ${
+                        className={`p-1 rounded-md border text-xs cursor-pointer transition active:scale-90 ${
                           !isInactive
                             ? isLight
                               ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-700 hover:bg-emerald-500/25'
@@ -610,7 +649,7 @@ export const RewardsSection: React.FC = () => {
                         title={!isInactive ? 'Active: Click to Deactivate' : 'Inactive: Click to Activate'}
                         aria-label={!isInactive ? 'Deactivate reward' : 'Activate reward'}
                       >
-                        <Power className={`w-3 h-3 stroke-[2.5] ${togglingRewardId === reward.id ? 'animate-spin' : ''}`} />
+                        <Power className="w-3 h-3 stroke-[2.5]" />
                       </button>
 
                       {/* Edit Button */}

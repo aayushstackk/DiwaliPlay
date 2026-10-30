@@ -230,7 +230,7 @@ export class JsonFileStorageAdapter implements StorageAdapter {
         fs.mkdirSync(DATA_DIR, { recursive: true });
       }
       const tempPath = `${DB_FILE}.tmp.${Date.now()}`;
-      fs.writeFileSync(tempPath, JSON.stringify(this.data, null, 2), 'utf-8');
+      fs.writeFileSync(tempPath, JSON.stringify(this.data), 'utf-8');
       fs.renameSync(tempPath, DB_FILE);
     } catch (err) {
       console.error('[JsonStorage] Error persisting database to disk:', err);
