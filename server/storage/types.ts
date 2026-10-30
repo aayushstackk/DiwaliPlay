@@ -14,7 +14,11 @@ import {
   AssetCategory,
   GameFeedback,
   BombConfig,
-  BombGameSettings
+  BombGameSettings,
+  RewardItem,
+  ScoreRewardRange,
+  RewardsSettings,
+  SpinRecord
 } from '../../src/types/backend';
 
 export interface CompleteSessionParams {
@@ -162,5 +166,26 @@ export interface StorageAdapter {
   isBombReferenced(id: string): Promise<boolean>;
   getBombGameSettings(): Promise<BombGameSettings>;
   updateBombGameSettings(settings: Partial<BombGameSettings>): Promise<BombGameSettings>;
+
+  // --------------------------------------------------------------------------
+  // Rewards & Spin Wheel Module
+  // --------------------------------------------------------------------------
+  getRewards(includeInactive?: boolean): Promise<RewardItem[]>;
+  getRewardById(id: string): Promise<RewardItem | undefined>;
+  createReward(reward: Omit<RewardItem, 'id' | 'createdAt' | 'updatedAt'>): Promise<RewardItem>;
+  updateReward(id: string, updates: Partial<RewardItem>): Promise<RewardItem | undefined>;
+  deleteReward(id: string): Promise<boolean>;
+
+  getScoreRewards(): Promise<ScoreRewardRange[]>;
+  getScoreRewardById(id: string): Promise<ScoreRewardRange | undefined>;
+  createScoreReward(range: Omit<ScoreRewardRange, 'id' | 'createdAt' | 'updatedAt'>): Promise<ScoreRewardRange>;
+  updateScoreReward(id: string, updates: Partial<ScoreRewardRange>): Promise<ScoreRewardRange | undefined>;
+  deleteScoreReward(id: string): Promise<boolean>;
+
+  getRewardsSettings(): Promise<RewardsSettings>;
+  updateRewardsSettings(settings: Partial<RewardsSettings>): Promise<RewardsSettings>;
+
+  recordSpinResult(record: Omit<SpinRecord, 'id' | 'timestamp'>): Promise<SpinRecord>;
+  getSpinResults(limit?: number): Promise<SpinRecord[]>;
 }
 

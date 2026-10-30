@@ -12,10 +12,13 @@ import {
   Check,
   Mail,
   X,
-  Timer
+  Timer,
+  Gift,
+  Trophy,
+  Copy
 } from 'lucide-react';
 import { GameScoreState } from '../types/motion';
-import { GameFeedback, AchievementTier } from '../types/backend';
+import { GameFeedback, AchievementTier, RewardItem, GameSession } from '../types/backend';
 import { gameApi } from '../services/api';
 import {
   calculateAchievement,
@@ -37,6 +40,9 @@ interface GameOverModalProps {
   targetScoreEnabled?: boolean;
   targetScore?: number;
   achievementTiers?: AchievementTier[];
+  earnedReward?: GameSession['earnedReward'] | null;
+  rewardsEnabled?: boolean;
+  onOpenSpinWheel?: () => void;
 }
 
 const GameOverModalComponent: React.FC<GameOverModalProps> = ({
@@ -52,11 +58,15 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
   onSubmitFeedback,
   targetScoreEnabled = false,
   targetScore = 5000,
-  achievementTiers
+  achievementTiers,
+  earnedReward,
+  rewardsEnabled = true,
+  onOpenSpinWheel
 }) => {
   // Smooth animated count-up for final score
   const [displayedScore, setDisplayedScore] = useState(0);
   const [isDownloaded, setIsDownloaded] = useState(false);
+  const [copiedEarnedCode, setCopiedEarnedCode] = useState(false);
 
   // Feedback state
   const [selectedFeedback, setSelectedFeedback] = useState<GameFeedback | ''>('');
@@ -630,6 +640,59 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
               )}
             </div>
 
+            {/* SCORE REWARD VOUCHER (If won by player's final score) */}
+            {earnedReward && (
+              <div className="w-full bg-gradient-to-r from-amber-950/80 via-[#221308] to-yellow-950/80 border border-amber-400/80 rounded-xl p-2 sm:p-2.5 flex items-center justify-between gap-2.5 shadow-lg flex-shrink-0 animate-[fadeIn_0.3s_ease-out]">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-white/95 p-1 border border-amber-400/60 flex items-center justify-center flex-shrink-0 overflow-hidden shadow-inner">
+                    {earnedReward.imageUrl ? (
+                      <img
+                        src={earnedReward.imageUrl}
+                        alt={earnedReward.name}
+                        className="w-full h-full object-contain"
+                      />
+                    ) : (
+                      <Gift className="w-5 h-5 text-amber-600" />
+                    )}
+                  </div>
+                  <div className="min-w-0 text-left">
+                    <div className="inline-flex items-center gap-1 text-[9px] font-mono font-bold text-amber-300 uppercase tracking-wider">
+                      <Trophy className="w-2.5 h-2.5 text-amber-400" />
+                      <span>SCORE PRIZE UNLOCKED!</span>
+                    </div>
+                    <h4 className="text-xs sm:text-sm font-bold text-amber-100 truncate">
+                      {earnedReward.name}
+                    </h4>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <div className="bg-[#140803] border border-amber-400/50 rounded-lg px-2 py-0.5 text-right">
+                    <span className="block text-[8px] font-mono text-amber-300/70 uppercase">CODE</span>
+                    <span className="text-[11px] sm:text-xs font-mono font-black text-amber-200 tracking-wider">
+                      {earnedReward.couponCode}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(earnedReward.couponCode);
+                      setCopiedEarnedCode(true);
+                      setTimeout(() => setCopiedEarnedCode(false), 2000);
+                    }}
+                    className="p-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-200 text-xs cursor-pointer transition"
+                    title="Copy Coupon Code"
+                  >
+                    {copiedEarnedCode ? (
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* ========================================================= */}
             {/* SPECIAL WISH SECTION: STRICTLY ONE-TAP ONLY               */}
             {/* Direct Closed Diwali Envelope -> User Taps -> Opens & Shows */}
@@ -812,13 +875,28 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
             </div>
           )}
 
-          <button
-            onClick={triggerExit}
-            className="w-full h-12 sm:h-14 lg:h-16 py-2 px-6 bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-neutral-950 font-black text-sm sm:text-base lg:text-lg uppercase tracking-widest rounded-xl sm:rounded-2xl transition-all shadow-[0_0_30px_rgba(245,158,11,0.45)] hover:shadow-[0_0_40px_rgba(245,158,11,0.65)] flex items-center justify-center gap-2.5 cursor-pointer active:scale-[0.98]"
-          >
-            <RotateCcw className="w-5 h-5 stroke-[2.5]" />
-            <span>PLAY AGAIN</span>
-          </button>
+          <div className="flex items-center gap-2.5 w-full">
+            {rewardsEnabled && onOpenSpinWheel && (
+              <button
+                type="button"
+                onClick={onOpenSpinWheel}
+                className="flex-1 h-12 sm:h-14 lg:h-16 py-2 px-4 bg-gradient-to-r from-rose-600 via-amber-500 to-yellow-500 hover:from-rose-500 hover:to-amber-400 text-neutral-950 font-black text-xs sm:text-sm lg:text-base uppercase tracking-wider rounded-xl sm:rounded-2xl transition-all shadow-[0_0_25px_rgba(244,63,94,0.4)] hover:shadow-[0_0_35px_rgba(244,63,94,0.6)] flex items-center justify-center gap-2 cursor-pointer active:scale-[0.98] border border-amber-300/40"
+              >
+                <Gift className="w-5 h-5 animate-bounce text-neutral-950 stroke-[2.5]" />
+                <span>SPIN & WIN</span>
+              </button>
+            )}
+
+            <button
+              onClick={triggerExit}
+              className={`${
+                rewardsEnabled && onOpenSpinWheel ? 'flex-1' : 'w-full'
+              } h-12 sm:h-14 lg:h-16 py-2 px-6 bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-neutral-950 font-black text-xs sm:text-sm lg:text-base uppercase tracking-widest rounded-xl sm:rounded-2xl transition-all shadow-[0_0_30px_rgba(245,158,11,0.45)] hover:shadow-[0_0_40px_rgba(245,158,11,0.65)] flex items-center justify-center gap-2.5 cursor-pointer active:scale-[0.98]`}
+            >
+              <RotateCcw className="w-5 h-5 stroke-[2.5]" />
+              <span>PLAY AGAIN</span>
+            </button>
+          </div>
         </footer>
       </div>
     </div>

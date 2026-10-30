@@ -25,6 +25,7 @@ import { BombManagementSection } from './sections/BombManagementSection';
 import { WishesSection } from './sections/WishesSection';
 import { GameSettingsSection } from './sections/GameSettingsSection';
 import { ReportsSection } from './sections/ReportsSection';
+import { RewardsSection } from './sections/RewardsSection';
 import { AdminThemeProvider, useAdminTheme } from './AdminThemeContext';
 
 interface AuthenticatedAdminUser {
@@ -48,7 +49,7 @@ const AdminAppContent: React.FC = () => {
       const hash = window.location.hash.replace('#', '') as AdminSection;
       const validSections: AdminSection[] = [
         'overview', 'players', 'sessions', 'branding', 'wallpapers',
-        'sound', 'bombs', 'wishes', 'settings', 'reports'
+        'sound', 'bombs', 'wishes', 'settings', 'reports', 'rewards'
       ];
       if (validSections.includes(hash)) return hash;
     }
@@ -294,6 +295,10 @@ const AdminAppContent: React.FC = () => {
               users={users}
               isLoading={isLoadingData}
             />
+          )}
+
+          {activeSection === 'rewards' && (
+            <RewardsSection />
           )}
         </main>
       </div>

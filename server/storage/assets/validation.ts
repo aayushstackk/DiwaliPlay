@@ -41,6 +41,12 @@ export const CATEGORY_RULES: Record<AssetCategory, CategoryValidationRules> = {
     allowedExtensions: ['.jpg', '.jpeg', '.png', '.webp', '.svg', '.mp3', '.wav', '.ogg', '.m4a'],
     maxSizeBytes: 15 * 1024 * 1024, // 15 MB
     readableLimit: '15 MB'
+  },
+  reward_images: {
+    allowedMimeTypes: ['image/png', 'image/svg+xml', 'image/webp', 'image/jpeg'],
+    allowedExtensions: ['.png', '.svg', '.webp', '.jpg', '.jpeg'],
+    maxSizeBytes: 5 * 1024 * 1024, // 5 MB
+    readableLimit: '5 MB'
   }
 };
 
@@ -217,7 +223,8 @@ export function generateSafeObjectKey(category: AssetCategory, ext: string): str
     brand_logos: 'logo',
     audio_tracks: 'audio',
     cracker_effects: 'fx',
-    bomb_assets: 'bomb'
+    bomb_assets: 'bomb',
+    reward_images: 'reward'
   };
 
   const prefix = prefixMap[category] || 'asset';

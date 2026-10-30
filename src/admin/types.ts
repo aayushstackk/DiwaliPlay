@@ -12,6 +12,7 @@ export type AdminSection =
   | 'sound'
   | 'bombs'
   | 'wishes'
+  | 'rewards'
   | 'settings'
   | 'reports';
 

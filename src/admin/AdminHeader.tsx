@@ -66,6 +66,10 @@ const SECTION_TITLES: Record<AdminSection, { title: string; subtitle: string }> 
   reports: {
     title: 'Analytics Reports & Exports',
     subtitle: 'Leaderboard rankings, completion statistics, and data exports'
+  },
+  rewards: {
+    title: 'Spin Wheel',
+    subtitle: 'Vouchers and lucky spin prizes'
   }
 };
 

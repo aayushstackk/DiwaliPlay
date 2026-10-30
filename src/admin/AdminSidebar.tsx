@@ -13,6 +13,7 @@ import {
   Music,
   Bomb,
   Trophy,
+  Gift,
   Sliders,
   FileText,
   X
@@ -75,6 +76,12 @@ const NAV_ITEMS: {
     label: 'Wishes & Achievements',
     icon: Trophy,
     description: 'Post-game templates'
+  },
+  {
+    id: 'rewards',
+    label: 'Spin Wheel',
+    icon: Gift,
+    description: 'Vouchers & lucky spin wheel'
   },
   {
     id: 'settings',

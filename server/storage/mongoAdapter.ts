@@ -22,10 +22,15 @@ import {
   TRIAL_CODE,
   GameFeedback,
   BombConfig,
-  BombGameSettings
+  BombGameSettings,
+  RewardItem,
+  ScoreRewardRange,
+  RewardsSettings,
+  SpinRecord
 } from '../../src/types/backend';
 import { StorageAdapter, CompleteSessionParams } from './types';
 import { DEFAULT_BOMB_CONFIGS, DEFAULT_BOMB_SETTINGS } from './defaultBombs';
+import { DEFAULT_REWARDS, DEFAULT_SCORE_REWARDS, DEFAULT_REWARDS_SETTINGS } from './defaultRewards';
 import { DEFAULT_AUDIO_SETTINGS } from '../../src/utils/audioDefaults';
 
 const DEFAULT_SETTINGS: SystemSettings = {
@@ -65,6 +70,10 @@ export class MongoStorageAdapter implements StorageAdapter {
   private assetsCol!: Collection<AssetRecord>;
   private bombsCol!: Collection<BombConfig>;
   private bombSettingsCol!: Collection<any>;
+  private rewardsCol!: Collection<RewardItem>;
+  private scoreRewardsCol!: Collection<ScoreRewardRange>;
+  private rewardsSettingsCol!: Collection<any>;
+  private spinResultsCol!: Collection<SpinRecord>;
 
   constructor(uri: string, dbName?: string) {
     this.uri = uri;
@@ -99,6 +108,10 @@ export class MongoStorageAdapter implements StorageAdapter {
       this.assetsCol = this.db.collection<AssetRecord>('assets');
       this.bombsCol = this.db.collection<BombConfig>('bomb_configs');
       this.bombSettingsCol = this.db.collection<any>('bomb_settings');
+      this.rewardsCol = this.db.collection<RewardItem>('rewards');
+      this.scoreRewardsCol = this.db.collection<ScoreRewardRange>('score_rewards');
+      this.rewardsSettingsCol = this.db.collection<any>('rewards_settings');
+      this.spinResultsCol = this.db.collection<SpinRecord>('spin_results');
 
       // Create necessary indexes for performance and data integrity
       await Promise.all([
@@ -122,7 +135,11 @@ export class MongoStorageAdapter implements StorageAdapter {
         this.assetsCol.createIndex({ objectKey: 1 }, { unique: true }),
         this.assetsCol.createIndex({ category: 1, createdAt: -1 }),
         this.bombsCol.createIndex({ id: 1 }, { unique: true }),
-        this.bombsCol.createIndex({ isActive: 1 })
+        this.bombsCol.createIndex({ isActive: 1 }),
+        this.rewardsCol.createIndex({ id: 1 }, { unique: true }),
+        this.scoreRewardsCol.createIndex({ id: 1 }, { unique: true }),
+        this.spinResultsCol.createIndex({ id: 1 }, { unique: true }),
+        this.spinResultsCol.createIndex({ timestamp: -1 })
       ]);
 
       // Ensure global settings document exists
@@ -147,6 +164,28 @@ export class MongoStorageAdapter implements StorageAdapter {
         await this.bombSettingsCol.insertOne({
           _id: 'global_bomb_settings',
           ...DEFAULT_BOMB_SETTINGS,
+          updatedAt: new Date().toISOString()
+        });
+      }
+
+      // Ensure default rewards exist if collection is empty
+      const rewardCount = await this.rewardsCol.countDocuments();
+      if (rewardCount === 0) {
+        await this.rewardsCol.insertMany(DEFAULT_REWARDS.map((r) => ({ ...r })));
+      }
+
+      // Ensure default score rewards exist if collection is empty
+      const scoreRewardCount = await this.scoreRewardsCol.countDocuments();
+      if (scoreRewardCount === 0) {
+        await this.scoreRewardsCol.insertMany(DEFAULT_SCORE_REWARDS.map((sr) => ({ ...sr })));
+      }
+
+      // Ensure global rewards settings document exists
+      const existingRewardsSettings = await this.rewardsSettingsCol.findOne({ _id: 'global_rewards_settings' as any });
+      if (!existingRewardsSettings) {
+        await this.rewardsSettingsCol.insertOne({
+          _id: 'global_rewards_settings',
+          ...DEFAULT_REWARDS_SETTINGS,
           updatedAt: new Date().toISOString()
         });
       }
@@ -474,6 +513,56 @@ export class MongoStorageAdapter implements StorageAdapter {
     if (typeof data.comboBonusPoints === 'number') updates.comboBonusPoints = data.comboBonusPoints;
     if (typeof data.targetScore === 'number') updates.targetScore = data.targetScore;
     if (typeof data.targetAchieved === 'boolean') updates.targetAchieved = data.targetAchieved;
+
+    // Score-based rewards assignment (if rewards feature is enabled)
+    try {
+      const rewSettings = await this.getRewardsSettings();
+      if (rewSettings.enabled) {
+        const finalScore = Number(data.score) || 0;
+        // 1. Check direct score range on rewards
+        const allRewards = await this.getRewards(false);
+        const directReward = allRewards.find(
+          (r) =>
+            r.isActive !== false &&
+            (r.mode === 'score' || (!r.mode && typeof r.minScore === 'number')) &&
+            typeof r.minScore === 'number' &&
+            typeof r.maxScore === 'number' &&
+            finalScore >= r.minScore &&
+            finalScore <= r.maxScore
+        );
+        if (directReward) {
+          updates.earnedReward = {
+            id: directReward.id,
+            name: directReward.name,
+            description: directReward.description,
+            imageUrl: directReward.imageUrl,
+            couponCode: directReward.couponCode,
+            termsAndConditions: directReward.termsAndConditions
+          };
+        } else {
+          // 2. Fallback to scoreRanges collection
+          const scoreRanges = await this.getScoreRewards();
+          for (const range of scoreRanges) {
+            if (finalScore >= range.minScore && finalScore <= range.maxScore) {
+              const reward = await this.getRewardById(range.rewardId);
+              if (reward && reward.isActive !== false) {
+                updates.earnedReward = {
+                  id: reward.id,
+                  name: reward.name,
+                  description: reward.description,
+                  imageUrl: reward.imageUrl,
+                  couponCode: reward.couponCode,
+                  termsAndConditions: reward.termsAndConditions
+                };
+                break;
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[Mongo completeSession] Score reward check error:', e);
+    }
 
     await this.sessionsCol.updateOne(
       { id: sessionId },
@@ -1068,6 +1157,203 @@ export class MongoStorageAdapter implements StorageAdapter {
     );
     const { _id, updatedAt, ...clean } = (res || {}) as any;
     return { ...DEFAULT_BOMB_SETTINGS, ...clean } as BombGameSettings;
+  }
+
+  // --------------------------------------------------------------------------
+  // Rewards & Spin Wheel Module
+  // --------------------------------------------------------------------------
+  public async getRewards(includeInactive = false): Promise<RewardItem[]> {
+    const query: any = {};
+    if (!includeInactive) {
+      query.isActive = { $ne: false };
+    }
+    const docs = await this.rewardsCol.find(query).sort({ chances: -1, createdAt: 1 }).toArray();
+    return docs.map((d) => {
+      const { _id, ...clean } = d as any;
+      return clean as RewardItem;
+    });
+  }
+
+  public async getRewardById(id: string): Promise<RewardItem | undefined> {
+    const doc = await this.rewardsCol.findOne({ id });
+    if (!doc) return undefined;
+    const { _id, ...clean } = doc as any;
+    return clean as RewardItem;
+  }
+
+  public async createReward(reward: Omit<RewardItem, 'id' | 'createdAt' | 'updatedAt'>): Promise<RewardItem> {
+    const id = `reward_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const now = new Date().toISOString();
+    const newReward: RewardItem = {
+      ...reward,
+      id,
+      isActive: reward.isActive !== undefined ? reward.isActive : true,
+      chances: typeof reward.chances === 'number' && reward.chances > 0 ? reward.chances : 10,
+      createdAt: now,
+      updatedAt: now
+    };
+    await this.rewardsCol.insertOne({ ...newReward } as any);
+    return newReward;
+  }
+
+  public async updateReward(id: string, updates: Partial<RewardItem>): Promise<RewardItem | undefined> {
+    const now = new Date().toISOString();
+    const cleanUpdates = { ...updates, updatedAt: now };
+    delete (cleanUpdates as any)._id;
+    delete (cleanUpdates as any).id;
+
+    const res = await this.rewardsCol.findOneAndUpdate(
+      { id },
+      { $set: cleanUpdates },
+      { returnDocument: 'after' }
+    );
+    if (!res) return undefined;
+    const { _id, ...clean } = res as any;
+    return clean as RewardItem;
+  }
+
+  public async deleteReward(id: string): Promise<boolean> {
+    const res = await this.rewardsCol.deleteOne({ id });
+    if (res.deletedCount === 0) return false;
+    // Also remove from any score ranges that referenced this deleted reward
+    await this.scoreRewardsCol.deleteMany({ rewardId: id });
+    return true;
+  }
+
+  public async getScoreRewards(): Promise<ScoreRewardRange[]> {
+    const docs = await this.scoreRewardsCol.find().sort({ minScore: 1 }).toArray();
+    const rewards = await this.getRewards(true);
+    const rewardsMap = new Map(rewards.map((r) => [r.id, r]));
+
+    return docs.map((d) => {
+      const { _id, ...clean } = d as any;
+      const sr = clean as ScoreRewardRange;
+      return {
+        ...sr,
+        reward: rewardsMap.get(sr.rewardId)
+      };
+    });
+  }
+
+  public async getScoreRewardById(id: string): Promise<ScoreRewardRange | undefined> {
+    const doc = await this.scoreRewardsCol.findOne({ id });
+    if (!doc) return undefined;
+    const { _id, ...clean } = doc as any;
+    const sr = clean as ScoreRewardRange;
+    const reward = await this.getRewardById(sr.rewardId);
+    return { ...sr, reward };
+  }
+
+  public async createScoreReward(range: Omit<ScoreRewardRange, 'id' | 'createdAt' | 'updatedAt'>): Promise<ScoreRewardRange> {
+    const minScore = Number(range.minScore) || 0;
+    const maxScore = Number(range.maxScore) || 0;
+    if (minScore > maxScore) {
+      throw new Error('Minimum score cannot be greater than maximum score.');
+    }
+
+    // Validate overlap
+    const existing = await this.scoreRewardsCol.find().toArray();
+    for (const other of existing) {
+      if (minScore <= other.maxScore && maxScore >= other.minScore) {
+        throw new Error(`Score range [${minScore} - ${maxScore}] overlaps with existing range [${other.minScore} - ${other.maxScore}].`);
+      }
+    }
+
+    const id = `score_range_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const now = new Date().toISOString();
+    const newRange: ScoreRewardRange = {
+      ...range,
+      id,
+      minScore,
+      maxScore,
+      createdAt: now,
+      updatedAt: now
+    };
+    await this.scoreRewardsCol.insertOne({ ...newRange } as any);
+    const reward = await this.getRewardById(newRange.rewardId);
+    return { ...newRange, reward };
+  }
+
+  public async updateScoreReward(id: string, updates: Partial<ScoreRewardRange>): Promise<ScoreRewardRange | undefined> {
+    const existing = await this.scoreRewardsCol.findOne({ id });
+    if (!existing) return undefined;
+    const minScore = updates.minScore !== undefined ? Number(updates.minScore) : existing.minScore;
+    const maxScore = updates.maxScore !== undefined ? Number(updates.maxScore) : existing.maxScore;
+    if (minScore > maxScore) {
+      throw new Error('Minimum score cannot be greater than maximum score.');
+    }
+
+    // Validate overlap excluding current range
+    const allRanges = await this.scoreRewardsCol.find({ id: { $ne: id } }).toArray();
+    for (const other of allRanges) {
+      if (minScore <= other.maxScore && maxScore >= other.minScore) {
+        throw new Error(`Score range [${minScore} - ${maxScore}] overlaps with existing range [${other.minScore} - ${other.maxScore}].`);
+      }
+    }
+
+    const now = new Date().toISOString();
+    const cleanUpdates = { ...updates, minScore, maxScore, updatedAt: now };
+    delete (cleanUpdates as any)._id;
+    delete (cleanUpdates as any).id;
+
+    const res = await this.scoreRewardsCol.findOneAndUpdate(
+      { id },
+      { $set: cleanUpdates },
+      { returnDocument: 'after' }
+    );
+    if (!res) return undefined;
+    const { _id, ...clean } = res as any;
+    const sr = clean as ScoreRewardRange;
+    const reward = await this.getRewardById(sr.rewardId);
+    return { ...sr, reward };
+  }
+
+  public async deleteScoreReward(id: string): Promise<boolean> {
+    const res = await this.scoreRewardsCol.deleteOne({ id });
+    return res.deletedCount > 0;
+  }
+
+  public async getRewardsSettings(): Promise<RewardsSettings> {
+    const doc = await this.rewardsSettingsCol.findOne({ _id: 'global_rewards_settings' as any });
+    if (!doc) {
+      return { ...DEFAULT_REWARDS_SETTINGS };
+    }
+    const { _id, updatedAt, ...clean } = doc as any;
+    return { ...DEFAULT_REWARDS_SETTINGS, ...clean } as RewardsSettings;
+  }
+
+  public async updateRewardsSettings(settings: Partial<RewardsSettings>): Promise<RewardsSettings> {
+    const now = new Date().toISOString();
+    const cleanUpdates = { ...settings, updatedAt: now };
+    delete (cleanUpdates as any)._id;
+
+    const res = await this.rewardsSettingsCol.findOneAndUpdate(
+      { _id: 'global_rewards_settings' as any },
+      { $set: cleanUpdates },
+      { returnDocument: 'after', upsert: true }
+    );
+    const { _id, updatedAt, ...clean } = (res || {}) as any;
+    return { ...DEFAULT_REWARDS_SETTINGS, ...clean } as RewardsSettings;
+  }
+
+  public async recordSpinResult(record: Omit<SpinRecord, 'id' | 'timestamp'>): Promise<SpinRecord> {
+    const id = `spin_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const now = new Date().toISOString();
+    const newRecord: SpinRecord = {
+      ...record,
+      id,
+      timestamp: now
+    };
+    await this.spinResultsCol.insertOne({ ...newRecord } as any);
+    return newRecord;
+  }
+
+  public async getSpinResults(limit = 100): Promise<SpinRecord[]> {
+    const docs = await this.spinResultsCol.find().sort({ timestamp: -1 }).limit(limit).toArray();
+    return docs.map((d) => {
+      const { _id, ...clean } = d as any;
+      return clean as SpinRecord;
+    });
   }
 }
 

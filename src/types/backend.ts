@@ -61,6 +61,14 @@ export interface GameSession {
   comboBonusPoints?: number;
   targetScore?: number;
   targetAchieved?: boolean;
+  earnedReward?: {
+    id: string;
+    name: string;
+    description: string;
+    imageUrl: string;
+    couponCode: string;
+    termsAndConditions?: string;
+  } | null;
 }
 
 export type GameplayInteractionMode = 'camera' | 'touch';
@@ -165,6 +173,7 @@ export interface SystemSettings {
   wallpaperEnabled?: boolean; // ON: show uploaded wallpaper; OFF: show live webcam background (default: true)
   targetScoreEnabled?: boolean; // ON: track target score progress bar and popup; OFF: disabled (default: false)
   targetScore?: number; // target points to achieve, e.g. 5000 (default: 5000)
+  rewardsEnabled?: boolean; // Main ON/OFF toggle for Rewards & Spin Wheel (default: true)
   audioSettings?: GameAudioSettings;
   achievementTiers?: AchievementTier[];
 }
@@ -235,6 +244,14 @@ export interface CompleteSessionRequest {
   comboBonusPoints?: number;
   targetScore?: number;
   targetAchieved?: boolean;
+  earnedReward?: {
+    id: string;
+    name: string;
+    description: string;
+    imageUrl: string;
+    couponCode: string;
+    termsAndConditions?: string;
+  } | null;
 }
 
 export interface CompleteSessionResponse {
@@ -385,7 +402,7 @@ export interface UpdateAdminAccountResponse {
 // ============================================================================
 // Asset Storage & Management Models (Phase 4A)
 // ============================================================================
-export type AssetCategory = 'wallpapers' | 'brand_logos' | 'audio_tracks' | 'cracker_effects' | 'bomb_assets';
+export type AssetCategory = 'wallpapers' | 'brand_logos' | 'audio_tracks' | 'cracker_effects' | 'bomb_assets' | 'reward_images';
 
 export interface AssetRecord {
   id: string; // Stable unique ID e.g. "asset_abc123"
@@ -480,5 +497,80 @@ export interface BombOperationResponse {
   settings?: BombGameSettings;
   message?: string;
 }
+
+// ============================================================================
+// Rewards & Spin Wheel Module
+// ============================================================================
+
+export type RewardMode = 'chance' | 'score';
+
+export interface RewardItem {
+  id: string;
+  name: string;
+  description: string;
+  imageUrl: string;
+  couponCode: string;
+  termsAndConditions: string;
+  chances: number; // Probability weight for Chance Based rewards
+  mode?: RewardMode; // 'chance' (default) or 'score'
+  isActive?: boolean;
+  minScore?: number; // Minimum score bracket for Score Based reward
+  maxScore?: number; // Maximum score bracket for Score Based reward
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ScoreRewardRange {
+  id: string;
+  minScore: number;
+  maxScore: number;
+  rewardId: string;
+  reward?: RewardItem; // Populated reward details if available
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RewardsSettings {
+  enabled: boolean; // Main ON/OFF toggle for complete Rewards & Spin Wheel feature
+}
+
+export interface SpinRecord {
+  id: string;
+  userId?: string;
+  playerName: string;
+  mobileNumber?: string;
+  sessionId?: string;
+  rewardId: string;
+  rewardName: string;
+  couponCode: string;
+  rewardImageUrl: string;
+  termsAndConditions?: string;
+  timestamp: string;
+}
+
+export interface SpinWheelRequest {
+  userId?: string;
+  playerName?: string;
+  mobileNumber?: string;
+  sessionId?: string;
+}
+
+export interface SpinWheelResponse {
+  success: boolean;
+  reward: RewardItem;
+  rewardIndex: number;
+  spinRecord: SpinRecord;
+  message?: string;
+}
+
+export interface RewardsDataResponse {
+  success: boolean;
+  enabled: boolean;
+  rewards: RewardItem[];
+  scoreRewards?: ScoreRewardRange[];
+  spinResults?: SpinRecord[];
+  message?: string;
+}
+
 
 

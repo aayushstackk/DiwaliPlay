@@ -21,10 +21,15 @@ import {
   TRIAL_CODE,
   GameFeedback,
   BombConfig,
-  BombGameSettings
+  BombGameSettings,
+  RewardItem,
+  ScoreRewardRange,
+  RewardsSettings,
+  SpinRecord
 } from '../../src/types/backend';
 import { StorageAdapter, CompleteSessionParams } from './types';
 import { DEFAULT_BOMB_CONFIGS, DEFAULT_BOMB_SETTINGS } from './defaultBombs';
+import { DEFAULT_REWARDS, DEFAULT_SCORE_REWARDS, DEFAULT_REWARDS_SETTINGS } from './defaultRewards';
 import { DEFAULT_AUDIO_SETTINGS } from '../../src/utils/audioDefaults';
 
 export interface DatabaseSchema {
@@ -40,6 +45,10 @@ export interface DatabaseSchema {
   assets: Record<string, AssetRecord>; // key: assetId
   bombs: Record<string, BombConfig>; // key: bombId
   bombSettings: BombGameSettings;
+  rewards: Record<string, RewardItem>;
+  scoreRewards: Record<string, ScoreRewardRange>;
+  rewardsSettings: RewardsSettings;
+  spinResults: SpinRecord[];
 }
 
 const DEFAULT_SETTINGS: SystemSettings = {
@@ -133,6 +142,24 @@ export class JsonFileStorageAdapter implements StorageAdapter {
           ? parsed.bombs
           : defaultBombsMap;
 
+        const defaultRewardsMap: Record<string, RewardItem> = {};
+        DEFAULT_REWARDS.forEach((r) => {
+          defaultRewardsMap[r.id] = { ...r };
+        });
+
+        const defaultScoreRewardsMap: Record<string, ScoreRewardRange> = {};
+        DEFAULT_SCORE_REWARDS.forEach((sr) => {
+          defaultScoreRewardsMap[sr.id] = { ...sr };
+        });
+
+        const loadedRewards = parsed.rewards && Object.keys(parsed.rewards).length > 0
+          ? parsed.rewards
+          : defaultRewardsMap;
+
+        const loadedScoreRewards = parsed.scoreRewards && Object.keys(parsed.scoreRewards).length > 0
+          ? parsed.scoreRewards
+          : defaultScoreRewardsMap;
+
         return {
           users: parsed.users || {},
           usersByMobile: parsed.usersByMobile || {},
@@ -145,7 +172,11 @@ export class JsonFileStorageAdapter implements StorageAdapter {
           auditLogs: parsed.auditLogs || [],
           assets: parsed.assets || {},
           bombs: loadedBombs,
-          bombSettings: { ...DEFAULT_BOMB_SETTINGS, ...(parsed.bombSettings || {}) }
+          bombSettings: { ...DEFAULT_BOMB_SETTINGS, ...(parsed.bombSettings || {}) },
+          rewards: loadedRewards,
+          scoreRewards: loadedScoreRewards,
+          rewardsSettings: parsed.rewardsSettings || { ...DEFAULT_REWARDS_SETTINGS },
+          spinResults: Array.isArray(parsed.spinResults) ? parsed.spinResults : []
         };
       }
     } catch (err) {
@@ -155,6 +186,16 @@ export class JsonFileStorageAdapter implements StorageAdapter {
     const initialBombsMap: Record<string, BombConfig> = {};
     DEFAULT_BOMB_CONFIGS.forEach((b) => {
       initialBombsMap[b.id] = { ...b };
+    });
+
+    const initialRewardsMap: Record<string, RewardItem> = {};
+    DEFAULT_REWARDS.forEach((r) => {
+      initialRewardsMap[r.id] = { ...r };
+    });
+
+    const initialScoreRewardsMap: Record<string, ScoreRewardRange> = {};
+    DEFAULT_SCORE_REWARDS.forEach((sr) => {
+      initialScoreRewardsMap[sr.id] = { ...sr };
     });
 
     return {
@@ -169,7 +210,11 @@ export class JsonFileStorageAdapter implements StorageAdapter {
       auditLogs: [],
       assets: {},
       bombs: initialBombsMap,
-      bombSettings: { ...DEFAULT_BOMB_SETTINGS }
+      bombSettings: { ...DEFAULT_BOMB_SETTINGS },
+      rewards: initialRewardsMap,
+      scoreRewards: initialScoreRewardsMap,
+      rewardsSettings: { ...DEFAULT_REWARDS_SETTINGS },
+      spinResults: []
     };
   }
 
@@ -513,6 +558,54 @@ export class JsonFileStorageAdapter implements StorageAdapter {
     if (typeof data.targetAchieved === 'boolean') {
       session.targetAchieved = data.targetAchieved;
     }
+
+    // Score-based rewards assignment (if rewards feature is enabled)
+    if (this.data.rewardsSettings?.enabled !== false && this.data.rewards) {
+      const finalScore = Number(data.score) || 0;
+      // 1. Check direct score range configured on rewards (Score Based mode)
+      const rewardsWithRanges = Object.values(this.data.rewards).filter(
+        (r) =>
+          r.isActive !== false &&
+          (r.mode === 'score' || (!r.mode && typeof r.minScore === 'number')) &&
+          typeof r.minScore === 'number' &&
+          typeof r.maxScore === 'number'
+      );
+      for (const reward of rewardsWithRanges) {
+        if (finalScore >= (reward.minScore ?? 0) && finalScore <= (reward.maxScore ?? Infinity)) {
+          session.earnedReward = {
+            id: reward.id,
+            name: reward.name,
+            description: reward.description,
+            imageUrl: reward.imageUrl,
+            couponCode: reward.couponCode,
+            termsAndConditions: reward.termsAndConditions
+          };
+          break;
+        }
+      }
+
+      // 2. Fallback to scoreRewards collection if not matched
+      if (!session.earnedReward && this.data.scoreRewards) {
+        const scoreRanges = Object.values(this.data.scoreRewards).sort((a, b) => a.minScore - b.minScore);
+        for (const range of scoreRanges) {
+          if (finalScore >= range.minScore && finalScore <= range.maxScore) {
+            const reward = this.data.rewards[range.rewardId];
+            if (reward && reward.isActive !== false) {
+              session.earnedReward = {
+                id: reward.id,
+                name: reward.name,
+                description: reward.description,
+                imageUrl: reward.imageUrl,
+                couponCode: reward.couponCode,
+                termsAndConditions: reward.termsAndConditions
+              };
+              break;
+            }
+          }
+        }
+      }
+    }
+
     session.status = 'COMPLETED';
 
     // Update player stats idempotently (do not double-increment playCount on retries)
@@ -988,6 +1081,202 @@ export class JsonFileStorageAdapter implements StorageAdapter {
     };
     this.persist();
     return this.data.bombSettings;
+  }
+
+  // --------------------------------------------------------------------------
+  // Rewards & Spin Wheel Module
+  // --------------------------------------------------------------------------
+  public async getRewards(includeInactive = false): Promise<RewardItem[]> {
+    if (!this.data.rewards || Object.keys(this.data.rewards).length === 0) {
+      this.data.rewards = {};
+      DEFAULT_REWARDS.forEach((r) => {
+        this.data.rewards[r.id] = { ...r };
+      });
+      this.persist();
+    }
+    return Object.values(this.data.rewards).filter((r) => includeInactive || r.isActive !== false);
+  }
+
+  public async getRewardById(id: string): Promise<RewardItem | undefined> {
+    return this.data.rewards?.[id];
+  }
+
+  public async createReward(reward: Omit<RewardItem, 'id' | 'createdAt' | 'updatedAt'>): Promise<RewardItem> {
+    const id = `reward_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const now = new Date().toISOString();
+    const newReward: RewardItem = {
+      ...reward,
+      id,
+      isActive: reward.isActive !== undefined ? reward.isActive : true,
+      chances: typeof reward.chances === 'number' && reward.chances > 0 ? reward.chances : 10,
+      createdAt: now,
+      updatedAt: now
+    };
+    if (!this.data.rewards) this.data.rewards = {};
+    this.data.rewards[id] = newReward;
+    this.persist();
+    return newReward;
+  }
+
+  public async updateReward(id: string, updates: Partial<RewardItem>): Promise<RewardItem | undefined> {
+    const existing = this.data.rewards?.[id];
+    if (!existing) return undefined;
+    const updated: RewardItem = {
+      ...existing,
+      ...updates,
+      id,
+      updatedAt: new Date().toISOString()
+    };
+    this.data.rewards[id] = updated;
+    this.persist();
+    return updated;
+  }
+
+  public async deleteReward(id: string): Promise<boolean> {
+    if (!this.data.rewards?.[id]) return false;
+    delete this.data.rewards[id];
+    // Also clean up any score ranges that referenced this deleted reward
+    if (this.data.scoreRewards) {
+      for (const [key, range] of Object.entries(this.data.scoreRewards)) {
+        if (range.rewardId === id) {
+          delete this.data.scoreRewards[key];
+        }
+      }
+    }
+    this.persist();
+    return true;
+  }
+
+  public async getScoreRewards(): Promise<ScoreRewardRange[]> {
+    if (!this.data.scoreRewards || Object.keys(this.data.scoreRewards).length === 0) {
+      this.data.scoreRewards = {};
+      DEFAULT_SCORE_REWARDS.forEach((sr) => {
+        this.data.scoreRewards[sr.id] = { ...sr };
+      });
+      this.persist();
+    }
+    const ranges = Object.values(this.data.scoreRewards).sort((a, b) => a.minScore - b.minScore);
+    return ranges.map((r) => ({
+      ...r,
+      reward: this.data.rewards?.[r.rewardId]
+    }));
+  }
+
+  public async getScoreRewardById(id: string): Promise<ScoreRewardRange | undefined> {
+    const r = this.data.scoreRewards?.[id];
+    if (!r) return undefined;
+    return { ...r, reward: this.data.rewards?.[r.rewardId] };
+  }
+
+  public async createScoreReward(range: Omit<ScoreRewardRange, 'id' | 'createdAt' | 'updatedAt'>): Promise<ScoreRewardRange> {
+    const minScore = Number(range.minScore) || 0;
+    const maxScore = Number(range.maxScore) || 0;
+    if (minScore > maxScore) {
+      throw new Error('Minimum score cannot be greater than maximum score.');
+    }
+
+    // Validate overlap
+    const existing = Object.values(this.data.scoreRewards || {});
+    for (const other of existing) {
+      if (minScore <= other.maxScore && maxScore >= other.minScore) {
+        throw new Error(`Score range [${minScore} - ${maxScore}] overlaps with existing range [${other.minScore} - ${other.maxScore}].`);
+      }
+    }
+
+    const id = `score_range_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const now = new Date().toISOString();
+    const newRange: ScoreRewardRange = {
+      ...range,
+      id,
+      minScore,
+      maxScore,
+      createdAt: now,
+      updatedAt: now
+    };
+    if (!this.data.scoreRewards) this.data.scoreRewards = {};
+    this.data.scoreRewards[id] = newRange;
+    this.persist();
+    return { ...newRange, reward: this.data.rewards?.[newRange.rewardId] };
+  }
+
+  public async updateScoreReward(id: string, updates: Partial<ScoreRewardRange>): Promise<ScoreRewardRange | undefined> {
+    const existing = this.data.scoreRewards?.[id];
+    if (!existing) return undefined;
+    const minScore = updates.minScore !== undefined ? Number(updates.minScore) : existing.minScore;
+    const maxScore = updates.maxScore !== undefined ? Number(updates.maxScore) : existing.maxScore;
+    if (minScore > maxScore) {
+      throw new Error('Minimum score cannot be greater than maximum score.');
+    }
+
+    // Validate overlap excluding current range
+    const allRanges = Object.values(this.data.scoreRewards || {}).filter((r) => r.id !== id);
+    for (const other of allRanges) {
+      if (minScore <= other.maxScore && maxScore >= other.minScore) {
+        throw new Error(`Score range [${minScore} - ${maxScore}] overlaps with existing range [${other.minScore} - ${other.maxScore}].`);
+      }
+    }
+
+    const updated: ScoreRewardRange = {
+      ...existing,
+      ...updates,
+      id,
+      minScore,
+      maxScore,
+      updatedAt: new Date().toISOString()
+    };
+    this.data.scoreRewards[id] = updated;
+    this.persist();
+    return { ...updated, reward: this.data.rewards?.[updated.rewardId] };
+  }
+
+  public async deleteScoreReward(id: string): Promise<boolean> {
+    if (!this.data.scoreRewards?.[id]) return false;
+    delete this.data.scoreRewards[id];
+    this.persist();
+    return true;
+  }
+
+  public async getRewardsSettings(): Promise<RewardsSettings> {
+    if (!this.data.rewardsSettings) {
+      this.data.rewardsSettings = { ...DEFAULT_REWARDS_SETTINGS };
+      this.persist();
+    }
+    return { ...DEFAULT_REWARDS_SETTINGS, ...this.data.rewardsSettings };
+  }
+
+  public async updateRewardsSettings(settings: Partial<RewardsSettings>): Promise<RewardsSettings> {
+    this.data.rewardsSettings = {
+      ...(this.data.rewardsSettings || DEFAULT_REWARDS_SETTINGS),
+      ...settings
+    };
+    this.persist();
+    return this.data.rewardsSettings;
+  }
+
+  public async recordSpinResult(record: Omit<SpinRecord, 'id' | 'timestamp'>): Promise<SpinRecord> {
+    const id = `spin_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const now = new Date().toISOString();
+    const newRecord: SpinRecord = {
+      ...record,
+      id,
+      timestamp: now
+    };
+    if (!Array.isArray(this.data.spinResults)) {
+      this.data.spinResults = [];
+    }
+    this.data.spinResults.unshift(newRecord);
+    if (this.data.spinResults.length > 500) {
+      this.data.spinResults = this.data.spinResults.slice(0, 500);
+    }
+    this.persist();
+    return newRecord;
+  }
+
+  public async getSpinResults(limit = 100): Promise<SpinRecord[]> {
+    if (!Array.isArray(this.data.spinResults)) {
+      this.data.spinResults = [];
+    }
+    return this.data.spinResults.slice(0, limit);
   }
 }
 

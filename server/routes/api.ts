@@ -27,6 +27,7 @@ import { authenticateAdmin, requireRole } from '../auth/middleware';
 import { adminAuthRouter } from './adminAuth';
 import { assetsRouter } from './assets';
 import { bombsRouter } from './bombs';
+import { rewardsRouter } from './rewards';
 import { validatePlayerName, validateMobileNumber } from '../../src/utils/validation';
 
 export const apiRouter = Router();
@@ -39,6 +40,9 @@ apiRouter.use(assetsRouter);
 
 // Mount Bomb Management router
 apiRouter.use(bombsRouter);
+
+// Mount Rewards & Spin Wheel router
+apiRouter.use(rewardsRouter);
 
 // ============================================================================
 // Health Check

@@ -36,7 +36,14 @@ import {
   BombConfig,
   BombGameSettings,
   ListBombsResponse,
-  BombOperationResponse
+  BombOperationResponse,
+  RewardItem,
+  ScoreRewardRange,
+  RewardsSettings,
+  SpinRecord,
+  SpinWheelRequest,
+  SpinWheelResponse,
+  RewardsDataResponse
 } from '../types/backend';
 
 const BASE_URL = (typeof window !== 'undefined' && (window as any).__API_BASE_URL__) || import.meta.env.VITE_API_BASE_URL || '/api';
@@ -226,6 +233,23 @@ export const gameApi = {
    */
   async getBombs(): Promise<ListBombsResponse> {
     return request<ListBombsResponse>('/bombs');
+  },
+
+  /**
+   * Fetch active rewards and spin wheel status for users.
+   */
+  async getRewards(): Promise<{ success: boolean; enabled: boolean; rewards: RewardItem[] }> {
+    return request<{ success: boolean; enabled: boolean; rewards: RewardItem[] }>('/rewards');
+  },
+
+  /**
+   * Spin the lucky wheel to get a randomized winning reward from backend.
+   */
+  async spinWheel(req: SpinWheelRequest): Promise<SpinWheelResponse> {
+    return request<SpinWheelResponse>('/rewards/spin', {
+      method: 'POST',
+      body: JSON.stringify(req)
+    });
   }
 };
 
@@ -498,5 +522,67 @@ async login(req: AdminLoginRequest): Promise<AdminLoginResponse> {
       method: 'PUT',
       body: JSON.stringify(settings)
     });
+  },
+
+  // --------------------------------------------------------------------------
+  // Rewards & Spin Wheel Admin Methods
+  // --------------------------------------------------------------------------
+  async getRewards(): Promise<RewardsDataResponse> {
+    return request<RewardsDataResponse>('/admin/rewards');
+  },
+
+  async createReward(reward: Partial<RewardItem>): Promise<{ success: boolean; reward: RewardItem; message: string }> {
+    return request<{ success: boolean; reward: RewardItem; message: string }>('/admin/rewards', {
+      method: 'POST',
+      body: JSON.stringify(reward)
+    });
+  },
+
+  async updateReward(id: string, updates: Partial<RewardItem>): Promise<{ success: boolean; reward: RewardItem; message: string }> {
+    return request<{ success: boolean; reward: RewardItem; message: string }>(`/admin/rewards/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates)
+    });
+  },
+
+  async deleteReward(id: string): Promise<{ success: boolean; message: string }> {
+    return request<{ success: boolean; message: string }>(`/admin/rewards/${id}`, {
+      method: 'DELETE'
+    });
+  },
+
+  async updateRewardsSettings(settings: Partial<RewardsSettings>): Promise<{ success: boolean; settings: RewardsSettings; message: string }> {
+    return request<{ success: boolean; settings: RewardsSettings; message: string }>('/admin/rewards/settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings)
+    });
+  },
+
+  async getScoreRewards(): Promise<{ success: boolean; scoreRewards: ScoreRewardRange[] }> {
+    return request<{ success: boolean; scoreRewards: ScoreRewardRange[] }>('/admin/score-rewards');
+  },
+
+  async createScoreReward(range: { minScore: number; maxScore: number; rewardId: string }): Promise<{ success: boolean; scoreReward: ScoreRewardRange; message: string }> {
+    return request<{ success: boolean; scoreReward: ScoreRewardRange; message: string }>('/admin/score-rewards', {
+      method: 'POST',
+      body: JSON.stringify(range)
+    });
+  },
+
+  async updateScoreReward(id: string, updates: Partial<ScoreRewardRange>): Promise<{ success: boolean; scoreReward: ScoreRewardRange; message: string }> {
+    return request<{ success: boolean; scoreReward: ScoreRewardRange; message: string }>(`/admin/score-rewards/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates)
+    });
+  },
+
+  async deleteScoreReward(id: string): Promise<{ success: boolean; message: string }> {
+    return request<{ success: boolean; message: string }>(`/admin/score-rewards/${id}`, {
+      method: 'DELETE'
+    });
+  },
+
+  async getSpinResults(): Promise<{ success: boolean; spinResults: SpinRecord[] }> {
+    return request<{ success: boolean; spinResults: SpinRecord[] }>('/admin/spin-results');
   }
 };

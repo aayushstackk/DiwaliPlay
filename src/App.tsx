@@ -11,13 +11,14 @@ import { CountdownOverlay } from './components/CountdownOverlay';
 import { GameOverModal } from './components/GameOverModal';
 import { PhotoCaptureModal } from './components/PhotoCaptureModal';
 import { KioskStartupScreen } from './components/KioskStartupScreen';
+import { SpinWheelModal } from './components/SpinWheelModal';
 import { DiwaliWallpaper } from './components/DiwaliWallpaper';
 import { BombGameOverlay } from './components/BombGameOverlay';
 import { useBranding } from './hooks/useBranding';
 import { GAME_DURATION_SECONDS, formatGameTimer } from './utils/scoreSystem';
 import { Camera, Sparkles, AlertTriangle, Timer, Trophy, RotateCcw, Maximize2, Minimize2, Target } from 'lucide-react';
 import { gameApi } from './services/api';
-import { User, TRIAL_CODE, BombConfig, BombGameSettings } from './types/backend';
+import { User, TRIAL_CODE, BombConfig, BombGameSettings, RewardItem, GameSession } from './types/backend';
 import { DEFAULT_BOMB_CONFIGS, DEFAULT_BOMB_SETTINGS } from './utils/bombDefaults';
 
 export default function App() {
@@ -70,6 +71,9 @@ export default function App() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [bombConfigs, setBombConfigs] = useState<BombConfig[]>(DEFAULT_BOMB_CONFIGS);
   const [bombSettings, setBombSettings] = useState<BombGameSettings>(DEFAULT_BOMB_SETTINGS);
+  const [isSpinWheelOpen, setIsSpinWheelOpen] = useState(false);
+  const [earnedReward, setEarnedReward] = useState<GameSession['earnedReward'] | null>(null);
+  const [rewardsEnabled, setRewardsEnabled] = useState(true);
   const activeSessionIdRef = useRef<string | null>(null);
   const isSessionCompletedRef = useRef<boolean>(false);
   const wasTargetAchievedRef = useRef<boolean>(false);
@@ -133,6 +137,17 @@ export default function App() {
       })
       .catch((err) => {
         console.warn('Bomb config load note:', err);
+      });
+
+    gameApi
+      .getRewards()
+      .then((res) => {
+        if (res.success) {
+          setRewardsEnabled(res.enabled ?? true);
+        }
+      })
+      .catch((err) => {
+        console.warn('Rewards settings load note:', err);
       });
   }, [phase]);
 
@@ -303,6 +318,11 @@ export default function App() {
             targetScore: branding.targetScoreEnabled ? branding.targetScore : undefined,
             targetAchieved: branding.targetScoreEnabled ? (gameScore.score >= branding.targetScore) : undefined,
           })
+          .then((res) => {
+            if (res.success && res.session?.earnedReward) {
+              setEarnedReward(res.session.earnedReward);
+            }
+          })
           .catch((err) => {
             console.warn('Session complete note:', err);
           });
@@ -323,6 +343,8 @@ export default function App() {
 
   // Restart / Return to Home Handler: Cleans state completely for the next player
   const handleResetToHome = useCallback(() => {
+    setEarnedReward(null);
+    setIsSpinWheelOpen(false);
     if (countdownTimerRef.current) {
       clearInterval(countdownTimerRef.current);
       countdownTimerRef.current = null;
@@ -463,6 +485,8 @@ export default function App() {
               }
             }}
             onPlayChime={() => playSound('CHAKRI')}
+            rewardsEnabled={rewardsEnabled}
+            onOpenSpinWheel={() => setIsSpinWheelOpen(true)}
           />
         </div>
       )}
@@ -774,6 +798,20 @@ export default function App() {
           targetScoreEnabled={branding.targetScoreEnabled}
           targetScore={branding.targetScore}
           achievementTiers={branding.achievementTiers}
+          earnedReward={earnedReward}
+          rewardsEnabled={rewardsEnabled}
+          onOpenSpinWheel={() => setIsSpinWheelOpen(true)}
+        />
+      )}
+
+      {/* Lucky Spin Wheel Modal */}
+      {isSpinWheelOpen && (
+        <SpinWheelModal
+          isOpen={isSpinWheelOpen}
+          onClose={() => setIsSpinWheelOpen(false)}
+          playerName={playerName || currentUser?.name || 'Player'}
+          mobileNumber={currentUser?.mobileNumber || ''}
+          sessionId={activeSessionIdRef.current || activeSessionId}
         />
       )}
     </div>
