@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
+import ExcelJS from 'exceljs';
 import { AdminOverviewStats, GameSession, User } from '../../types/backend';
 import {
   FileText,

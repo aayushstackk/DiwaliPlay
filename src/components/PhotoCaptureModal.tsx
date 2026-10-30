@@ -56,7 +56,6 @@ export const PhotoCaptureModal: React.FC<PhotoCaptureModalProps> = ({
     if (!video || !video.videoWidth || !video.videoHeight || video.readyState < 2) {
       return null;
     }
-
     try {
       const canvas = document.createElement('canvas');
       canvas.width = video.videoWidth;
