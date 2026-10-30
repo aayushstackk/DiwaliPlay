@@ -6,6 +6,7 @@
 import React from 'react';
 import { BrandLogo } from './BrandLogo';
 import { useBranding } from '../hooks/useBranding';
+import { BrandingDisplayMode } from '../types/backend';
 
 interface BrandingBlockProps {
   brandLogoUrl?: string | null;
@@ -15,6 +16,7 @@ interface BrandingBlockProps {
   logoWidth?: number;
   logoHeight?: number;
   logoPosition?: { x: number; y: number };
+  brandingDisplayMode?: BrandingDisplayMode;
   size?: 'kiosk' | 'mobile' | 'compact';
   className?: string;
 }
@@ -27,6 +29,7 @@ export const BrandingBlock: React.FC<BrandingBlockProps> = ({
   logoWidth,
   logoHeight,
   logoPosition,
+  brandingDisplayMode,
   size = 'kiosk',
   className = ''
 }) => {
@@ -40,6 +43,8 @@ export const BrandingBlock: React.FC<BrandingBlockProps> = ({
   const effectiveWidth = logoWidth !== undefined ? logoWidth : dynamicBranding.logoWidth;
   const effectiveHeight = logoHeight !== undefined ? logoHeight : dynamicBranding.logoHeight;
   const effectivePosition = logoPosition !== undefined ? logoPosition : dynamicBranding.logoPosition;
+  const effectiveDisplayMode =
+    brandingDisplayMode || dynamicBranding.brandingDisplayMode || 'both';
 
   // Responsive typography based on presentation context
   const line1Classes = {
@@ -92,6 +97,7 @@ export const BrandingBlock: React.FC<BrandingBlockProps> = ({
     width={effectiveWidth}
     height={effectiveHeight}
     position={effectivePosition}
+    displayMode={effectiveDisplayMode}
     size={size}
   />
 )}

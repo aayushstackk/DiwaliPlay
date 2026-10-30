@@ -34,6 +34,7 @@ const DEFAULT_SETTINGS: SystemSettings = {
   gameDurationSeconds: 35,
   brandName: 'ItsSpotlight',
   brandLogoUrl: '',
+  brandingDisplayMode: 'both',
   wallpaperUrl: '',
   experienceTitle: 'DIWALI FUN PLAY',
   connectorText: 'by',

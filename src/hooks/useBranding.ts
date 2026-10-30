@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { gameApi } from '../services/api';
-import { GameplayInteractionMode, GameAudioSettings, AchievementTier } from '../types/backend';
+import { GameplayInteractionMode, GameAudioSettings, AchievementTier, BrandingDisplayMode } from '../types/backend';
 import { DEFAULT_AUDIO_SETTINGS } from '../utils/audioDefaults';
 
 export interface WallpaperPlaylistItem {
@@ -23,6 +23,7 @@ export interface BrandingState {
   logoWidth: number;
   logoHeight: number;
   logoPosition: { x: number; y: number };
+  brandingDisplayMode: BrandingDisplayMode;
   wallpaperUrl: string;
   wallpaperOpacity: number;
   wallpaperEnabled: boolean;
@@ -45,6 +46,7 @@ interface CachedData {
   logoWidth: number;
   logoHeight: number;
   logoPosition: { x: number; y: number };
+  brandingDisplayMode: BrandingDisplayMode;
   wallpaperUrl: string;
   wallpaperOpacity: number;
   wallpaperEnabled: boolean;
@@ -68,6 +70,7 @@ const cachedBranding: CachedData = {
   logoWidth: 160,
   logoHeight: 48,
   logoPosition: { x: 0, y: 0 },
+  brandingDisplayMode: 'both',
   wallpaperUrl: '',
   wallpaperOpacity: 100,
   wallpaperEnabled: true,
@@ -149,6 +152,9 @@ export function useBranding(): BrandingState {
         const newWidth = s.logoWidth || 160;
         const newHeight = s.logoHeight || 48;
         const newPos = s.logoPosition || { x: 0, y: 0 };
+        const newBrandingDisplayMode = (s.brandingDisplayMode === 'name' || s.brandingDisplayMode === 'logo'
+          ? s.brandingDisplayMode
+          : 'both') as BrandingDisplayMode;
         const newWallpaperUrl = s.wallpaperUrl || '';
         const newOpacity = typeof s.wallpaperOpacity === 'number' ? s.wallpaperOpacity : 100;
         const newWallpaperEnabled = s.wallpaperEnabled !== false;
@@ -166,6 +172,7 @@ export function useBranding(): BrandingState {
         cachedBranding.logoWidth = newWidth;
         cachedBranding.logoHeight = newHeight;
         cachedBranding.logoPosition = newPos;
+        cachedBranding.brandingDisplayMode = newBrandingDisplayMode;
         cachedBranding.wallpaperUrl = newWallpaperUrl;
         cachedBranding.wallpaperOpacity = newOpacity;
         cachedBranding.wallpaperEnabled = newWallpaperEnabled;
@@ -223,6 +230,7 @@ export function useBranding(): BrandingState {
       logoWidth: cachedBranding.logoWidth,
       logoHeight: cachedBranding.logoHeight,
       logoPosition: cachedBranding.logoPosition,
+      brandingDisplayMode: cachedBranding.brandingDisplayMode || 'both',
       wallpaperUrl: cachedBranding.wallpaperUrl,
       wallpaperOpacity: cachedBranding.wallpaperOpacity,
       wallpaperEnabled: cachedBranding.wallpaperEnabled !== false,

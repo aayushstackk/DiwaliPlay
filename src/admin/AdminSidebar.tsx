@@ -170,6 +170,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
           <BrandLogo
             brandLogoUrl={branding.brandLogoUrl}
             brandName={branding.brandName}
+            displayMode={branding.brandingDisplayMode}
             size="compact"
             className="w-full justify-center"
           />

@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { SystemSettings, AdminRole, AssetRecord } from '../../types/backend';
+import { SystemSettings, AdminRole, AssetRecord, BrandingDisplayMode } from '../../types/backend';
 import { adminApi } from '../../services/api';
 import { BrandLogo } from '../../components/BrandLogo';
 import { useAdminTheme } from '../AdminThemeContext';
@@ -120,6 +120,9 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
   );
   const [brandName, setBrandName] = useState(settings?.brandName || 'ItsSpotlight');
   const [brandLogoUrl, setBrandLogoUrl] = useState(settings?.brandLogoUrl || '');
+  const [brandingDisplayMode, setBrandingDisplayMode] = useState<BrandingDisplayMode>(
+    settings?.brandingDisplayMode || 'both'
+  );
 
   // Logo dimensions & position state
   const [logoWidth, setLogoWidth] = useState<number>(settings?.logoWidth || 160);
@@ -176,6 +179,7 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
       setConnectorText(settings.connectorText !== undefined ? settings.connectorText : 'by');
       setBrandName(settings.brandName || 'ItsSpotlight');
       setBrandLogoUrl(settings.brandLogoUrl || '');
+      setBrandingDisplayMode(settings.brandingDisplayMode || 'both');
       setLogoWidth(settings.logoWidth || 160);
       setLogoHeight(settings.logoHeight || 48);
       setLogoPosition(settings.logoPosition || { x: 0, y: 0 });
@@ -299,6 +303,7 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
         connectorText: connectorText.trim(),
         brandName: brandName.trim() || 'ItsSpotlight',
         brandLogoUrl: brandLogoUrl.trim(),
+        brandingDisplayMode,
         logoWidth: Number(logoWidth) || 160,
         logoHeight: Number(logoHeight) || 48,
         logoPosition: {
@@ -369,7 +374,8 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
     try {
       const res = await adminApi.updateSettings({
         brandName: brandName.trim() || 'ItsSpotlight',
-        brandLogoUrl: asset.url
+        brandLogoUrl: asset.url,
+        brandingDisplayMode
       });
       if (res.success) {
         onSettingsUpdated(res.settings);
@@ -756,6 +762,50 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                     className={`w-full px-3.5 py-2.5 rounded-xl text-xs transition-colors outline-none border ${inputBg}`}
                     required
                   />
+
+                  {/* 3-Option Segmented Toggle */}
+                  <div className="mt-2.5">
+                    <label className={`block text-[11px] font-semibold uppercase tracking-wider mb-1.5 ${isLight ? 'text-[#493426]' : 'text-slate-300'}`}>
+                      Display Mode
+                    </label>
+                    <div
+                      className={`grid grid-cols-3 p-1 rounded-xl border ${
+                        isLight ? 'bg-[#E6D7C1]/50 border-[#D8C7AE]' : 'bg-slate-900/80 border-slate-700'
+                      }`}
+                      role="radiogroup"
+                      aria-label="Branding Display Mode"
+                    >
+                      {(
+                        [
+                          { id: 'both', label: 'Name + Logo' },
+                          { id: 'name', label: 'Name Only' },
+                          { id: 'logo', label: 'Logo Only' }
+                        ] as const
+                      ).map((option) => {
+                        const isSelected = brandingDisplayMode === option.id;
+                        return (
+                          <button
+                            key={option.id}
+                            type="button"
+                            role="radio"
+                            aria-checked={isSelected}
+                            onClick={() => setBrandingDisplayMode(option.id)}
+                            className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition-all cursor-pointer text-center ${
+                              isSelected
+                                ? isLight
+                                  ? 'bg-[#76513D] text-[#FDF9F3] shadow-sm'
+                                  : 'bg-cyan-500/25 text-cyan-200 border border-cyan-500/40 shadow-sm'
+                                : isLight
+                                ? 'text-[#806B58] hover:text-[#493426] hover:bg-[#FAF4E8]/60'
+                                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                            }`}
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
 
                 {/* Direct File Upload for Brand Logo */}
@@ -972,6 +1022,7 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                       width={logoWidth}
                       height={logoHeight}
                       position={logoPosition}
+                      displayMode={brandingDisplayMode}
                       size="kiosk"
                     />
                   </div>

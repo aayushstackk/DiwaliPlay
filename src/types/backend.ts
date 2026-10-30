@@ -145,6 +145,8 @@ export interface GameAudioSettings {
   presets?: SoundPreset[];
 }
 
+export type BrandingDisplayMode = 'both' | 'name' | 'logo';
+
 export interface SystemSettings {
   allowMultiplePlaysPerUser: boolean;
   codeExpirySeconds: number; // default: 120 (2 minutes)
@@ -152,6 +154,7 @@ export interface SystemSettings {
   gameplayMode?: GameplayInteractionMode; // 'camera' (Webcam Hand Tracking) | 'touch' (Direct Touchscreen/Click) (default: 'camera')
   brandName: string; // default: "ItsSpotlight"
   brandLogoUrl?: string; // dynamic company logo URL
+  brandingDisplayMode?: BrandingDisplayMode; // 'both' (Name + Logo) | 'name' (Name Only) | 'logo' (Logo Only) (default: 'both')
   wallpaperUrl?: string; // dynamic full-screen wallpaper URL
   experienceTitle?: string; // Line 1: Experience Title (default: "DIWALI FUN PLAY")
   connectorText?: string; // Line 2: Connector Text (default: "by")

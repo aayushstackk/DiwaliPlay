@@ -7,6 +7,7 @@ import React from 'react';
 import { RotateCcw, Maximize, Minimize, Activity, Zap, Volume2 } from 'lucide-react';
 import { ChallengePhase } from '../types/motion';
 import { BrandLogo } from './BrandLogo';
+import { useBranding } from '../hooks/useBranding';
 
 interface DiwaliHeaderProps {
   phase: ChallengePhase;
@@ -37,6 +38,8 @@ export const DiwaliHeader: React.FC<DiwaliHeaderProps> = ({
   onToggleAudioLab,
   onOpenKioskCode,
 }) => {
+  const branding = useBranding();
+
   return (
     <header className="w-full bg-neutral-950/80 backdrop-blur-md border-b border-amber-500/20 px-4 py-3 sm:px-6 flex items-center justify-between z-30 transition-colors">
       {/* Brand & Diya Motif */}
@@ -72,7 +75,12 @@ export const DiwaliHeader: React.FC<DiwaliHeaderProps> = ({
                 DIWALI FUN PLAY
               </h1>
               <span className="text-amber-300/80 font-serif italic text-xs lowercase">by</span>
-              <BrandLogo size="compact" />
+              <BrandLogo
+                size="compact"
+                brandLogoUrl={branding.brandLogoUrl}
+                brandName={branding.brandName}
+                displayMode={branding.brandingDisplayMode}
+              />
             </div>
             {playerName && (
               <span className="hidden sm:inline-flex text-[11px] font-mono font-semibold uppercase tracking-wider text-amber-300 bg-amber-500/15 border border-amber-400/40 px-2 py-0.5 rounded">
