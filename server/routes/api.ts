@@ -615,6 +615,52 @@ apiRouter.post('/session/complete', async (req: Request<{}, {}, CompleteSessionR
 });
 
 // ============================================================================
+// Public / Admin session photo retrieval endpoint
+// Returns binary JPEG/PNG image for direct viewing, linking in CSV, or browser download
+// ============================================================================
+apiRouter.get('/session/:id/photo', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    if (!id) {
+      return res.status(400).send('Session ID is required.');
+    }
+
+    const session = await db.getSessionById(id);
+    if (!session || !session.photoUrl) {
+      return res.status(404).send('Photo not found.');
+    }
+
+    // If it's already an external HTTP/HTTPS URL, redirect directly
+    if (session.photoUrl.startsWith('http://') || session.photoUrl.startsWith('https://')) {
+      return res.redirect(session.photoUrl);
+    }
+
+    // If it's a data URL, decode base64 and send binary image
+    if (session.photoUrl.startsWith('data:image/')) {
+      const matches = session.photoUrl.match(/^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/);
+      if (matches) {
+        const mimeSub = matches[1].toLowerCase();
+        const mimeType = mimeSub === 'jpg' ? 'image/jpeg' : `image/${mimeSub}`;
+        const imgBuffer = Buffer.from(matches[2], 'base64');
+        res.setHeader('Content-Type', mimeType);
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        res.setHeader('Content-Length', imgBuffer.length);
+        return res.send(imgBuffer);
+      }
+    }
+
+    return res.status(404).send('Invalid photo format.');
+  } catch (err: any) {
+    console.error('[API /session/:id/photo] Error:', err);
+    return res.status(500).send('Error retrieving photo.');
+  }
+});
+
+apiRouter.get('/sessions/:id/photo', async (req: Request, res: Response) => {
+  res.redirect(`/api/session/${req.params.id}/photo`);
+});
+
+// ============================================================================
 // Game Feedback Submission
 // ============================================================================
 apiRouter.post('/session/feedback', async (req: Request<{}, {}, SubmitFeedbackRequest>, res: Response) => {
