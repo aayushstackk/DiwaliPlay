@@ -208,11 +208,56 @@ rewardsRouter.post('/admin/rewards', authenticateAdmin, async (req: Request, res
 });
 
 /**
+ * Admin: Update feature ON/OFF settings
+ * NOTE: Placed BEFORE /admin/rewards/:id to avoid Express route parameter collision with :id
+ */
+rewardsRouter.get('/admin/rewards/settings', authenticateAdmin, async (_req: Request, res: Response) => {
+  try {
+    const settings = await db.getRewardsSettings();
+    return res.json({ success: true, settings });
+  } catch (err: any) {
+    console.error('[Rewards Admin API] Error getting settings:', err);
+    return res.status(500).json({ success: false, message: err.message || 'Failed to fetch settings.' });
+  }
+});
+
+rewardsRouter.put('/admin/rewards/settings', authenticateAdmin, async (req: Request, res: Response) => {
+  try {
+    const { enabled } = req.body;
+    const updated = await db.updateRewardsSettings({ enabled: Boolean(enabled) });
+
+    if (req.adminUser) {
+      await db.recordAuditLog({
+        adminId: req.adminUser.id,
+        username: req.adminUser.username,
+        action: 'UPDATE_REWARDS_SETTINGS',
+        details: { enabled: updated.enabled },
+        ip: req.ip
+      });
+    }
+
+    return res.json({
+      success: true,
+      settings: updated,
+      message: updated.enabled
+        ? 'Rewards & Spin Wheel feature enabled.'
+        : 'Rewards & Spin Wheel feature paused.'
+    });
+  } catch (err: any) {
+    console.error('[Rewards Admin API] Error updating settings:', err);
+    return res.status(500).json({ success: false, message: err.message || 'Failed to update settings.' });
+  }
+});
+
+/**
  * Admin: Update reward
  */
 rewardsRouter.put('/admin/rewards/:id', authenticateAdmin, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    if (!id || id === 'settings') {
+      return res.status(400).json({ success: false, message: 'Invalid reward ID.' });
+    }
     const { name, description, imageUrl, couponCode, termsAndConditions, chances, isActive, minScore, maxScore, mode } = req.body;
 
     const existing = await db.getRewardById(id);
@@ -266,6 +311,9 @@ rewardsRouter.put('/admin/rewards/:id', authenticateAdmin, async (req: Request, 
 rewardsRouter.delete('/admin/rewards/:id', authenticateAdmin, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    if (!id || id === 'settings') {
+      return res.status(400).json({ success: false, message: 'Invalid reward ID.' });
+    }
     const existing = await db.getRewardById(id);
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Reward not found.' });
@@ -292,37 +340,6 @@ rewardsRouter.delete('/admin/rewards/:id', authenticateAdmin, async (req: Reques
   } catch (err: any) {
     console.error('[Rewards Admin API] Error deleting reward:', err);
     return res.status(500).json({ success: false, message: err.message || 'Failed to delete reward.' });
-  }
-});
-
-/**
- * Admin: Update feature ON/OFF settings
- */
-rewardsRouter.put('/admin/rewards/settings', authenticateAdmin, async (req: Request, res: Response) => {
-  try {
-    const { enabled } = req.body;
-    const updated = await db.updateRewardsSettings({ enabled: Boolean(enabled) });
-
-    if (req.adminUser) {
-      await db.recordAuditLog({
-        adminId: req.adminUser.id,
-        username: req.adminUser.username,
-        action: 'UPDATE_REWARDS_SETTINGS',
-        details: { enabled: updated.enabled },
-        ip: req.ip
-      });
-    }
-
-    return res.json({
-      success: true,
-      settings: updated,
-      message: updated.enabled
-        ? 'Rewards & Spin Wheel feature enabled.'
-        : 'Rewards & Spin Wheel feature paused.'
-    });
-  } catch (err: any) {
-    console.error('[Rewards Admin API] Error updating settings:', err);
-    return res.status(500).json({ success: false, message: err.message || 'Failed to update settings.' });
   }
 });
 

@@ -1175,10 +1175,18 @@ export class MongoStorageAdapter implements StorageAdapter {
   }
 
   public async getRewardById(id: string): Promise<RewardItem | undefined> {
-    const doc = await this.rewardsCol.findOne({ id });
+    if (!id) return undefined;
+    const query: any = { $or: [{ id }, { _id: id as any }] };
+    try {
+      const { ObjectId } = await import('mongodb');
+      if (ObjectId.isValid(id)) {
+        query.$or.push({ _id: new ObjectId(id) });
+      }
+    } catch {}
+    const doc = await this.rewardsCol.findOne(query);
     if (!doc) return undefined;
     const { _id, ...clean } = doc as any;
-    return clean as RewardItem;
+    return { id: clean.id || _id?.toString() || id, ...clean } as RewardItem;
   }
 
   public async createReward(reward: Omit<RewardItem, 'id' | 'createdAt' | 'updatedAt'>): Promise<RewardItem> {
@@ -1197,23 +1205,41 @@ export class MongoStorageAdapter implements StorageAdapter {
   }
 
   public async updateReward(id: string, updates: Partial<RewardItem>): Promise<RewardItem | undefined> {
+    if (!id) return undefined;
     const now = new Date().toISOString();
     const cleanUpdates = { ...updates, updatedAt: now };
     delete (cleanUpdates as any)._id;
     delete (cleanUpdates as any).id;
 
+    const query: any = { $or: [{ id }, { _id: id as any }] };
+    try {
+      const { ObjectId } = await import('mongodb');
+      if (ObjectId.isValid(id)) {
+        query.$or.push({ _id: new ObjectId(id) });
+      }
+    } catch {}
+
     const res = await this.rewardsCol.findOneAndUpdate(
-      { id },
+      query,
       { $set: cleanUpdates },
       { returnDocument: 'after' }
     );
     if (!res) return undefined;
     const { _id, ...clean } = res as any;
-    return clean as RewardItem;
+    return { id: clean.id || _id?.toString() || id, ...clean } as RewardItem;
   }
 
   public async deleteReward(id: string): Promise<boolean> {
-    const res = await this.rewardsCol.deleteOne({ id });
+    if (!id) return false;
+    const query: any = { $or: [{ id }, { _id: id as any }] };
+    try {
+      const { ObjectId } = await import('mongodb');
+      if (ObjectId.isValid(id)) {
+        query.$or.push({ _id: new ObjectId(id) });
+      }
+    } catch {}
+
+    const res = await this.rewardsCol.deleteOne(query);
     if (res.deletedCount === 0) return false;
     // Also remove from any score ranges that referenced this deleted reward
     await this.scoreRewardsCol.deleteMany({ rewardId: id });

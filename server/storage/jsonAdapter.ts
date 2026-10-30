@@ -1098,7 +1098,9 @@ export class JsonFileStorageAdapter implements StorageAdapter {
   }
 
   public async getRewardById(id: string): Promise<RewardItem | undefined> {
-    return this.data.rewards?.[id];
+    if (!id) return undefined;
+    if (this.data.rewards?.[id]) return this.data.rewards[id];
+    return Object.values(this.data.rewards || {}).find((r) => r.id === id);
   }
 
   public async createReward(reward: Omit<RewardItem, 'id' | 'createdAt' | 'updatedAt'>): Promise<RewardItem> {
@@ -1119,27 +1121,43 @@ export class JsonFileStorageAdapter implements StorageAdapter {
   }
 
   public async updateReward(id: string, updates: Partial<RewardItem>): Promise<RewardItem | undefined> {
-    const existing = this.data.rewards?.[id];
+    if (!id) return undefined;
+    let key = id;
+    if (!this.data.rewards?.[key]) {
+      const found = Object.entries(this.data.rewards || {}).find(([k, r]) => r.id === id || k === id);
+      if (found) {
+        key = found[0];
+      }
+    }
+    const existing = this.data.rewards?.[key];
     if (!existing) return undefined;
     const updated: RewardItem = {
       ...existing,
       ...updates,
-      id,
+      id: existing.id || id,
       updatedAt: new Date().toISOString()
     };
-    this.data.rewards[id] = updated;
+    this.data.rewards[key] = updated;
     this.persist();
     return updated;
   }
 
   public async deleteReward(id: string): Promise<boolean> {
-    if (!this.data.rewards?.[id]) return false;
-    delete this.data.rewards[id];
+    if (!id) return false;
+    let key = id;
+    if (!this.data.rewards?.[key]) {
+      const found = Object.entries(this.data.rewards || {}).find(([k, r]) => r.id === id || k === id);
+      if (found) {
+        key = found[0];
+      }
+    }
+    if (!this.data.rewards?.[key]) return false;
+    delete this.data.rewards[key];
     // Also clean up any score ranges that referenced this deleted reward
     if (this.data.scoreRewards) {
-      for (const [key, range] of Object.entries(this.data.scoreRewards)) {
-        if (range.rewardId === id) {
-          delete this.data.scoreRewards[key];
+      for (const [sKey, range] of Object.entries(this.data.scoreRewards)) {
+        if (range.rewardId === id || range.rewardId === key) {
+          delete this.data.scoreRewards[sKey];
         }
       }
     }

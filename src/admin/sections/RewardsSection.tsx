@@ -121,6 +121,8 @@ export const RewardsSection: React.FC = () => {
           newStatus ? 'Spin Wheel Enabled' : 'Spin Wheel Disabled',
           newStatus ? 'Spin & Win is now visible to players.' : 'Spin & Win is now hidden from players.'
         );
+      } else {
+        showToast('error', 'Toggle Error', res.message || 'Could not update Spin Wheel status.');
       }
     } catch (err: any) {
       showToast('error', 'Toggle Error', err.message || 'Server error.');
@@ -129,23 +131,36 @@ export const RewardsSection: React.FC = () => {
     }
   };
 
+  const [togglingRewardId, setTogglingRewardId] = useState<string | null>(null);
+
   // Individual Reward Activate / Deactivate Toggle
   const handleToggleActive = async (reward: RewardItem) => {
-    const newActive = reward.isActive === false ? true : false;
+    if (!reward || !reward.id) {
+      showToast('error', 'Toggle Error', 'Reward ID is missing.');
+      return;
+    }
+    const newActive = reward.isActive === false;
+    setTogglingRewardId(reward.id);
     try {
       const res = await adminApi.updateReward(reward.id, { isActive: newActive });
       if (res.success && res.reward) {
-        setRewards((prev) => prev.map((r) => (r.id === res.reward.id ? res.reward : r)));
+        setRewards((prev) =>
+          prev.map((r) => (r.id === res.reward.id ? { ...r, ...res.reward } : r))
+        );
         showToast(
           'success',
           newActive ? 'Reward Activated' : 'Reward Deactivated',
           newActive
-            ? `"${reward.name}" is now active and eligible for winning.`
-            : `"${reward.name}" is now inactive and will not appear on the wheel.`
+            ? `"${res.reward.name}" is now active and eligible for winning.`
+            : `"${res.reward.name}" is now inactive and will not appear on the wheel.`
         );
+      } else {
+        showToast('error', 'Toggle Error', res.message || 'Could not update reward status.');
       }
     } catch (err: any) {
-      showToast('error', 'Update Failed', err.message || 'Could not update reward status.');
+      showToast('error', 'Toggle Error', err.message || 'Could not update reward status.');
+    } finally {
+      setTogglingRewardId(null);
     }
   };
 
@@ -537,7 +552,6 @@ export const RewardsSection: React.FC = () => {
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-2">
               {rewards.map((reward) => {
                 const isInactive = reward.isActive === false;
-                const isScore = (reward.mode || (typeof reward.minScore === 'number' ? 'score' : 'chance')) === 'score';
 
                 return (
                   <div
@@ -546,34 +560,6 @@ export const RewardsSection: React.FC = () => {
                       isInactive ? 'opacity-55 border-dashed' : 'opacity-100'
                     }`}
                   >
-                    {/* Top Mode Badge Indicator */}
-                    <div className="w-full flex items-center justify-between mb-1 text-[9px] font-mono font-bold leading-none">
-                      <span
-                        className={`px-1 py-0.5 rounded text-[8.5px] uppercase ${
-                          isScore
-                            ? isLight
-                              ? 'bg-amber-500/15 text-amber-700 border border-amber-500/30'
-                              : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                            : isLight
-                            ? 'bg-[#B36D4E]/15 text-[#B36D4E] border border-[#B36D4E]/30'
-                            : 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
-                        }`}
-                        title={
-                          isScore
-                            ? `Score Based: ${reward.minScore ?? 0} - ${reward.maxScore ?? 0} pts`
-                            : `Chance Based: ${reward.chances} chances`
-                        }
-                      >
-                        {isScore ? 'Score' : `${reward.chances} ch`}
-                      </span>
-
-                      {isInactive && (
-                        <span className="text-[8px] font-bold text-rose-600 uppercase">
-                          OFF
-                        </span>
-                      )}
-                    </div>
-
                     {/* Reward Image Thumbnail */}
                     <div
                       onClick={() => openEditRewardModal(reward)}
@@ -596,22 +582,23 @@ export const RewardsSection: React.FC = () => {
                     {/* Reward Name Only */}
                     <h4
                       onClick={() => openEditRewardModal(reward)}
-                      className={`text-[11px] font-bold leading-tight line-clamp-1 truncate w-full mt-1 cursor-pointer ${primaryText}`}
+                      className={`text-[11px] font-bold leading-tight line-clamp-1 truncate w-full mt-1.5 cursor-pointer ${primaryText}`}
                       title={reward.name}
                     >
                       {reward.name}
                     </h4>
 
-                    {/* 2. THREE COMPACT ACTIONS: Activate/Deactivate Toggle, Edit, Delete */}
+                    {/* 3 Compact Actions: Activate/Deactivate Toggle, Edit, Delete */}
                     <div className="mt-1.5 pt-1 border-t border-[#D8C7AE]/50 w-full flex items-center justify-center gap-1">
                       {/* Activate / Deactivate Toggle Button */}
                       <button
                         type="button"
+                        disabled={togglingRewardId === reward.id}
                         onClick={(e) => {
                           e.stopPropagation();
                           handleToggleActive(reward);
                         }}
-                        className={`p-1 rounded-md border text-xs cursor-pointer transition ${
+                        className={`p-1 rounded-md border text-xs cursor-pointer transition disabled:opacity-50 ${
                           !isInactive
                             ? isLight
                               ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-700 hover:bg-emerald-500/25'
@@ -623,7 +610,7 @@ export const RewardsSection: React.FC = () => {
                         title={!isInactive ? 'Active: Click to Deactivate' : 'Inactive: Click to Activate'}
                         aria-label={!isInactive ? 'Deactivate reward' : 'Activate reward'}
                       >
-                        <Power className="w-3 h-3 stroke-[2.5]" />
+                        <Power className={`w-3 h-3 stroke-[2.5] ${togglingRewardId === reward.id ? 'animate-spin' : ''}`} />
                       </button>
 
                       {/* Edit Button */}
