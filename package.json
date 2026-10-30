@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@capacitor/android": "^8.6.0",
+    "@capacitor/camera": "^8.2.6",
     "@capacitor/cli": "^8.6.0",
     "@capacitor/core": "^8.6.0",
     "@google-cloud/storage": "^8.4.0",

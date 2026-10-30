@@ -72,8 +72,7 @@ export default function App() {
   const [bombSettings, setBombSettings] = useState<BombGameSettings>(DEFAULT_BOMB_SETTINGS);
   const activeSessionIdRef = useRef<string | null>(null);
   const isSessionCompletedRef = useRef<boolean>(false);
-  const [showTargetAchievedPopup, setShowTargetAchievedPopup] = useState(false);
-  const targetAchievedFiredRef = useRef<boolean>(false);
+  const wasTargetAchievedRef = useRef<boolean>(false);
 
   // Time references for 1-second hands ready detection and precise 35s timer
   const bothHandsHoldStartRef = useRef<number | null>(null);
@@ -213,8 +212,7 @@ export default function App() {
         clearInterval(stepInterval);
         setCountdownValue(null);
         resetGameScore();
-        targetAchievedFiredRef.current = false;
-        setShowTargetAchievedPopup(false);
+        wasTargetAchievedRef.current = false;
         setIsCrackerModeActive(true);
         setRemainingSeconds(GAME_DURATION_SECONDS);
         gameStartTimeRef.current = performance.now();
@@ -337,8 +335,7 @@ export default function App() {
     bothHandsHoldStartRef.current = null;
     activeSessionIdRef.current = null;
     isSessionCompletedRef.current = false;
-    targetAchievedFiredRef.current = false;
-    setShowTargetAchievedPopup(false);
+    wasTargetAchievedRef.current = false;
     setHoldProgress(0);
     setCountdownValue(null);
     setRemainingSeconds(GAME_DURATION_SECONDS);
@@ -361,29 +358,31 @@ export default function App() {
     branding.advanceWallpaper();
   }, [stopCamera, stopBgm, resetStats, resetGameScore, setIsCrackerModeActive, branding]);
 
-  // Target Achieved Celebration Trigger: triggers strictly ONCE per game round
-  useEffect(() => {
-    if (
-      phase === 'PLAYING' &&
+  // Live condition: Target Achieved popup is visible whenever currentScore >= targetScore
+  const showTargetAchievedPopup =
+    phase === 'PLAYING' &&
+    Boolean(
       branding.targetScoreEnabled &&
       branding.targetScore > 0 &&
-      gameScore.score >= branding.targetScore &&
-      !targetAchievedFiredRef.current
-    ) {
-      targetAchievedFiredRef.current = true;
-      setShowTargetAchievedPopup(true);
-      playSound('MEGA_BLAST');
-      triggerBombBurstParticles(
-        typeof window !== 'undefined' ? window.innerWidth / 2 : 640,
-        typeof window !== 'undefined' ? window.innerHeight * 0.35 : 250,
-        '#F59E0B'
-      );
-      const timer = setTimeout(() => {
-        setShowTargetAchievedPopup(false);
-      }, 2600);
-      return () => clearTimeout(timer);
+      gameScore.score >= branding.targetScore
+    );
+
+  // Target Achieved Celebration Sound & Particles: triggers whenever score reaches target
+  useEffect(() => {
+    if (showTargetAchievedPopup) {
+      if (!wasTargetAchievedRef.current) {
+        playSound('MEGA_BLAST');
+        triggerBombBurstParticles(
+          typeof window !== 'undefined' ? window.innerWidth / 2 : 640,
+          typeof window !== 'undefined' ? window.innerHeight * 0.35 : 250,
+          '#F59E0B'
+        );
+      }
+      wasTargetAchievedRef.current = true;
+    } else {
+      wasTargetAchievedRef.current = false;
     }
-  }, [phase, gameScore.score, branding.targetScoreEnabled, branding.targetScore, playSound, triggerBombBurstParticles]);
+  }, [showTargetAchievedPopup, playSound, triggerBombBurstParticles]);
 
   // Fullscreen toggle
   const toggleFullscreen = () => {
