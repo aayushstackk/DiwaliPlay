@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { BrandLogo } from '../components/BrandLogo';
 import { useBranding } from '../hooks/useBranding';
+import { useAdminTheme } from './AdminThemeContext';
 
 interface AdminSidebarProps {
   activeSection: AdminSection;
@@ -96,37 +97,62 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
   onCloseMobile
 }) => {
   const branding = useBranding();
+  const { isLight } = useAdminTheme();
 
   return (
     <>
       {/* Mobile backdrop overlay */}
       {isOpenMobile && (
         <div
-          className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-40 lg:hidden"
+          className={`fixed inset-0 backdrop-blur-sm z-40 lg:hidden transition-colors ${
+            isLight ? 'bg-[#493426]/60' : 'bg-slate-950/80'
+          }`}
           onClick={onCloseMobile}
         />
       )}
 
       {/* Sidebar container */}
       <aside
-        className={`fixed top-0 bottom-0 left-0 z-50 w-64 bg-[#0B132B] border-r border-slate-800/90 flex flex-col transition-transform duration-200 lg:translate-x-0 ${
+        className={`fixed top-0 bottom-0 left-0 z-50 w-64 border-r flex flex-col transition-all duration-200 lg:translate-x-0 ${
           isOpenMobile ? 'translate-x-0' : '-translate-x-full'
+        } ${
+          isLight
+            ? 'bg-[#E6D7C1] border-[#D8C7AE] text-[#493426] shadow-sm'
+            : 'bg-[#0B132B] border-slate-800/90 text-slate-100'
         }`}
       >
         {/* Brand Header */}
-        <div className="p-4 border-b border-slate-800 flex items-center justify-between shrink-0">
+        <div
+          className={`p-4 border-b flex items-center justify-between shrink-0 ${
+            isLight ? 'border-[#D8C7AE]' : 'border-slate-800'
+          }`}
+        >
           <div className="flex flex-col">
-            <span className="font-['Cinzel',serif] font-black text-sm text-transparent bg-clip-text bg-gradient-to-r from-cyan-200 via-cyan-400 to-teal-300 tracking-wider">
+            <span
+              className={`font-['Cinzel',serif] font-black text-sm tracking-wider ${
+                isLight
+                  ? 'text-[#493426]'
+                  : 'text-transparent bg-clip-text bg-gradient-to-r from-cyan-200 via-cyan-400 to-teal-300'
+              }`}
+            >
               DIWALI PLAY
             </span>
-            <span className="text-[10px] text-cyan-400/80 font-mono tracking-widest uppercase">
+            <span
+              className={`text-[10px] font-mono tracking-widest uppercase font-bold ${
+                isLight ? 'text-[#B36D4E]' : 'text-cyan-400/80'
+              }`}
+            >
               Control Panel
             </span>
           </div>
 
           <button
             onClick={onCloseMobile}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 lg:hidden cursor-pointer"
+            className={`p-1.5 rounded-lg lg:hidden cursor-pointer transition-colors ${
+              isLight
+                ? 'text-[#7A6553] hover:text-[#493426] hover:bg-[#DFCDB4]'
+                : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800'
+            }`}
             aria-label="Close sidebar"
           >
             <X className="w-5 h-5" />
@@ -134,7 +160,13 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
         </div>
 
         {/* Dynamic Organization / Brand Logo Area */}
-        <div className="px-4 py-3 bg-[#080D1D] border-b border-slate-800/80 flex items-center justify-center shrink-0">
+        <div
+          className={`px-4 py-3 border-b flex items-center justify-center shrink-0 ${
+            isLight
+              ? 'bg-[#DFCDB4] border-[#D8C7AE]'
+              : 'bg-[#080D1D] border-slate-800/80'
+          }`}
+        >
           <BrandLogo
             brandLogoUrl={branding.brandLogoUrl}
             brandName={branding.brandName}
@@ -144,7 +176,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
         </div>
 
         {/* Navigation list with hidden scrollbar track */}
-        <nav className="flex-1 overflow-y-auto p-2.5 space-y-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+        <nav className="flex-1 overflow-y-auto p-2.5 space-y-1.5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
             const isActive = activeSection === item.id;
@@ -158,23 +190,49 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
                 }}
                 className={`w-full text-left px-3 py-2.5 rounded-xl transition-all duration-150 flex items-center gap-3 group cursor-pointer ${
                   isActive
-                    ? 'bg-gradient-to-r from-cyan-500/15 to-teal-500/10 text-cyan-200 border border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.15)] font-semibold'
+                    ? isLight
+                      ? 'bg-[#76513D] text-[#FDF9F3] border border-[#634332] shadow-[0_4px_16px_rgba(118,81,61,0.22)] font-semibold'
+                      : 'bg-gradient-to-r from-cyan-500/15 to-teal-500/10 text-cyan-200 border border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.15)] font-semibold'
+                    : isLight
+                    ? 'text-[#5C4535] hover:text-[#493426] hover:bg-[#DFCDB4]/75 border border-transparent'
                     : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent'
                 }`}
               >
                 <Icon
                   className={`w-4 h-4 shrink-0 transition-colors ${
-                    isActive ? 'text-cyan-400' : 'text-slate-500 group-hover:text-cyan-300/80'
+                    isActive
+                      ? isLight
+                        ? 'text-[#FDF9F3]'
+                        : 'text-cyan-400'
+                      : isLight
+                      ? 'text-[#7A6553] group-hover:text-[#493426]'
+                      : 'text-slate-500 group-hover:text-cyan-300/80'
                   }`}
                 />
                 <div className="flex-1 min-w-0">
                   <div className="text-xs truncate">{item.label}</div>
-                  <div className="text-[10px] text-slate-500 truncate hidden xl:block">
+                  <div
+                    className={`text-[10px] truncate hidden xl:block ${
+                      isActive
+                        ? isLight
+                          ? 'text-[#E6D7C1]'
+                          : 'text-cyan-200/80'
+                        : isLight
+                        ? 'text-[#8C7765]'
+                        : 'text-slate-500'
+                    }`}
+                  >
                     {item.description}
                   </div>
                 </div>
                 {isActive && (
-                  <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.9)] shrink-0" />
+                  <div
+                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                      isLight
+                        ? 'bg-[#B36D4E] shadow-[0_0_8px_rgba(179,109,78,0.8)]'
+                        : 'bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.9)]'
+                    }`}
+                  />
                 )}
               </button>
             );

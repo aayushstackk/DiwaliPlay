@@ -25,6 +25,7 @@ import { BombManagementSection } from './sections/BombManagementSection';
 import { WishesSection } from './sections/WishesSection';
 import { GameSettingsSection } from './sections/GameSettingsSection';
 import { ReportsSection } from './sections/ReportsSection';
+import { AdminThemeProvider, useAdminTheme } from './AdminThemeContext';
 
 interface AuthenticatedAdminUser {
   id: string;
@@ -34,7 +35,9 @@ interface AuthenticatedAdminUser {
   lastLoginAt?: string | null;
 }
 
-export const AdminApp: React.FC = () => {
+const AdminAppContent: React.FC = () => {
+  const { isLight } = useAdminTheme();
+
   // Auth state
   const [authStatus, setAuthStatus] = useState<'checking' | 'unauthenticated' | 'authenticated'>('checking');
   const [currentUser, setCurrentUser] = useState<AuthenticatedAdminUser | null>(null);
@@ -175,9 +178,17 @@ export const AdminApp: React.FC = () => {
   // Rendering during initial auth check
   if (authStatus === 'checking') {
     return (
-      <div className="min-h-screen bg-[#0B1120] text-cyan-100 flex flex-col items-center justify-center">
-        <div className="w-10 h-10 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin mb-4 shadow-[0_0_15px_rgba(6,182,212,0.4)]" />
-        <span className="font-sans tracking-wider text-sm font-semibold text-slate-300">
+      <div className={`min-h-screen flex flex-col items-center justify-center transition-colors duration-200 ${
+        isLight ? 'bg-[#F1E8D9] text-[#493426]' : 'bg-[#0B1120] text-cyan-100'
+      }`}>
+        <div className={`w-10 h-10 border-2 border-t-transparent rounded-full animate-spin mb-4 ${
+          isLight
+            ? 'border-[#76513D] shadow-[0_0_15px_rgba(118,81,61,0.25)]'
+            : 'border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.4)]'
+        }`} />
+        <span className={`font-sans tracking-wider text-sm font-semibold ${
+          isLight ? 'text-[#7E6B5A]' : 'text-slate-300'
+        }`}>
           Verifying Admin Session...
         </span>
       </div>
@@ -191,7 +202,9 @@ export const AdminApp: React.FC = () => {
 
   // Authenticated Dashboard Layout
   return (
-    <div className="min-h-screen bg-[#0B1120] text-slate-100 flex">
+    <div className={`min-h-screen flex transition-colors duration-200 ${
+      isLight ? 'bg-[#F1E8D9] text-[#493426]' : 'bg-[#0B1120] text-slate-100'
+    }`}>
       {/* Sidebar Navigation */}
       <AdminSidebar
         activeSection={activeSection}
@@ -285,5 +298,13 @@ export const AdminApp: React.FC = () => {
         </main>
       </div>
     </div>
+  );
+};
+
+export const AdminApp: React.FC = () => {
+  return (
+    <AdminThemeProvider>
+      <AdminAppContent />
+    </AdminThemeProvider>
   );
 };

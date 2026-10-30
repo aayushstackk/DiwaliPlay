@@ -51,3 +51,398 @@
   animation: toastProgress 3.5s linear forwards;
 }
 
+/* ==================================================================== */
+/* DIWALIPLAY ADMIN: PREMIUM EARTHY LIGHT THEME (DEFAULT)              */
+/* ==================================================================== */
+.admin-theme-light {
+  /* Color Tokens */
+  --admin-bg-main: #F1E8D9;
+  --admin-bg-sidebar: #E6D7C1;
+  --admin-bg-sidebar-brand: #DFCDB4;
+  --admin-bg-card: #FBF5EA;
+  --admin-bg-card-hover: #F6EDE0;
+  --admin-bg-subtle: #EFE4D2;
+  --admin-bg-input: #FAF4E8;
+  --admin-border: #D8C7AE;
+  --admin-border-subtle: #E4D7C3;
+  --admin-border-strong: #C4B094;
+  --admin-text-main: #493426;
+  --admin-text-muted: #7E6B5A;
+  --admin-text-subtle: #9E8B7A;
+  --admin-primary: #76513D;
+  --admin-primary-hover: #634332;
+  --admin-primary-text: #FDF9F3;
+  --admin-accent: #B36D4E;
+  --admin-accent-hover: #9E5C3F;
+  --admin-accent-light: rgba(179, 109, 78, 0.12);
+  --admin-secondary: #71805A;
+  --admin-secondary-hover: #5F6D4B;
+  --admin-secondary-light: rgba(113, 128, 90, 0.14);
+  --admin-shadow: 0 4px 20px -2px rgba(73, 52, 38, 0.05), 0 2px 6px -1px rgba(73, 52, 38, 0.03);
+  --admin-shadow-lg: 0 12px 32px -4px rgba(73, 52, 38, 0.09), 0 4px 12px -2px rgba(73, 52, 38, 0.04);
+
+  background-color: #F1E8D9 !important;
+  color: #493426 !important;
+  accent-color: #B36D4E;
+}
+
+/* Base resets inside light theme */
+.admin-theme-light .min-h-screen {
+  background-color: #F1E8D9 !important;
+  color: #493426 !important;
+}
+
+/* Background overrides */
+.admin-theme-light .bg-\[\#0B1120\],
+.admin-theme-light .bg-\[\#090D1A\],
+.admin-theme-light .bg-\[\#070B18\],
+.admin-theme-light .bg-\[\#080C16\] {
+  background-color: #F1E8D9 !important;
+}
+
+/* Sidebar */
+.admin-theme-light aside,
+.admin-theme-light aside.bg-\[\#0B132B\] {
+  background-color: #E6D7C1 !important;
+  border-color: #D8C7AE !important;
+}
+
+.admin-theme-light .bg-\[\#080D1D\] {
+  background-color: #DFCDB4 !important;
+  border-color: #D8C7AE !important;
+}
+
+/* Header */
+.admin-theme-light header,
+.admin-theme-light header.bg-\[\#0F172A\]\/90 {
+  background-color: rgba(251, 245, 234, 0.96) !important;
+  border-color: #D8C7AE !important;
+  box-shadow: 0 2px 14px rgba(73, 52, 38, 0.04) !important;
+}
+
+/* Cards & Container Panels */
+.admin-theme-light .bg-\[\#0F1B2E\],
+.admin-theme-light .bg-\[\#0F1B2E\]\/90,
+.admin-theme-light .bg-\[\#0D1527\],
+.admin-theme-light .bg-\[\#0F1829\],
+.admin-theme-light .bg-\[\#0A1224\],
+.admin-theme-light .bg-\[\#111C33\],
+.admin-theme-light .bg-\[\#16233B\],
+.admin-theme-light .bg-slate-900,
+.admin-theme-light .bg-slate-900\/90,
+.admin-theme-light .bg-slate-900\/80,
+.admin-theme-light .bg-slate-900\/70,
+.admin-theme-light .bg-slate-900\/60,
+.admin-theme-light .bg-slate-900\/50,
+.admin-theme-light .bg-slate-900\/40,
+.admin-theme-light .bg-slate-900\/30 {
+  background-color: #FBF5EA !important;
+  border-color: #D8C7AE !important;
+  box-shadow: 0 4px 20px -2px rgba(73, 52, 38, 0.05), 0 2px 6px -1px rgba(73, 52, 38, 0.03);
+}
+
+/* Inner wells, sub-panels, table headers, stat boxes */
+.admin-theme-light .bg-slate-950,
+.admin-theme-light .bg-slate-950\/80,
+.admin-theme-light .bg-slate-950\/60,
+.admin-theme-light .bg-slate-950\/40,
+.admin-theme-light .bg-slate-950\/20,
+.admin-theme-light .bg-slate-800,
+.admin-theme-light .bg-slate-800\/80,
+.admin-theme-light .bg-slate-800\/60,
+.admin-theme-light .bg-slate-800\/50,
+.admin-theme-light .bg-slate-800\/40,
+.admin-theme-light .bg-slate-800\/30 {
+  background-color: #F3E9DA !important;
+  border-color: #E2D4BF !important;
+}
+
+/* All borders */
+.admin-theme-light .border-slate-800,
+.admin-theme-light .border-slate-800\/80,
+.admin-theme-light .border-slate-800\/90,
+.admin-theme-light .border-slate-700,
+.admin-theme-light .border-slate-700\/80,
+.admin-theme-light .border-slate-750,
+.admin-theme-light .border-neutral-800,
+.admin-theme-light .border-neutral-700 {
+  border-color: #D8C7AE !important;
+}
+
+.admin-theme-light .divide-slate-800 > :not([hidden]) ~ :not([hidden]),
+.admin-theme-light .divide-slate-700 > :not([hidden]) ~ :not([hidden]) {
+  border-color: #E2D4BF !important;
+}
+
+/* Text Hierarchy */
+.admin-theme-light .text-slate-100,
+.admin-theme-light .text-slate-200,
+.admin-theme-light .text-neutral-100,
+.admin-theme-light .text-neutral-200,
+.admin-theme-light .text-white {
+  color: #493426 !important;
+}
+
+.admin-theme-light .text-slate-300,
+.admin-theme-light .text-slate-400,
+.admin-theme-light .text-neutral-300,
+.admin-theme-light .text-neutral-400 {
+  color: #7A6553 !important;
+}
+
+.admin-theme-light .text-slate-500,
+.admin-theme-light .text-neutral-500 {
+  color: #9A8472 !important;
+}
+
+/* Cyan accent transformed to Terracotta (#B36D4E) */
+.admin-theme-light .text-cyan-400,
+.admin-theme-light .text-cyan-300,
+.admin-theme-light .text-cyan-200 {
+  color: #B36D4E !important;
+}
+
+.admin-theme-light .border-cyan-500\/40,
+.admin-theme-light .border-cyan-500\/30,
+.admin-theme-light .border-cyan-500\/20,
+.admin-theme-light .border-cyan-500\/15,
+.admin-theme-light .border-cyan-400 {
+  border-color: rgba(179, 109, 78, 0.45) !important;
+}
+
+.admin-theme-light .bg-cyan-500\/10,
+.admin-theme-light .bg-cyan-500\/15,
+.admin-theme-light .bg-cyan-500\/20,
+.admin-theme-light .bg-cyan-500\/30,
+.admin-theme-light .bg-cyan-950\/60 {
+  background-color: rgba(179, 109, 78, 0.12) !important;
+  color: #493426 !important;
+}
+
+/* Emerald accent transformed to Muted Olive Green (#71805A) */
+.admin-theme-light .text-emerald-400,
+.admin-theme-light .text-emerald-300,
+.admin-theme-light .text-emerald-200 {
+  color: #556242 !important;
+}
+
+.admin-theme-light .bg-emerald-500\/10,
+.admin-theme-light .bg-emerald-500\/15,
+.admin-theme-light .bg-emerald-500\/20,
+.admin-theme-light .bg-emerald-950\/60 {
+  background-color: rgba(113, 128, 90, 0.14) !important;
+  color: #3B462C !important;
+}
+
+.admin-theme-light .border-emerald-500\/30,
+.admin-theme-light .border-emerald-500\/40 {
+  border-color: rgba(113, 128, 90, 0.4) !important;
+}
+
+/* Primary Cyan Gradients transformed to Mocha Brown (#76513D) */
+.admin-theme-light .bg-gradient-to-r.from-cyan-500.via-cyan-400.to-blue-500,
+.admin-theme-light .bg-gradient-to-r.from-cyan-500.to-blue-500,
+.admin-theme-light .bg-gradient-to-r.from-cyan-500.to-teal-500,
+.admin-theme-light .bg-cyan-500 {
+  background-color: #76513D !important;
+  background-image: none !important;
+  color: #FDF9F3 !important;
+  box-shadow: 0 4px 14px rgba(118, 81, 61, 0.22) !important;
+}
+
+.admin-theme-light .bg-gradient-to-r.from-cyan-500.via-cyan-400.to-blue-500:hover,
+.admin-theme-light .bg-gradient-to-r.from-cyan-500.to-blue-500:hover,
+.admin-theme-light .bg-cyan-500:hover {
+  background-color: #634332 !important;
+}
+
+.admin-theme-light .bg-gradient-to-r.from-cyan-500.via-cyan-400.to-blue-500 span,
+.admin-theme-light .bg-gradient-to-r.from-cyan-500.via-cyan-400.to-blue-500 svg,
+.admin-theme-light .bg-cyan-500 span,
+.admin-theme-light .bg-cyan-500 svg {
+  color: #FDF9F3 !important;
+}
+
+/* Inputs, Textareas, Selects */
+.admin-theme-light input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
+.admin-theme-light textarea,
+.admin-theme-light select {
+  background-color: #FAF4E8 !important;
+  border-color: #D8C7AE !important;
+  color: #493426 !important;
+}
+
+.admin-theme-light input::placeholder,
+.admin-theme-light textarea::placeholder {
+  color: #9A8472 !important;
+}
+
+.admin-theme-light input:focus,
+.admin-theme-light textarea:focus,
+.admin-theme-light select:focus {
+  border-color: #B36D4E !important;
+  box-shadow: 0 0 0 2px rgba(179, 109, 78, 0.16) !important;
+  outline: none !important;
+}
+
+/* Range input sliders in light theme */
+.admin-theme-light input[type="range"] {
+  accent-color: #B36D4E !important;
+}
+
+/* Hover backgrounds on buttons, list items, table rows */
+.admin-theme-light .hover\:bg-slate-800:hover,
+.admin-theme-light .hover\:bg-slate-800\/60:hover,
+.admin-theme-light .hover\:bg-slate-700\/90:hover,
+.admin-theme-light .hover\:bg-slate-900\/60:hover,
+.admin-theme-light .hover\:bg-slate-900\/80:hover {
+  background-color: #EFE4D2 !important;
+  color: #493426 !important;
+}
+
+.admin-theme-light .hover\:border-cyan-400:hover,
+.admin-theme-light .hover\:border-cyan-500\/40:hover,
+.admin-theme-light .hover\:border-cyan-500\/30:hover {
+  border-color: #B36D4E !important;
+}
+
+.admin-theme-light .hover\:text-cyan-200:hover,
+.admin-theme-light .hover\:text-cyan-300:hover,
+.admin-theme-light .hover\:text-cyan-400:hover {
+  color: #B36D4E !important;
+}
+
+/* Table styles */
+.admin-theme-light table {
+  color: #493426 !important;
+}
+
+.admin-theme-light table thead tr {
+  background-color: #EFE4D2 !important;
+  border-color: #D8C7AE !important;
+}
+
+.admin-theme-light table thead th {
+  color: #493426 !important;
+}
+
+.admin-theme-light table tbody tr {
+  border-color: #E2D4BF !important;
+}
+
+.admin-theme-light table tbody tr:hover {
+  background-color: #F6EDE0 !important;
+}
+
+/* Modals backdrop */
+.admin-theme-light .bg-black\/80,
+.admin-theme-light .bg-black\/75,
+.admin-theme-light .bg-black\/70,
+.admin-theme-light .bg-slate-950\/80 {
+  background-color: rgba(73, 52, 38, 0.45) !important;
+  backdrop-filter: blur(8px) !important;
+}
+
+/* Toast Notifications in Light Theme */
+.admin-theme-light .bg-\[\#061710\]\/95 {
+  background-color: rgba(245, 238, 227, 0.98) !important;
+  border-color: #71805A !important;
+  color: #384628 !important;
+  box-shadow: 0 16px 50px rgba(113, 128, 90, 0.25) !important;
+}
+
+.admin-theme-light .bg-\[\#1e070e\]\/95 {
+  background-color: rgba(247, 237, 235, 0.98) !important;
+  border-color: #A8423F !important;
+  color: #5E2624 !important;
+  box-shadow: 0 16px 50px rgba(168, 66, 63, 0.25) !important;
+}
+
+/* Cinzel logo text in sidebar */
+.admin-theme-light .from-cyan-200.via-cyan-400.to-teal-300 {
+  background: linear-gradient(135deg, #76513D 0%, #B36D4E 100%) !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+}
+
+/* Date Picker Native Color Scheme */
+.admin-theme-light input[type="date"] {
+  color-scheme: light !important;
+}
+
+/* Stat card & accent text colors in light mode */
+.admin-theme-light .text-blue-300,
+.admin-theme-light .text-blue-400 {
+  color: #76513D !important;
+}
+
+.admin-theme-light .text-amber-300,
+.admin-theme-light .text-amber-400 {
+  color: #9C6721 !important;
+}
+
+.admin-theme-light .text-rose-200,
+.admin-theme-light .text-rose-300,
+.admin-theme-light .text-rose-400 {
+  color: #882E2C !important;
+}
+
+.admin-theme-light .text-teal-300,
+.admin-theme-light .text-teal-400 {
+  color: #556242 !important;
+}
+
+/* Gradient Buttons in Light Theme */
+.admin-theme-light .bg-gradient-to-r.from-emerald-500.to-green-600 {
+  background: #71805A !important;
+  color: #FDF9F3 !important;
+  box-shadow: 0 4px 14px rgba(113, 128, 90, 0.22) !important;
+}
+
+.admin-theme-light .bg-gradient-to-r.from-emerald-500.to-green-600:hover {
+  background: #5F6D4B !important;
+}
+
+.admin-theme-light .bg-gradient-to-r.from-rose-600.to-rose-500,
+.admin-theme-light .bg-gradient-to-r.from-rose-500.to-red-500 {
+  background: #A8423F !important;
+  color: #FDF9F3 !important;
+  box-shadow: 0 4px 14px rgba(168, 66, 63, 0.22) !important;
+}
+
+.admin-theme-light .bg-gradient-to-r.from-rose-600.to-rose-500:hover {
+  background: #933634 !important;
+}
+
+/* Neutralize neon glows into warm earthy shadows */
+.admin-theme-light .shadow-\[0_0_15px_rgba\(6\,182\,212\,0\.4\)\],
+.admin-theme-light .shadow-\[0_0_20px_rgba\(6\,182\,212\,0\.3\)\],
+.admin-theme-light .shadow-\[0_0_20px_rgba\(6\,182\,212\,0\.4\)\],
+.admin-theme-light .shadow-\[0_0_20px_rgba\(6\,182\,212\,0\.35\)\],
+.admin-theme-light .shadow-\[0_0_15px_rgba\(6\,182\,212\,0\.15\)\],
+.admin-theme-light .shadow-\[0_0_15px_rgba\(16\,185\,129\,0\.2\)\] {
+  box-shadow: 0 4px 14px rgba(73, 52, 38, 0.08) !important;
+}
+
+.admin-theme-light .drop-shadow-\[0_2px_14px_rgba\(6\,182\,212\,0\.35\)\] {
+  filter: drop-shadow(0 2px 6px rgba(73, 52, 38, 0.12)) !important;
+}
+
+/* Scrollbars for light theme */
+.admin-theme-light ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.admin-theme-light ::-webkit-scrollbar-track {
+  background: #F1E8D9;
+}
+.admin-theme-light ::-webkit-scrollbar-thumb {
+  background: #D8C7AE;
+  border-radius: 9999px;
+}
+.admin-theme-light ::-webkit-scrollbar-thumb:hover {
+  background: #C4B094;
+}
+
+
