@@ -23,6 +23,7 @@ import {
   Search,
   X
 } from 'lucide-react';
+import { useAdminTheme } from '../AdminThemeContext';
 
 interface ReportsSectionProps {
   stats: AdminOverviewStats | null;
@@ -170,6 +171,7 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
   users,
   isLoading
 }) => {
+  const { isLight } = useAdminTheme();
   const [exportingFormat, setExportingFormat] = useState<'pdf' | 'csv' | 'json' | 'xlsx' | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [exportSuccess, setExportSuccess] = useState<string | null>(null);
@@ -874,17 +876,28 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
     });
   }, [exportData, userMap, userObjMap]);
 
+  // Theme-aware styles
+  const cardBg = isLight
+    ? 'bg-[#FBF5EA] border-[#D8C7AE] shadow-[0_2px_8px_rgba(73,52,38,0.05)]'
+    : 'bg-[#0F1B2E]/90 border-slate-800 shadow-sm';
+  const labelColor = isLight ? 'text-[#806B58]' : 'text-slate-400';
+  const primaryText = isLight ? 'text-[#493426]' : 'text-slate-100';
+
   return (
     <div className="p-4 sm:p-6 space-y-5 max-w-7xl mx-auto">
       {/* Export Action Banner */}
-      <div className="p-4 sm:p-5 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-200 text-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-sm">
+      <div className={`p-4 sm:p-5 rounded-2xl border text-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-sm ${
+        isLight
+          ? 'bg-[#FAF4E8] border-[#D8C7AE] text-[#493426]'
+          : 'bg-cyan-500/10 border-cyan-500/30 text-cyan-200'
+      }`}>
         <div className="flex items-start gap-3">
-          <Info className="w-5 h-5 text-cyan-400 shrink-0 mt-0.5" />
+          <Info className={`w-5 h-5 shrink-0 mt-0.5 ${isLight ? 'text-[#76513D]' : 'text-cyan-400'}`} />
           <div>
-            <h3 className="font-semibold text-sm mb-1 text-slate-100">
+            <h3 className={`font-bold text-sm mb-1 ${primaryText}`}>
               Official Session Reports & Export Center
             </h3>
-            <p className="text-cyan-300/80 leading-relaxed max-w-2xl">
+            <p className={`leading-relaxed max-w-2xl ${labelColor}`}>
               Export verified player records in CSV, Excel (.xlsx), PDF, and JSON formats. Formatted with 6 exact audit columns: Player Name, Mobile Number, Date, Time, Total Score, and Souvenir Photo.
             </p>
           </div>
@@ -897,11 +910,17 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
             type="button"
             onClick={handleExportCSV}
             disabled={exportingFormat !== null || isLoading}
-            className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-400 hover:to-green-500 text-slate-950 text-xs font-bold flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.3)] transition-all cursor-pointer disabled:opacity-50"
+            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50 ${
+              isLight
+                ? 'bg-[#76513D] hover:bg-[#5D3F2E] text-[#FDF9F3] shadow-[0_2px_8px_rgba(118,81,61,0.2)]'
+                : 'bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-400 hover:to-green-500 text-slate-950 shadow-[0_0_15px_rgba(16,185,129,0.3)]'
+            }`}
             title="Download CSV spreadsheet data with 6 standard columns"
           >
             {exportingFormat === 'csv' ? (
-              <div className="w-3.5 h-3.5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+              <div className={`w-3.5 h-3.5 border-2 border-t-transparent rounded-full animate-spin ${
+                isLight ? 'border-white' : 'border-slate-950'
+              }`} />
             ) : (
               <Download className="w-4 h-4" />
             )}
@@ -913,13 +932,19 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
             type="button"
             onClick={handleExportExcel}
             disabled={exportingFormat !== null || isLoading}
-            className="px-3.5 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-emerald-500/40 hover:border-emerald-400 text-emerald-300 hover:text-emerald-200 text-xs font-bold flex items-center gap-2 shadow-sm transition-all cursor-pointer disabled:opacity-50"
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm transition-all cursor-pointer disabled:opacity-50 border ${
+              isLight
+                ? 'bg-[#FAF4E8] hover:bg-[#F3E9DA] border-[#58734B] text-[#3B5031]'
+                : 'bg-slate-900/90 hover:bg-slate-800 border-emerald-500/40 hover:border-emerald-400 text-emerald-300 hover:text-emerald-200'
+            }`}
             title="Download Excel (.xlsx) report with embedded player photos"
           >
             {exportingFormat === 'xlsx' ? (
-              <div className="w-3.5 h-3.5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+              <div className={`w-3.5 h-3.5 border-2 border-t-transparent rounded-full animate-spin ${
+                isLight ? 'border-[#58734B]' : 'border-emerald-400'
+              }`} />
             ) : (
-              <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+              <FileSpreadsheet className={`w-4 h-4 ${isLight ? 'text-[#58734B]' : 'text-emerald-400'}`} />
             )}
             <span>{exportingFormat === 'xlsx' ? 'Generating Excel...' : 'Download Excel (.xlsx)'}</span>
           </button>
@@ -929,13 +954,19 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
             type="button"
             onClick={handleExportPDF}
             disabled={exportingFormat !== null || isLoading}
-            className="px-3.5 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-cyan-500/40 hover:border-cyan-400 text-cyan-300 hover:text-cyan-200 text-xs font-bold flex items-center gap-2 shadow-sm transition-all cursor-pointer disabled:opacity-50"
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm transition-all cursor-pointer disabled:opacity-50 border ${
+              isLight
+                ? 'bg-[#FAF4E8] hover:bg-[#F3E9DA] border-[#B36D4E] text-[#B36D4E]'
+                : 'bg-slate-900/90 hover:bg-slate-800 border-cyan-500/40 hover:border-cyan-400 text-cyan-300 hover:text-cyan-200'
+            }`}
             title="Download formatted printable PDF report"
           >
             {exportingFormat === 'pdf' ? (
-              <div className="w-3.5 h-3.5 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+              <div className={`w-3.5 h-3.5 border-2 border-t-transparent rounded-full animate-spin ${
+                isLight ? 'border-[#B36D4E]' : 'border-cyan-400'
+              }`} />
             ) : (
-              <Printer className="w-4 h-4 text-cyan-400" />
+              <Printer className={`w-4 h-4 ${isLight ? 'text-[#B36D4E]' : 'text-cyan-400'}`} />
             )}
             <span>{exportingFormat === 'pdf' ? 'Generating PDF...' : 'Download PDF'}</span>
           </button>
@@ -945,13 +976,19 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
             type="button"
             onClick={handleExportJSON}
             disabled={exportingFormat !== null || isLoading}
-            className="px-3.5 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-amber-500/40 hover:border-amber-400 text-amber-300 hover:text-amber-200 text-xs font-bold flex items-center gap-2 shadow-sm transition-all cursor-pointer disabled:opacity-50"
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm transition-all cursor-pointer disabled:opacity-50 border ${
+              isLight
+                ? 'bg-[#FAF4E8] hover:bg-[#F3E9DA] border-[#D8C7AE] text-[#806B58]'
+                : 'bg-slate-900/90 hover:bg-slate-800 border-amber-500/40 hover:border-amber-400 text-amber-300 hover:text-amber-200'
+            }`}
             title="Download structured JSON report data"
           >
             {exportingFormat === 'json' ? (
-              <div className="w-3.5 h-3.5 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+              <div className={`w-3.5 h-3.5 border-2 border-t-transparent rounded-full animate-spin ${
+                isLight ? 'border-[#806B58]' : 'border-amber-400'
+              }`} />
             ) : (
-              <FileJson className="w-4 h-4 text-amber-400" />
+              <FileJson className={`w-4 h-4 ${isLight ? 'text-[#9C6721]' : 'text-amber-400'}`} />
             )}
             <span>{exportingFormat === 'json' ? 'Generating JSON...' : 'Download JSON'}</span>
           </button>
@@ -960,15 +997,19 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
 
       {/* Success Status Banner */}
       {exportSuccess && (
-        <div className="p-3 rounded-xl bg-emerald-950/70 border border-emerald-500/40 text-emerald-200 text-xs flex items-center justify-between gap-2 shadow-sm animate-in fade-in">
+        <div className={`p-3 rounded-xl border text-xs flex items-center justify-between gap-2 shadow-sm animate-in fade-in ${
+          isLight
+            ? 'bg-[#58734B]/15 border-[#58734B]/40 text-[#3B5031]'
+            : 'bg-emerald-950/70 border-emerald-500/40 text-emerald-200'
+        }`}>
           <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span>{exportSuccess}</span>
+            <CheckCircle2 className={`w-4 h-4 shrink-0 ${isLight ? 'text-[#58734B]' : 'text-emerald-400'}`} />
+            <span className="font-semibold">{exportSuccess}</span>
           </div>
           <button
             type="button"
             onClick={() => setExportSuccess(null)}
-            className="text-emerald-400 hover:text-white p-1 rounded cursor-pointer"
+            className="p-1 rounded cursor-pointer hover:opacity-75"
             title="Dismiss"
           >
             <X className="w-3.5 h-3.5" />
@@ -978,15 +1019,19 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
 
       {/* Error Status Banner */}
       {exportError && (
-        <div className="p-3 rounded-xl bg-rose-950/70 border border-rose-500/40 text-rose-200 text-xs flex items-center justify-between gap-2 shadow-sm animate-in fade-in">
+        <div className={`p-3 rounded-xl border text-xs flex items-center justify-between gap-2 shadow-sm animate-in fade-in ${
+          isLight
+            ? 'bg-[#A74747]/15 border-[#A74747]/40 text-[#782828]'
+            : 'bg-rose-950/70 border-rose-500/40 text-rose-200'
+        }`}>
           <div className="flex items-center gap-2">
-            <XCircle className="w-4 h-4 text-rose-400 shrink-0" />
-            <span>{exportError}</span>
+            <XCircle className={`w-4 h-4 shrink-0 ${isLight ? 'text-[#A74747]' : 'text-rose-400'}`} />
+            <span className="font-semibold">{exportError}</span>
           </div>
           <button
             type="button"
             onClick={() => setExportError(null)}
-            className="text-rose-400 hover:text-white p-1 rounded cursor-pointer"
+            className="p-1 rounded cursor-pointer hover:opacity-75"
             title="Dismiss"
           >
             <X className="w-3.5 h-3.5" />
@@ -995,21 +1040,27 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
       )}
 
       {/* Search & Filter Toolbar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[#0F1B2E]/90 border border-slate-800 p-3 sm:p-4 rounded-2xl shadow-sm">
+      <div className={`${cardBg} border p-3 sm:p-4 rounded-2xl flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3`}>
         <div className="relative flex-1 max-w-md">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <Search className={`w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 ${isLight ? 'text-[#B36D4E]' : 'text-slate-400'}`} />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Filter records by player name or mobile number..."
-            className="w-full pl-10 pr-9 py-2 bg-slate-950/80 border border-slate-800 focus:border-cyan-500/60 rounded-xl text-xs text-slate-200 placeholder-slate-500 outline-none transition-colors"
+            className={`w-full pl-10 pr-9 py-2 rounded-xl text-xs outline-none transition-colors ${
+              isLight
+                ? 'bg-[#FAF4E8] border border-[#D8C7AE] text-[#493426] placeholder-[#806B58] focus:border-[#B36D4E]'
+                : 'bg-slate-950/80 border border-slate-800 text-slate-200 placeholder-slate-500 focus:border-cyan-500/60'
+            }`}
           />
           {searchQuery && (
             <button
               type="button"
               onClick={() => setSearchQuery('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 p-1 rounded cursor-pointer"
+              className={`absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded cursor-pointer ${
+                isLight ? 'text-[#806B58] hover:text-[#493426]' : 'text-slate-400 hover:text-slate-200'
+              }`}
               title="Clear search"
             >
               <X className="w-3.5 h-3.5" />
@@ -1017,12 +1068,16 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
           )}
         </div>
 
-        <div className="text-xs text-slate-400 flex items-center gap-2 font-mono self-start sm:self-auto">
+        <div className={`text-xs flex items-center gap-2 font-mono self-start sm:self-auto ${labelColor}`}>
           <span>
-            Records: <strong className="text-cyan-300">{exportData.length}</strong> of {completedSessions.length} completed
+            Records: <strong className={isLight ? 'text-[#76513D]' : 'text-cyan-300'}>{exportData.length}</strong> of {completedSessions.length} completed
           </span>
           {searchQuery && (
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+              isLight
+                ? 'bg-[#B36D4E]/15 text-[#8B452B] border-[#B36D4E]/30'
+                : 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'
+            }`}>
               Filtered
             </span>
           )}
@@ -1030,25 +1085,27 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
       </div>
 
       {/* Reports Table Card (Strictly 6 Columns: Player Name, Mobile Number, Date, Time, Total Score, Photo) */}
-      <div className="bg-[#0F1B2E]/90 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-        <div className="p-4 sm:p-5 border-b border-cyan-500/15 bg-slate-950/60 flex items-center justify-between">
+      <div className={`${cardBg} border rounded-2xl overflow-hidden shadow-xl`}>
+        <div className={`p-4 sm:p-5 border-b flex items-center justify-between ${
+          isLight ? 'bg-[#F3E9DA] border-[#D8C7AE]' : 'bg-slate-950/60 border-cyan-500/15'
+        }`}>
           <div className="flex items-center gap-2.5">
-            <FileSpreadsheet className="w-5 h-5 text-cyan-400" />
-            <h2 className="text-sm font-bold text-slate-100 tracking-wide">
+            <FileSpreadsheet className={`w-5 h-5 ${isLight ? 'text-[#76513D]' : 'text-cyan-400'}`} />
+            <h2 className={`text-sm font-bold tracking-wide ${primaryText}`}>
               {searchQuery ? 'Filtered Player Reports' : 'Official Player Reports'}
             </h2>
           </div>
-          <span className="text-xs text-slate-400 font-mono">
+          <span className={`text-xs font-mono font-semibold ${labelColor}`}>
             {displayedTableRows.length} {displayedTableRows.length === 1 ? 'Record' : 'Records'}
           </span>
         </div>
 
         {isLoading ? (
-          <div className="p-8 text-center text-slate-400 text-xs">
+          <div className={`p-8 text-center text-xs ${labelColor}`}>
             Loading report records...
           </div>
         ) : displayedTableRows.length === 0 ? (
-          <div className="p-8 text-center text-slate-500 text-xs">
+          <div className={`p-8 text-center text-xs ${labelColor}`}>
             {searchQuery
               ? `No completed records matching "${searchQuery}".`
               : 'No completed session records available.'}
@@ -1057,7 +1114,11 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
-                <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider text-[10px] bg-slate-950/40">
+                <tr className={`border-b uppercase tracking-wider text-[10px] ${
+                  isLight
+                    ? 'border-[#D8C7AE] text-[#493426] bg-[#F3E9DA]'
+                    : 'border-slate-800 text-slate-400 bg-slate-950/40'
+                }`}>
                   <th className="py-3.5 px-4 font-bold text-left">Player Name</th>
                   <th className="py-3.5 px-4 font-bold text-left">Mobile Number</th>
                   <th className="py-3.5 px-4 font-bold text-left">Date</th>
@@ -1066,31 +1127,36 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
                   <th className="py-3.5 px-4 font-bold text-center w-24">Photo</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60">
+              <tbody className={`divide-y ${isLight ? 'divide-[#E8DCCB]' : 'divide-slate-800/60'}`}>
                 {displayedTableRows.map((entry) => (
-                  <tr key={entry.id} className="hover:bg-slate-900/50 transition-colors">
+                  <tr
+                    key={entry.id}
+                    className={`transition-colors ${isLight ? 'hover:bg-[#F5ECE0]' : 'hover:bg-slate-900/50'}`}
+                  >
                     {/* 1. Player Name */}
-                    <td className="py-3.5 px-4 font-semibold text-slate-100">
+                    <td className={`py-3.5 px-4 font-semibold ${primaryText}`}>
                       {entry.playerName}
                     </td>
 
                     {/* 2. Mobile Number */}
-                    <td className="py-3.5 px-4 font-mono text-slate-300">
+                    <td className={`py-3.5 px-4 font-mono ${primaryText}`}>
                       {entry.mobileNumber || '—'}
                     </td>
 
                     {/* 3. Date */}
-                    <td className="py-3.5 px-4 text-slate-300 whitespace-nowrap">
+                    <td className={`py-3.5 px-4 whitespace-nowrap ${primaryText}`}>
                       {entry.date}
                     </td>
 
                     {/* 4. Time */}
-                    <td className="py-3.5 px-4 text-slate-400 font-mono whitespace-nowrap">
+                    <td className={`py-3.5 px-4 font-mono whitespace-nowrap ${labelColor}`}>
                       {entry.time}
                     </td>
 
                     {/* 5. Total Score */}
-                    <td className="py-3.5 px-4 text-right font-mono font-bold text-cyan-300 text-sm">
+                    <td className={`py-3.5 px-4 text-right font-mono font-bold text-sm ${
+                      isLight ? 'text-[#76513D]' : 'text-cyan-300'
+                    }`}>
                       {entry.totalScore.toLocaleString()}
                     </td>
 
@@ -1102,7 +1168,11 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
                           onClick={() =>
                             setSelectedPhoto({ url: entry.photoUrl!, playerName: entry.playerName })
                           }
-                          className="group relative inline-block rounded-xl overflow-hidden border border-slate-700/80 hover:border-cyan-400 transition-all cursor-pointer shadow-sm hover:scale-105"
+                          className={`group relative inline-block rounded-xl overflow-hidden border transition-all cursor-pointer shadow-sm hover:scale-105 ${
+                            isLight
+                              ? 'border-[#D8C7AE] hover:border-[#B36D4E]'
+                              : 'border-slate-700/80 hover:border-cyan-400'
+                          }`}
                           title={`Click to view full photo of ${entry.playerName}`}
                         >
                           <img
@@ -1116,8 +1186,12 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
                           </div>
                         </button>
                       ) : (
-                        <div className="w-12 h-12 rounded-xl bg-slate-900/80 border border-dashed border-slate-800 flex flex-col items-center justify-center text-slate-500 text-[10px] mx-auto select-none">
-                          <Camera className="w-3.5 h-3.5 mb-0.5 opacity-30" />
+                        <div className={`w-12 h-12 rounded-xl border border-dashed flex flex-col items-center justify-center text-[10px] mx-auto select-none ${
+                          isLight
+                            ? 'bg-[#FAF4E8] border-[#D8C7AE] text-[#806B58]'
+                            : 'bg-slate-900/80 border-slate-800 text-slate-500'
+                        }`}>
+                          <Camera className="w-3.5 h-3.5 mb-0.5 opacity-40" />
                           <span>No Photo</span>
                         </div>
                       )}
@@ -1133,31 +1207,43 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
       {/* Lightbox Modal for Photo Thumbnail Preview */}
       {selectedPhoto && (
         <div
-          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
+          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
           onClick={() => setSelectedPhoto(null)}
         >
           <div
-            className="bg-[#0F1B2E] border border-cyan-500/40 rounded-2xl max-w-lg w-full p-4 sm:p-5 shadow-2xl relative space-y-3"
+            className={`rounded-2xl max-w-lg w-full p-4 sm:p-5 shadow-2xl relative space-y-3 border ${
+              isLight
+                ? 'bg-[#FBF5EA] border-[#D8C7AE]'
+                : 'bg-[#0F1B2E] border-cyan-500/40'
+            }`}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div className={`flex items-center justify-between border-b pb-3 ${
+              isLight ? 'border-[#D8C7AE]' : 'border-slate-800'
+            }`}>
               <div className="flex items-center gap-2">
-                <Camera className="w-4 h-4 text-cyan-400" />
-                <h3 className="font-bold text-sm text-slate-100">
+                <Camera className={`w-4 h-4 ${isLight ? 'text-[#B36D4E]' : 'text-cyan-400'}`} />
+                <h3 className={`font-bold text-sm ${primaryText}`}>
                   {selectedPhoto.playerName} — Souvenir Photo
                 </h3>
               </div>
               <button
                 type="button"
                 onClick={() => setSelectedPhoto(null)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+                className={`p-1 rounded-lg transition-colors cursor-pointer ${
+                  isLight
+                    ? 'text-[#806B58] hover:text-[#493426] hover:bg-[#F3E9DA]'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                }`}
                 title="Close"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="rounded-xl overflow-hidden bg-black flex items-center justify-center max-h-[70vh]">
+            <div className={`rounded-xl overflow-hidden flex items-center justify-center max-h-[70vh] ${
+              isLight ? 'bg-[#FAF4E8]' : 'bg-black'
+            }`}>
               <img
                 src={selectedPhoto.url}
                 alt={selectedPhoto.playerName}
@@ -1169,7 +1255,11 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
               <button
                 type="button"
                 onClick={() => setSelectedPhoto(null)}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl cursor-pointer transition-colors"
+                className={`px-4 py-2 text-xs font-semibold rounded-xl cursor-pointer transition-colors border ${
+                  isLight
+                    ? 'bg-[#FAF4E8] border-[#D8C7AE] text-[#493426] hover:bg-[#F3E9DA]'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
+                }`}
               >
                 Close
               </button>

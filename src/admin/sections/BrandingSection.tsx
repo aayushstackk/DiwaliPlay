@@ -7,6 +7,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { SystemSettings, AdminRole, AssetRecord } from '../../types/backend';
 import { adminApi } from '../../services/api';
 import { BrandLogo } from '../../components/BrandLogo';
+import { useAdminTheme } from '../AdminThemeContext';
 import {
   Palette,
   Sparkles,
@@ -46,6 +47,18 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
   currentUserRole,
   initialTab = 'branding'
 }) => {
+  const { isLight } = useAdminTheme();
+
+  const cardBg = isLight
+    ? 'bg-[#FBF5EA] border-[#D8C7AE] text-[#493426] shadow-[0_2px_8px_rgba(73,52,38,0.05)]'
+    : 'bg-[#0F1B2E]/90 border-slate-800 text-slate-100 shadow-sm';
+  const cardSubBg = isLight ? 'bg-[#FAF4E8] border-[#D8C7AE]' : 'bg-slate-900/90 border-slate-800';
+  const primaryText = isLight ? 'text-[#493426]' : 'text-slate-100';
+  const secondaryText = isLight ? 'text-[#806B58]' : 'text-slate-400';
+  const inputBg = isLight
+    ? 'bg-[#FAF4E8] border-[#D8C7AE] text-[#493426] placeholder-[#806B58]/60 focus:border-[#B36D4E]'
+    : 'bg-slate-900 border-slate-700 text-slate-100 placeholder-slate-500 focus:border-cyan-400';
+
   const [activeTab, setActiveTab] = useState<'branding' | 'wallpapers'>(initialTab);
 
   // Sync activeTab when initialTab prop changes
@@ -616,18 +629,22 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
   return (
     <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto">
       {/* Navigation Tabs Header */}
-      <div className="flex items-center justify-between border-b border-cyan-500/15 pb-3">
+      <div className={`flex items-center justify-between border-b pb-3 ${isLight ? 'border-[#D8C7AE]' : 'border-cyan-500/15'}`}>
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={() => setActiveTab('branding')}
             className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-2 transition-all cursor-pointer ${
               activeTab === 'branding'
-                ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-500/40 shadow-[0_0_15px_rgba(6,182,212,0.15)]'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60 border border-transparent'
+                ? isLight
+                  ? 'bg-[#76513D] text-[#FDF9F3] border border-[#76513D] shadow-[0_2px_8px_rgba(118,81,61,0.25)]'
+                  : 'bg-cyan-500/20 text-cyan-200 border border-cyan-500/40 shadow-[0_0_15px_rgba(6,182,212,0.15)]'
+                : isLight
+                  ? 'text-[#806B58] hover:text-[#493426] hover:bg-[#FAF4E8] border border-transparent'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60 border border-transparent'
             }`}
           >
-            <Palette className="w-4 h-4 text-cyan-400" />
+            <Palette className={`w-4 h-4 ${activeTab === 'branding' ? (isLight ? 'text-[#FDF9F3]' : 'text-cyan-400') : (isLight ? 'text-[#806B58]' : 'text-cyan-400')}`} />
             <span>Branding & Layout</span>
           </button>
 
@@ -636,22 +653,28 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
             onClick={() => setActiveTab('wallpapers')}
             className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-2 transition-all cursor-pointer ${
               activeTab === 'wallpapers'
-                ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-500/40 shadow-[0_0_15px_rgba(6,182,212,0.15)]'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60 border border-transparent'
+                ? isLight
+                  ? 'bg-[#76513D] text-[#FDF9F3] border border-[#76513D] shadow-[0_2px_8px_rgba(118,81,61,0.25)]'
+                  : 'bg-cyan-500/20 text-cyan-200 border border-cyan-500/40 shadow-[0_0_15px_rgba(6,182,212,0.15)]'
+                : isLight
+                  ? 'text-[#806B58] hover:text-[#493426] hover:bg-[#FAF4E8] border border-transparent'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60 border border-transparent'
             }`}
           >
-            <ImageIcon className="w-4 h-4 text-cyan-400" />
+            <ImageIcon className={`w-4 h-4 ${activeTab === 'wallpapers' ? (isLight ? 'text-[#FDF9F3]' : 'text-cyan-400') : (isLight ? 'text-[#806B58]' : 'text-cyan-400')}`} />
             <span>Wallpapers & Background</span>
             {wallpapers.length > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-cyan-500/30 text-cyan-300 font-mono">
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                isLight ? 'bg-[#F1E8D9] text-[#76513D]' : 'bg-cyan-500/30 text-cyan-300'
+              }`}>
                 {wallpapers.length}
               </span>
             )}
           </button>
         </div>
 
-        <div className="hidden sm:flex items-center gap-2 text-xs font-mono text-slate-400">
-          <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+        <div className={`hidden sm:flex items-center gap-2 text-xs font-mono ${secondaryText}`}>
+          <Sparkles className={`w-3.5 h-3.5 ${isLight ? 'text-[#B36D4E]' : 'text-cyan-400'}`} />
           <span>Interactive Customizer</span>
         </div>
       </div>
@@ -662,11 +685,11 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
       {activeTab === 'branding' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Left: Configuration Form & Logo Upload */}
-          <div className="bg-[#0F1B2E]/90 border border-slate-800 rounded-2xl p-5 sm:p-6 flex flex-col justify-between shadow-sm">
+          <div className={`border rounded-2xl p-5 sm:p-6 flex flex-col justify-between ${cardBg}`}>
             <div>
-              <div className="flex items-center gap-2 mb-4 pb-3 border-b border-slate-800">
-                <Palette className="w-5 h-5 text-cyan-400" />
-                <h2 className="text-base font-bold text-slate-100">
+              <div className={`flex items-center gap-2 mb-4 pb-3 border-b ${isLight ? 'border-[#D8C7AE]' : 'border-slate-800'}`}>
+                <Palette className={`w-5 h-5 ${isLight ? 'text-[#B36D4E]' : 'text-cyan-400'}`} />
+                <h2 className={`text-base font-bold ${primaryText}`}>
                   Branding Specifications
                 </h2>
               </div>
@@ -688,7 +711,7 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
               <form onSubmit={handleSaveBranding} className="space-y-4">
                 {/* Line 1: Experience Title */}
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1">
+                  <label className={`block text-xs font-semibold uppercase tracking-wider mb-1 ${isLight ? 'text-[#493426]' : 'text-slate-300'}`}>
                     Line 1: Experience Title
                   </label>
                   <input
@@ -696,16 +719,16 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                     value={experienceTitle}
                     onChange={(e) => setExperienceTitle(e.target.value)}
                     placeholder="DIWALI FUN PLAY"
-                    className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 focus:border-cyan-400 rounded-xl text-slate-100 text-xs transition-colors outline-none font-bold"
+                    className={`w-full px-3.5 py-2.5 rounded-xl text-xs transition-colors outline-none font-bold border ${inputBg}`}
                   />
-                  <span className="text-[10px] text-slate-500 mt-1 block">
+                  <span className={`text-[10px] mt-1 block ${secondaryText}`}>
                     Displays at the top of the 3-line branding block across kiosk and mobile
                   </span>
                 </div>
 
                 {/* Line 2: Connector Text */}
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1">
+                  <label className={`block text-xs font-semibold uppercase tracking-wider mb-1 ${isLight ? 'text-[#493426]' : 'text-slate-300'}`}>
                     Line 2: Connector Text
                   </label>
                   <input
@@ -713,16 +736,16 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                     value={connectorText}
                     onChange={(e) => setConnectorText(e.target.value)}
                     placeholder="by"
-                    className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 focus:border-cyan-400 rounded-xl text-slate-200 text-xs italic font-serif transition-colors outline-none"
+                    className={`w-full px-3.5 py-2.5 rounded-xl text-xs italic font-serif transition-colors outline-none border ${inputBg}`}
                   />
-                  <span className="text-[10px] text-slate-500 mt-1 block">
+                  <span className={`text-[10px] mt-1 block ${secondaryText}`}>
                     Connecting line between experience title and company name/logo (e.g. "by", "presented by")
                   </span>
                 </div>
 
                 {/* Line 3: Brand Name / Company */}
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1">
+                  <label className={`block text-xs font-semibold uppercase tracking-wider mb-1 ${isLight ? 'text-[#493426]' : 'text-slate-300'}`}>
                     Line 3: Sponsor / Company Name
                   </label>
                   <input
@@ -730,14 +753,14 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                     value={brandName}
                     onChange={(e) => setBrandName(e.target.value)}
                     placeholder="ItsSpotlight"
-                    className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 focus:border-cyan-400 rounded-xl text-slate-100 text-xs transition-colors outline-none"
+                    className={`w-full px-3.5 py-2.5 rounded-xl text-xs transition-colors outline-none border ${inputBg}`}
                     required
                   />
                 </div>
 
                 {/* Direct File Upload for Brand Logo */}
                 <div className="pt-2 pb-1">
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-1.5">
+                  <label className={`block text-xs font-semibold uppercase tracking-wider mb-1.5 ${isLight ? 'text-[#493426]' : 'text-slate-300'}`}>
                     Upload Brand Logo (PNG, SVG, WebP, max 5MB)
                   </label>
                   <input
@@ -752,16 +775,24 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                       type="button"
                       disabled={isUploadingLogo}
                       onClick={() => logoInputRef.current?.click()}
-                      className="flex-1 py-2.5 px-4 rounded-xl border border-cyan-500/30 hover:border-cyan-400 hover:bg-cyan-500/10 text-cyan-200 text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer transition-colors disabled:opacity-50"
+                      className={`flex-1 py-2.5 px-4 rounded-xl border text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer transition-colors disabled:opacity-50 ${
+                        isLight
+                          ? 'border-[#D8C7AE] hover:border-[#B36D4E] bg-[#FAF4E8] hover:bg-[#F1E8D9] text-[#76513D]'
+                          : 'border-cyan-500/30 hover:border-cyan-400 hover:bg-cyan-500/10 text-cyan-200'
+                      }`}
                     >
-                      <Upload className="w-4 h-4 text-cyan-400" />
+                      <Upload className={`w-4 h-4 ${isLight ? 'text-[#B36D4E]' : 'text-cyan-400'}`} />
                       <span>{isUploadingLogo ? 'Uploading to Storage...' : 'Upload Brand Logo File'}</span>
                     </button>
                     {brandLogoUrl && (
                       <button
                         type="button"
                         onClick={handleClearActiveLogo}
-                        className="py-2.5 px-3 rounded-xl bg-slate-900 border border-slate-700 text-slate-400 hover:text-slate-200 text-xs cursor-pointer"
+                        className={`py-2.5 px-3 rounded-xl border text-xs cursor-pointer transition-colors ${
+                          isLight
+                            ? 'bg-[#FAF4E8] border-[#D8C7AE] text-[#806B58] hover:text-[#493426]'
+                            : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-slate-200'
+                        }`}
                         title="Clear custom logo"
                       >
                         Clear
@@ -772,7 +803,7 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
 
                 {/* Dynamic Logo URL */}
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+                  <label className={`block text-xs font-semibold uppercase tracking-wider mb-1 ${secondaryText}`}>
                     Active Logo URI / URL
                   </label>
                   <input
@@ -780,21 +811,23 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                     value={brandLogoUrl}
                     onChange={(e) => setBrandLogoUrl(e.target.value)}
                     placeholder="https://... or /api/assets/..."
-                    className="w-full px-3.5 py-2 bg-slate-900 border border-slate-700 focus:border-cyan-400 rounded-xl text-slate-300 text-xs transition-colors outline-none font-mono"
+                    className={`w-full px-3.5 py-2 rounded-xl text-xs transition-colors outline-none font-mono border ${inputBg}`}
                   />
                 </div>
 
                 {/* Logo Dimension Controls */}
-                <div className="pt-2 p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-3">
+                <div className={`pt-2 p-3.5 rounded-xl border space-y-3 ${cardSubBg}`}>
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                      <Sliders className="w-3.5 h-3.5 text-cyan-400" />
+                    <span className={`text-xs font-semibold flex items-center gap-1.5 ${primaryText}`}>
+                      <Sliders className={`w-3.5 h-3.5 ${isLight ? 'text-[#B36D4E]' : 'text-cyan-400'}`} />
                       Logo Dimensions
                     </span>
                     <button
                       type="button"
                       onClick={handleResetSize}
-                      className="text-[11px] text-cyan-400/80 hover:text-cyan-300 flex items-center gap-1 cursor-pointer"
+                      className={`text-[11px] flex items-center gap-1 cursor-pointer transition-colors ${
+                        isLight ? 'text-[#B36D4E] hover:text-[#8F4C30]' : 'text-cyan-400/80 hover:text-cyan-300'
+                      }`}
                     >
                       <RotateCcw className="w-3 h-3" />
                       Reset Size
@@ -803,9 +836,9 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
 
                   {/* Width control */}
                   <div>
-                    <div className="flex justify-between text-[11px] text-slate-400 mb-1 font-mono">
-                      <span>Width</span>
-                      <span className="text-cyan-300">{logoWidth}px</span>
+                    <div className="flex justify-between text-[11px] mb-1 font-mono">
+                      <span className={secondaryText}>Width</span>
+                      <span className={isLight ? 'text-[#76513D] font-bold' : 'text-cyan-300'}>{logoWidth}px</span>
                     </div>
                     <input
                       type="range"
@@ -813,15 +846,17 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                       max={360}
                       value={logoWidth}
                       onChange={(e) => setLogoWidth(Number(e.target.value))}
-                      className="w-full accent-cyan-400 h-1.5 bg-slate-800 rounded-lg cursor-pointer"
+                      className={`w-full h-1.5 rounded-lg cursor-pointer ${
+                        isLight ? 'accent-[#B36D4E] bg-[#F1E8D9]' : 'accent-cyan-400 bg-slate-800'
+                      }`}
                     />
                   </div>
 
                   {/* Height control */}
                   <div>
-                    <div className="flex justify-between text-[11px] text-slate-400 mb-1 font-mono">
-                      <span>Height</span>
-                      <span className="text-cyan-300">{logoHeight}px</span>
+                    <div className="flex justify-between text-[11px] mb-1 font-mono">
+                      <span className={secondaryText}>Height</span>
+                      <span className={isLight ? 'text-[#76513D] font-bold' : 'text-cyan-300'}>{logoHeight}px</span>
                     </div>
                     <input
                       type="range"
@@ -829,7 +864,9 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                       max={120}
                       value={logoHeight}
                       onChange={(e) => setLogoHeight(Number(e.target.value))}
-                      className="w-full accent-cyan-400 h-1.5 bg-slate-800 rounded-lg cursor-pointer"
+                      className={`w-full h-1.5 rounded-lg cursor-pointer ${
+                        isLight ? 'accent-[#B36D4E] bg-[#F1E8D9]' : 'accent-cyan-400 bg-slate-800'
+                      }`}
                     />
                   </div>
                 </div>
@@ -839,7 +876,11 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                   <button
                     type="submit"
                     disabled={isSavingBranding || currentUserRole !== 'superadmin'}
-                    className="w-full py-3 px-4 rounded-xl font-bold text-xs tracking-wide bg-gradient-to-r from-cyan-500 via-cyan-400 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-slate-950 shadow-[0_4px_20px_rgba(6,182,212,0.25)] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2"
+                    className={`w-full py-3 px-4 rounded-xl font-bold text-xs tracking-wide transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2 ${
+                      isLight
+                        ? 'bg-[#76513D] hover:bg-[#5D3F2E] text-[#FDF9F3] shadow-[0_2px_10px_rgba(118,81,61,0.25)]'
+                        : 'bg-gradient-to-r from-cyan-500 via-cyan-400 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-slate-950 shadow-[0_4px_20px_rgba(6,182,212,0.25)]'
+                    }`}
                   >
                     <Save className="w-4 h-4" />
                     <span>{isSavingBranding ? 'Saving to Database...' : 'Save Branding Changes'}</span>
@@ -850,12 +891,12 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
           </div>
 
           {/* Right: Interactive Live Preview Panel */}
-          <div className="bg-[#0F1B2E]/90 border border-slate-800 rounded-2xl p-5 sm:p-6 flex flex-col justify-between shadow-sm">
+          <div className={`border rounded-2xl p-5 sm:p-6 flex flex-col justify-between ${cardBg}`}>
             <div>
-              <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-800">
+              <div className={`flex items-center justify-between mb-4 pb-3 border-b ${isLight ? 'border-[#D8C7AE]' : 'border-slate-800'}`}>
                 <div className="flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-cyan-400" />
-                  <h2 className="text-base font-bold text-slate-100">
+                  <Sparkles className={`w-5 h-5 ${isLight ? 'text-[#B36D4E]' : 'text-cyan-400'}`} />
+                  <h2 className={`text-base font-bold ${primaryText}`}>
                     Live Player-Facing Preview
                   </h2>
                 </div>
@@ -863,7 +904,11 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                   <button
                     type="button"
                     onClick={handleResetPosition}
-                    className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-700 hover:border-cyan-400 text-slate-300 hover:text-cyan-200 text-[11px] font-mono flex items-center gap-1 cursor-pointer transition-colors"
+                    className={`px-2.5 py-1 rounded-lg border text-[11px] font-mono flex items-center gap-1 cursor-pointer transition-colors ${
+                      isLight
+                        ? 'bg-[#FAF4E8] border-[#D8C7AE] text-[#493426] hover:border-[#B36D4E]'
+                        : 'bg-slate-900 border-slate-700 hover:border-cyan-400 text-slate-300 hover:text-cyan-200'
+                    }`}
                     title="Reset logo to center"
                   >
                     <RotateCcw className="w-3 h-3" />
@@ -873,18 +918,20 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
               </div>
 
               {/* Instructions banner */}
-              <div className="mb-3 px-3 py-2 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-[11px] text-cyan-200/90 flex items-center justify-between">
+              <div className={`mb-3 px-3 py-2 rounded-xl border text-[11px] flex items-center justify-between ${
+                isLight ? 'bg-[#FAF4E8] border-[#D8C7AE] text-[#806B58]' : 'bg-cyan-500/10 border-cyan-500/20 text-cyan-200/90'
+              }`}>
                 <span className="flex items-center gap-1.5">
-                  <Move className="w-3.5 h-3.5 text-cyan-400" />
+                  <Move className={`w-3.5 h-3.5 ${isLight ? 'text-[#B36D4E]' : 'text-cyan-400'}`} />
                   <span>Click and drag the logo inside the box to reposition.</span>
                 </span>
-                <span className="font-mono text-[10px] text-slate-400">
+                <span className={`font-mono text-[10px] ${secondaryText}`}>
                   Offset: X:{logoPosition.x > 0 ? `+${logoPosition.x}` : logoPosition.x}px Y:{logoPosition.y > 0 ? `+${logoPosition.y}` : logoPosition.y}px
                 </span>
               </div>
 
               {/* Kiosk Display Mockup Frame with Interactive Repositioning */}
-              <div className="rounded-2xl bg-[#090D1A] border border-cyan-500/30 p-8 shadow-2xl flex flex-col items-center justify-center text-center relative overflow-hidden min-h-[300px]">
+              <div className={`rounded-2xl bg-[#090D1A] ${isLight ? 'border border-[#D8C7AE]' : 'border border-cyan-500/30'} p-8 shadow-2xl flex flex-col items-center justify-center text-center relative overflow-hidden min-h-[300px]`}>
                 <div className="absolute inset-0 bg-gradient-to-b from-cyan-500/5 via-transparent to-rose-600/5 pointer-events-none" />
 
                 <div className="relative z-10 flex flex-col items-center select-none w-full">
@@ -910,8 +957,12 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                     onPointerCancel={handlePointerUp}
                     className={`mt-1.5 p-2 rounded-xl border transition-all select-none touch-none cursor-grab active:cursor-grabbing ${
                       isDraggingLogo
-                        ? 'border-cyan-400 ring-2 ring-cyan-400/50 bg-cyan-500/10 shadow-[0_0_20px_rgba(6,182,212,0.4)]'
-                        : 'border-dashed border-cyan-500/40 hover:border-cyan-400 hover:bg-white/5'
+                        ? isLight
+                          ? 'border-[#B36D4E] ring-2 ring-[#B36D4E]/50 bg-white/10'
+                          : 'border-cyan-400 ring-2 ring-cyan-400/50 bg-cyan-500/10 shadow-[0_0_20px_rgba(6,182,212,0.4)]'
+                        : isLight
+                          ? 'border-dashed border-[#D8C7AE]/60 hover:border-[#B36D4E] hover:bg-white/5'
+                          : 'border-dashed border-cyan-500/40 hover:border-cyan-400 hover:bg-white/5'
                     }`}
                     title="Click and drag to reposition logo"
                   >
@@ -929,8 +980,8 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
 
               {/* Uploaded Brand Logos Library */}
               {uploadedLogos.length > 0 && (
-                <div className="mt-6 pt-4 border-t border-neutral-800">
-                  <h4 className="text-xs font-bold text-neutral-300 mb-2 uppercase tracking-wider">
+                <div className={`mt-6 pt-4 border-t ${isLight ? 'border-[#D8C7AE]' : 'border-neutral-800'}`}>
+                  <h4 className={`text-xs font-bold mb-2 uppercase tracking-wider ${primaryText}`}>
                     Stored Brand Logos ({uploadedLogos.length})
                   </h4>
                   <div className="grid grid-cols-3 gap-2">
@@ -942,8 +993,12 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                           onClick={() => handleSelectExistingLogo(logo)}
                           className={`p-2 rounded-xl border flex flex-col items-center justify-between cursor-pointer transition-all ${
                             isSelected
-                              ? 'bg-cyan-500/15 border-cyan-400'
-                              : 'bg-slate-900 border-slate-800 hover:border-slate-700'
+                              ? isLight
+                                ? 'bg-[#FAF4E8] border-[#B36D4E] ring-2 ring-[#B36D4E]/30'
+                                : 'bg-cyan-500/15 border-cyan-400'
+                              : isLight
+                                ? 'bg-[#FAF4E8] border-[#D8C7AE] hover:border-[#B36D4E]'
+                                : 'bg-slate-900 border-slate-800 hover:border-slate-700'
                           }`}
                         >
                           <div className="h-10 w-full flex items-center justify-center overflow-hidden">
@@ -953,7 +1008,7 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                               className="max-h-8 max-w-full object-contain"
                             />
                           </div>
-                          <div className="w-full flex items-center justify-between mt-1 text-[10px] text-slate-400">
+                          <div className={`w-full flex items-center justify-between mt-1 text-[10px] ${secondaryText}`}>
                             <span className="truncate max-w-[60px]">{logo.displayName || 'Logo'}</span>
                             <button
                               type="button"
@@ -961,7 +1016,7 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                                 e.stopPropagation();
                                 handleDeleteLogo(logo);
                               }}
-                              className="text-slate-500 hover:text-rose-400"
+                              className={`transition-colors ${isLight ? 'text-[#806B58] hover:text-[#A74747]' : 'text-slate-500 hover:text-rose-400'}`}
                               title="Delete logo"
                             >
                               <Trash2 className="w-3 h-3" />
@@ -975,7 +1030,7 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
               )}
             </div>
 
-            <div className="text-[11px] text-slate-500 text-center mt-4">
+            <div className={`text-[11px] text-center mt-4 ${secondaryText}`}>
               Saved dimensions and position automatically apply across Kiosk and Mobile displays.
             </div>
           </div>
@@ -1005,34 +1060,42 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
           )}
 
           {/* Gameplay Wallpaper Mode Toggle Card */}
-          <div className="p-5 sm:p-6 rounded-2xl bg-[#0F1B2E]/90 border border-slate-800 shadow-[0_4px_25px_rgba(0,0,0,0.5)]">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5 pb-5 border-b border-slate-800">
+          <div className={`p-5 sm:p-6 rounded-2xl border ${cardBg}`}>
+            <div className={`flex flex-col lg:flex-row lg:items-center justify-between gap-5 pb-5 border-b ${isLight ? 'border-[#D8C7AE]' : 'border-slate-800'}`}>
               <div className="flex items-start sm:items-center gap-3.5">
                 <div
                   className={`w-12 h-12 rounded-xl flex items-center justify-center border shrink-0 transition-colors ${
-                    wallpaperEnabled
-                      ? 'bg-cyan-500/15 border-cyan-500/30 text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.2)]'
-                      : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.2)]'
+                    isLight
+                      ? wallpaperEnabled
+                        ? 'bg-[#FAF4E8] border-[#76513D]/30 text-[#76513D]'
+                        : 'bg-[#FAF4E8] border-[#58734B]/30 text-[#58734B]'
+                      : wallpaperEnabled
+                        ? 'bg-cyan-500/15 border-cyan-500/30 text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.2)]'
+                        : 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.2)]'
                   }`}
                 >
                   {wallpaperEnabled ? <ImageIcon className="w-6 h-6" /> : <Video className="w-6 h-6" />}
                 </div>
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="text-base font-bold text-slate-100 tracking-wide">
+                    <h3 className={`text-base font-bold tracking-wide ${primaryText}`}>
                       Gameplay Wallpaper
                     </h3>
                     <span
                       className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono tracking-wider border ${
-                        wallpaperEnabled
-                          ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'
-                          : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                        isLight
+                          ? wallpaperEnabled
+                            ? 'bg-[#B36D4E]/10 text-[#B36D4E] border-[#B36D4E]/30'
+                            : 'bg-[#58734B]/10 text-[#58734B] border-[#58734B]/30'
+                          : wallpaperEnabled
+                            ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'
+                            : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
                       }`}
                     >
                       {wallpaperEnabled ? 'ACTIVE: UPLOADED WALLPAPER' : 'ACTIVE: LIVE CAMERA FEED'}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-300/90 mt-1 max-w-2xl leading-relaxed">
+                  <p className={`text-xs mt-1 max-w-2xl leading-relaxed ${secondaryText}`}>
                     Choose what players see behind the arcade gameplay screen. When enabled, your uploaded festive
                     wallpaper is shown. When disabled, the player's live webcam video feed becomes the backdrop (AR mode).
                   </p>
@@ -1040,15 +1103,19 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
               </div>
 
               {/* Two State Toggle Buttons */}
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 bg-slate-950/80 p-1.5 rounded-xl border border-slate-800 shrink-0">
+              <div className={`flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 p-1.5 rounded-xl border shrink-0 ${cardSubBg}`}>
                 <button
                   type="button"
                   disabled={isSavingToggle || currentUserRole !== 'superadmin'}
                   onClick={() => handleToggleWallpaperEnabled(true)}
                   className={`px-4 py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer ${
                     wallpaperEnabled
-                      ? 'bg-gradient-to-r from-cyan-500 via-cyan-400 to-blue-500 text-slate-950 font-bold shadow-[0_2px_12px_rgba(6,182,212,0.3)]'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
+                      ? isLight
+                        ? 'bg-[#76513D] text-[#FDF9F3] font-bold shadow-[0_2px_8px_rgba(118,81,61,0.25)]'
+                        : 'bg-gradient-to-r from-cyan-500 via-cyan-400 to-blue-500 text-slate-950 font-bold shadow-[0_2px_12px_rgba(6,182,212,0.3)]'
+                      : isLight
+                        ? 'text-[#806B58] hover:text-[#493426] hover:bg-[#F1E8D9]'
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
                   } disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
                   <ImageIcon className="w-4 h-4 shrink-0" />
@@ -1061,8 +1128,12 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                   onClick={() => handleToggleWallpaperEnabled(false)}
                   className={`px-4 py-2.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer ${
                     !wallpaperEnabled
-                      ? 'bg-gradient-to-r from-emerald-500 via-emerald-400 to-teal-500 text-slate-950 font-bold shadow-[0_2px_12px_rgba(16,185,129,0.3)]'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
+                      ? isLight
+                        ? 'bg-[#58734B] text-[#FDF9F3] font-bold shadow-[0_2px_8px_rgba(88,115,75,0.25)]'
+                        : 'bg-gradient-to-r from-emerald-500 via-emerald-400 to-teal-500 text-slate-950 font-bold shadow-[0_2px_12px_rgba(16,185,129,0.3)]'
+                      : isLight
+                        ? 'text-[#806B58] hover:text-[#493426] hover:bg-[#F1E8D9]'
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
                   } disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
                   <Video className="w-4 h-4 shrink-0" />
@@ -1075,32 +1146,48 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
             <div className="pt-3.5 grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px]">
               <div
                 className={`p-3 rounded-xl border transition-all ${
-                  wallpaperEnabled
-                    ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-200'
-                    : 'bg-slate-950/40 border-slate-800 text-slate-400'
+                  isLight
+                    ? wallpaperEnabled
+                      ? 'bg-[#FAF4E8] border-[#B36D4E]/40 text-[#493426]'
+                      : 'bg-[#FAF4E8] border-[#D8C7AE]/60 text-[#806B58]'
+                    : wallpaperEnabled
+                      ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-200'
+                      : 'bg-slate-950/40 border-slate-800 text-slate-400'
                 }`}
               >
                 <div className="font-semibold mb-0.5 flex items-center gap-1.5">
-                  <span className={`w-2 h-2 rounded-full ${wallpaperEnabled ? 'bg-cyan-400' : 'bg-slate-600'}`} />
+                  <span className={`w-2 h-2 rounded-full ${
+                    isLight
+                      ? wallpaperEnabled ? 'bg-[#B36D4E]' : 'bg-[#806B58]'
+                      : wallpaperEnabled ? 'bg-cyan-400' : 'bg-slate-600'
+                  }`} />
                   ON — Uploaded Wallpaper Mode
                 </div>
-                <p className="text-[10.5px] leading-relaxed text-slate-400">
+                <p className={`text-[10.5px] leading-relaxed ${secondaryText}`}>
                   Renders the active festive wallpaper or playlist image behind the game. Bombs, launch mortars, hand fire flames, and HUD float on top.
                 </p>
               </div>
 
               <div
                 className={`p-3 rounded-xl border transition-all ${
-                  !wallpaperEnabled
-                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200'
-                    : 'bg-slate-950/40 border-slate-800 text-slate-400'
+                  isLight
+                    ? !wallpaperEnabled
+                      ? 'bg-[#FAF4E8] border-[#58734B]/40 text-[#493426]'
+                      : 'bg-[#FAF4E8] border-[#D8C7AE]/60 text-[#806B58]'
+                    : !wallpaperEnabled
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200'
+                      : 'bg-slate-950/40 border-slate-800 text-slate-400'
                 }`}
               >
                 <div className="font-semibold mb-0.5 flex items-center gap-1.5">
-                  <span className={`w-2 h-2 rounded-full ${!wallpaperEnabled ? 'bg-emerald-400' : 'bg-slate-600'}`} />
+                  <span className={`w-2 h-2 rounded-full ${
+                    isLight
+                      ? !wallpaperEnabled ? 'bg-[#58734B]' : 'bg-[#806B58]'
+                      : !wallpaperEnabled ? 'bg-emerald-400' : 'bg-slate-600'
+                  }`} />
                   OFF — Live Camera Background Mode
                 </div>
-                <p className="text-[10.5px] leading-relaxed text-slate-400">
+                <p className={`text-[10.5px] leading-relaxed ${secondaryText}`}>
                   Renders the mirrored live webcam feed continuously behind the game. Players interact with bombs in augmented reality with zero extra stream overhead.
                 </p>
               </div>
@@ -1109,12 +1196,12 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Active Wallpaper & Opacity Slider */}
-            <div className="bg-[#0F1B2E]/90 border border-slate-800 rounded-2xl p-5 sm:p-6 flex flex-col justify-between shadow-sm">
+            <div className={`border rounded-2xl p-5 sm:p-6 flex flex-col justify-between ${cardBg}`}>
               <div>
-                <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-800">
+                <div className={`flex items-center justify-between mb-4 pb-3 border-b ${isLight ? 'border-[#D8C7AE]' : 'border-slate-800'}`}>
                   <div className="flex items-center gap-2">
-                    <ImageIcon className="w-5 h-5 text-cyan-400" />
-                    <h2 className="text-base font-bold text-slate-100">
+                    <ImageIcon className={`w-5 h-5 ${isLight ? 'text-[#B36D4E]' : 'text-cyan-400'}`} />
+                    <h2 className={`text-base font-bold ${primaryText}`}>
                       Active Kiosk Wallpaper
                     </h2>
                   </div>
@@ -1122,7 +1209,9 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                     <button
                       type="button"
                       onClick={handleClearActiveWallpaper}
-                      className="text-[11px] text-slate-400 hover:text-cyan-300 transition-colors cursor-pointer"
+                      className={`text-[11px] transition-colors cursor-pointer ${
+                        isLight ? 'text-[#B36D4E] hover:text-[#8F4C30]' : 'text-slate-400 hover:text-cyan-300'
+                      }`}
                     >
                       Reset to Default
                     </button>
@@ -1130,7 +1219,9 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                 </div>
 
                 {/* Visual Preview */}
-                <div className="rounded-xl border border-slate-800 bg-slate-950/80 overflow-hidden relative aspect-video flex items-center justify-center shadow-inner">
+                <div className={`rounded-xl border overflow-hidden relative aspect-video flex items-center justify-center shadow-inner ${
+                  isLight ? 'border-[#D8C7AE] bg-[#090D1A]' : 'border-slate-800 bg-slate-950/80'
+                }`}>
                   {currentWallpaperUrl ? (
                     <img
                       src={currentWallpaperUrl}
@@ -1140,13 +1231,15 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                     />
                   ) : (
                     <div className="text-center p-6 flex flex-col items-center">
-                      <div className="w-12 h-12 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center mb-3">
-                        <Sparkles className="w-6 h-6 text-cyan-400" />
+                      <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-3 border ${
+                        isLight ? 'bg-[#FAF4E8] border-[#D8C7AE]' : 'bg-cyan-500/10 border-cyan-500/20'
+                      }`}>
+                        <Sparkles className={`w-6 h-6 ${isLight ? 'text-[#B36D4E]' : 'text-cyan-400'}`} />
                       </div>
-                      <h4 className="text-sm font-semibold text-slate-200 mb-1">
+                      <h4 className={`text-sm font-semibold mb-1 ${primaryText}`}>
                         Procedural Festive Background
                       </h4>
-                      <p className="text-[11px] text-slate-400 max-w-sm">
+                      <p className={`text-[11px] max-w-sm ${secondaryText}`}>
                         Interactive dark background with sparkle particles, diya lamp glow, and motion bursts.
                       </p>
                     </div>
@@ -1154,13 +1247,13 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                 </div>
 
                 {/* Wallpaper Opacity Control */}
-                <div className="mt-5 p-4 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2">
+                <div className={`mt-5 p-4 rounded-xl border space-y-2 ${cardSubBg}`}>
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                      <Sliders className="w-3.5 h-3.5 text-cyan-400" />
+                    <span className={`text-xs font-semibold flex items-center gap-1.5 ${primaryText}`}>
+                      <Sliders className={`w-3.5 h-3.5 ${isLight ? 'text-[#B36D4E]' : 'text-cyan-400'}`} />
                       Wallpaper Background Opacity
                     </span>
-                    <span className="text-xs font-mono font-bold text-cyan-300">
+                    <span className={`text-xs font-mono font-bold ${isLight ? 'text-[#76513D]' : 'text-cyan-300'}`}>
                       {wallpaperOpacity}%
                     </span>
                   </div>
@@ -1176,24 +1269,30 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                     }}
                     onMouseUp={() => handleSaveOpacity(wallpaperOpacity)}
                     onTouchEnd={() => handleSaveOpacity(wallpaperOpacity)}
-                    className="w-full accent-cyan-400 h-2 bg-slate-800 rounded-lg cursor-pointer"
+                    className={`w-full h-2 rounded-lg cursor-pointer ${
+                      isLight ? 'accent-[#B36D4E] bg-[#F1E8D9]' : 'accent-cyan-400 bg-slate-800'
+                    }`}
                   />
 
-                  <div className="flex items-center justify-between text-[10px] text-slate-500">
+                  <div className={`flex items-center justify-between text-[10px] ${secondaryText}`}>
                     <span>0% (Transparent)</span>
                     <span>50%</span>
                     <span>100% (Solid)</span>
                   </div>
 
                   <div className="pt-1 flex items-center justify-between">
-                    <span className="text-[10px] text-slate-400">
+                    <span className={`text-[10px] ${secondaryText}`}>
                       Applied strictly to background only. Fireworks, UI, and camera trails remain 100% opaque.
                     </span>
                     <button
                       type="button"
                       disabled={isSavingOpacity}
                       onClick={() => handleSaveOpacity(wallpaperOpacity)}
-                      className="px-2.5 py-1 rounded bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200 border border-cyan-500/30 text-[10px] font-semibold cursor-pointer transition-colors"
+                      className={`px-2.5 py-1 rounded text-[10px] font-semibold cursor-pointer transition-colors border ${
+                        isLight
+                          ? 'bg-[#76513D] hover:bg-[#5D3F2E] text-[#FDF9F3] border-[#76513D]'
+                          : 'bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200 border-cyan-500/30'
+                      }`}
                     >
                       {isSavingOpacity ? 'Saving...' : 'Save Opacity'}
                     </button>
@@ -1201,37 +1300,37 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                 </div>
               </div>
 
-              <div className="mt-4 text-[11px] text-slate-500">
+              <div className={`mt-4 text-[11px] ${secondaryText}`}>
                 The active wallpaper appears first on initial kiosk launch.
               </div>
             </div>
 
             {/* Upload New Wallpaper */}
-            <div className="bg-[#0F1B2E]/90 border border-slate-800 rounded-2xl p-5 sm:p-6 flex flex-col justify-between shadow-sm">
+            <div className={`border rounded-2xl p-5 sm:p-6 flex flex-col justify-between ${cardBg}`}>
               <div>
-                <div className="flex items-center gap-2 mb-4 pb-3 border-b border-slate-800">
-                  <Upload className="w-5 h-5 text-cyan-400" />
-                  <h2 className="text-base font-bold text-slate-100">
+                <div className={`flex items-center gap-2 mb-4 pb-3 border-b ${isLight ? 'border-[#D8C7AE]' : 'border-slate-800'}`}>
+                  <Upload className={`w-5 h-5 ${isLight ? 'text-[#B36D4E]' : 'text-cyan-400'}`} />
+                  <h2 className={`text-base font-bold ${primaryText}`}>
                     Upload Kiosk Wallpaper
                   </h2>
                 </div>
 
-                <p className="text-xs text-slate-300 leading-relaxed mb-4">
+                <p className={`text-xs leading-relaxed mb-4 ${secondaryText}`}>
                   Upload 1080p or 4K wallpaper images optimized for 65" horizontal displays. Files are validated for magic byte signatures and stored in persistent object storage.
                 </p>
 
-                <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-2 mb-5 text-[11px] text-slate-400">
+                <div className={`p-4 rounded-xl border space-y-2 mb-5 text-[11px] ${cardSubBg}`}>
                   <div className="flex items-center justify-between">
-                    <span>Allowed Formats:</span>
-                    <span className="font-mono text-slate-200 font-semibold">JPEG, PNG, WebP</span>
+                    <span className={secondaryText}>Allowed Formats:</span>
+                    <span className={`font-mono font-semibold ${primaryText}`}>JPEG, PNG, WebP</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span>Maximum File Size:</span>
-                    <span className="font-mono text-slate-200 font-semibold">15 MB</span>
+                    <span className={secondaryText}>Maximum File Size:</span>
+                    <span className={`font-mono font-semibold ${primaryText}`}>15 MB</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span>Recommended Aspect:</span>
-                    <span className="font-mono text-slate-200 font-semibold">16:9 (1920×1080 or 3840×2160)</span>
+                    <span className={secondaryText}>Recommended Aspect:</span>
+                    <span className={`font-mono font-semibold ${primaryText}`}>16:9 (1920×1080 or 3840×2160)</span>
                   </div>
                 </div>
 
@@ -1248,28 +1347,32 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                   type="button"
                   disabled={isUploadingWallpaper}
                   onClick={() => wallpaperFileInputRef.current?.click()}
-                  className="w-full py-4 px-4 rounded-xl border-2 border-dashed border-cyan-500/30 hover:border-cyan-400 hover:bg-cyan-500/5 text-cyan-200 text-xs font-semibold flex flex-col items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                  className={`w-full py-4 px-4 rounded-xl border-2 border-dashed text-xs font-semibold flex flex-col items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 ${
+                    isLight
+                      ? 'border-[#D8C7AE] hover:border-[#B36D4E] bg-[#FAF4E8] hover:bg-[#F1E8D9] text-[#76513D]'
+                      : 'border-cyan-500/30 hover:border-cyan-400 hover:bg-cyan-500/5 text-cyan-200'
+                  }`}
                 >
-                  <Upload className="w-6 h-6 text-cyan-400" />
+                  <Upload className={`w-6 h-6 ${isLight ? 'text-[#B36D4E]' : 'text-cyan-400'}`} />
                   <span>{isUploadingWallpaper ? 'Validating and Uploading...' : 'Click to Select & Upload Wallpaper File'}</span>
-                  <span className="text-[10px] text-slate-500">Files are checked for valid image headers</span>
+                  <span className={`text-[10px] ${secondaryText}`}>Files are checked for valid image headers</span>
                 </button>
               </div>
 
-              <div className="mt-4 text-[11px] text-slate-500 text-center">
+              <div className={`mt-4 text-[11px] text-center ${secondaryText}`}>
                 Uploaded wallpapers automatically join the rotation sequence below.
               </div>
             </div>
           </div>
 
           {/* Uploaded Wallpaper Library with Rotation Sequence Management */}
-          <div className="bg-[#0F1B2E]/90 border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xl">
-            <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-800">
+          <div className={`border rounded-2xl p-5 sm:p-6 shadow-xl ${cardBg}`}>
+            <div className={`flex items-center justify-between mb-4 pb-3 border-b ${isLight ? 'border-[#D8C7AE]' : 'border-slate-800'}`}>
               <div>
-                <h3 className="text-sm font-bold text-slate-100 tracking-wide">
+                <h3 className={`text-sm font-bold tracking-wide ${primaryText}`}>
                   Persistent Wallpaper Library & Rotation Sequence ({wallpapers.length})
                 </h3>
-                <p className="text-[11px] text-slate-400">
+                <p className={`text-[11px] ${secondaryText}`}>
                   Active wallpaper plays first. Games advance to the next wallpaper in ascending order (1, 2, 3...) between completed sessions.
                 </p>
               </div>
@@ -1277,15 +1380,19 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
               <button
                 type="button"
                 onClick={loadWallpapers}
-                className="p-2 rounded-xl bg-slate-900 border border-slate-700 hover:border-cyan-400 text-slate-300 hover:text-cyan-200 cursor-pointer transition-colors"
+                className={`p-2 rounded-xl border transition-colors cursor-pointer ${
+                  isLight
+                    ? 'bg-[#FAF4E8] border-[#D8C7AE] text-[#493426] hover:border-[#B36D4E]'
+                    : 'bg-slate-900 border-slate-700 hover:border-cyan-400 text-slate-300 hover:text-cyan-200'
+                }`}
                 title="Refresh wallpapers"
               >
-                <RefreshCw className={`w-4 h-4 ${isLoadingWallpapers ? 'animate-spin text-cyan-400' : ''}`} />
+                <RefreshCw className={`w-4 h-4 ${isLoadingWallpapers ? 'animate-spin text-[#B36D4E]' : ''}`} />
               </button>
             </div>
 
             {wallpapers.length === 0 ? (
-              <div className="p-8 text-center text-slate-500 text-xs">
+              <div className={`p-8 text-center text-xs ${secondaryText}`}>
                 No custom wallpapers uploaded yet. Upload an image above to populate the library.
               </div>
             ) : (
@@ -1297,10 +1404,14 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                   return (
                     <div
                       key={asset.id}
-                      className={`rounded-xl border overflow-hidden flex flex-col justify-between bg-slate-900/80 transition-all ${
-                        isActive
-                          ? 'border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.2)]'
-                          : 'border-slate-800 hover:border-cyan-500/30'
+                      className={`rounded-xl border overflow-hidden flex flex-col justify-between transition-all ${
+                        isLight
+                          ? isActive
+                            ? 'bg-[#FAF4E8] border-[#B36D4E] shadow-[0_0_12px_rgba(179,109,78,0.25)]'
+                            : 'bg-[#FAF4E8] border-[#D8C7AE] hover:border-[#B36D4E]'
+                          : isActive
+                            ? 'bg-slate-900/80 border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.2)]'
+                            : 'bg-slate-900/80 border-slate-800 hover:border-cyan-500/30'
                       }`}
                     >
                       <div className="aspect-video relative bg-slate-950 overflow-hidden">
@@ -1310,7 +1421,9 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                           className="w-full h-full object-cover"
                         />
                         {isActive && (
-                          <div className="absolute top-2 right-2 px-2 py-0.5 rounded bg-cyan-500 text-slate-950 font-bold text-[10px] flex items-center gap-1 shadow">
+                          <div className={`absolute top-2 right-2 px-2 py-0.5 rounded font-bold text-[10px] flex items-center gap-1 shadow ${
+                            isLight ? 'bg-[#76513D] text-[#FDF9F3]' : 'bg-cyan-500 text-slate-950'
+                          }`}>
                             <Check className="w-3 h-3" />
                             <span>ACTIVE</span>
                           </div>
@@ -1319,10 +1432,10 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
 
                       <div className="p-3 flex-1 flex flex-col justify-between">
                         <div>
-                          <h4 className="text-xs font-semibold text-slate-200 truncate">
+                          <h4 className={`text-xs font-semibold truncate ${primaryText}`}>
                             {asset.displayName || asset.originalFilename}
                           </h4>
-                          <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-1.5 font-mono">
+                          <div className={`text-[10px] mt-1 flex items-center gap-1.5 font-mono ${secondaryText}`}>
                             <span>{(asset.fileSize / (1024 * 1024)).toFixed(2)} MB</span>
                             <span>·</span>
                             <span>{new Date(asset.createdAt).toLocaleDateString()}</span>
@@ -1330,8 +1443,8 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                         </div>
 
                         {/* Numeric Sequence / Order Input */}
-                        <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2">
-                          <label className="text-[10px] font-mono text-slate-400">
+                        <div className={`mt-3 pt-2 border-t flex items-center justify-between gap-2 ${isLight ? 'border-[#D8C7AE]/60' : 'border-slate-800/80'}`}>
+                          <label className={`text-[10px] font-mono ${secondaryText}`}>
                             Sequence #:
                           </label>
                           <div className="flex items-center gap-1">
@@ -1346,24 +1459,32 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                                   handleUpdateWallpaperOrder(asset.id, val);
                                 }
                               }}
-                              className="w-14 px-1.5 py-0.5 bg-slate-950 border border-slate-700 focus:border-cyan-400 rounded text-cyan-200 text-xs font-mono text-center outline-none"
+                              className={`w-14 px-1.5 py-0.5 rounded text-xs font-mono text-center outline-none border ${
+                                isLight
+                                  ? 'bg-[#F1E8D9] border-[#D8C7AE] text-[#493426] focus:border-[#B36D4E]'
+                                  : 'bg-slate-950 border-slate-700 focus:border-cyan-400 text-cyan-200'
+                              }`}
                             />
                             {savingOrderId === asset.id && (
-                              <RefreshCw className="w-3 h-3 text-cyan-400 animate-spin" />
+                              <RefreshCw className={`w-3 h-3 animate-spin ${isLight ? 'text-[#B36D4E]' : 'text-cyan-400'}`} />
                             )}
                           </div>
                         </div>
 
-                        <div className="mt-2 pt-2 border-t border-slate-800 flex items-center justify-between gap-2">
+                        <div className={`mt-2 pt-2 border-t flex items-center justify-between gap-2 ${isLight ? 'border-[#D8C7AE]/60' : 'border-slate-800'}`}>
                           {isActive ? (
-                            <span className="text-[11px] text-cyan-300 font-semibold">
+                            <span className={`text-[11px] font-semibold ${isLight ? 'text-[#58734B]' : 'text-cyan-300'}`}>
                               Currently Active
                             </span>
                           ) : (
                             <button
                               type="button"
                               onClick={() => handleSetActiveWallpaper(asset)}
-                              className="px-2.5 py-1 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200 border border-cyan-500/40 text-[11px] font-medium cursor-pointer transition-colors"
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-medium cursor-pointer transition-colors border ${
+                                isLight
+                                  ? 'bg-[#FAF4E8] hover:bg-[#F1E8D9] text-[#76513D] border-[#D8C7AE] hover:border-[#B36D4E]'
+                                  : 'bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200 border-cyan-500/40'
+                              }`}
                             >
                               Set as Active
                             </button>
@@ -1373,7 +1494,9 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                             type="button"
                             onClick={() => handleDeleteWallpaper(asset)}
                             disabled={isActive}
-                            className="p-1 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-950/30 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                            className={`p-1 rounded-lg transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed ${
+                              isLight ? 'text-[#806B58] hover:text-[#A74747] hover:bg-[#A74747]/10' : 'text-slate-500 hover:text-rose-400 hover:bg-rose-950/30'
+                            }`}
                             title={isActive ? 'Cannot delete active wallpaper' : 'Delete asset'}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -1400,18 +1523,26 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
         >
           <div
             className={`rounded-2xl backdrop-blur-2xl border-2 overflow-hidden shadow-2xl transition-all ${
-              toast.type === 'success'
-                ? 'bg-[#061710]/95 border-emerald-500 text-emerald-50 shadow-[0_16px_50px_rgba(16,185,129,0.38)]'
-                : 'bg-[#1e070e]/95 border-rose-500 text-rose-50 shadow-[0_16px_50px_rgba(244,63,94,0.38)]'
+              isLight
+                ? toast.type === 'success'
+                  ? 'bg-[#FBF5EA] border-[#58734B] text-[#493426] shadow-[0_16px_50px_rgba(88,115,75,0.3)]'
+                  : 'bg-[#FBF5EA] border-[#A74747] text-[#493426] shadow-[0_16px_50px_rgba(167,71,71,0.3)]'
+                : toast.type === 'success'
+                  ? 'bg-[#061710]/95 border-emerald-500 text-emerald-50 shadow-[0_16px_50px_rgba(16,185,129,0.38)]'
+                  : 'bg-[#1e070e]/95 border-rose-500 text-rose-50 shadow-[0_16px_50px_rgba(244,63,94,0.38)]'
             }`}
           >
             <div className="p-4 sm:p-5 flex items-start gap-3.5">
               {/* Prominent glowing icon */}
               <div
                 className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 border ${
-                  toast.type === 'success'
-                    ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.35)]'
-                    : 'bg-rose-500/20 border-rose-500/40 text-rose-400 shadow-[0_0_20px_rgba(244,63,94,0.35)]'
+                  isLight
+                    ? toast.type === 'success'
+                      ? 'bg-[#58734B]/15 border-[#58734B]/30 text-[#58734B]'
+                      : 'bg-[#A74747]/15 border-[#A74747]/30 text-[#A74747]'
+                    : toast.type === 'success'
+                      ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.35)]'
+                      : 'bg-rose-500/20 border-rose-500/40 text-rose-400 shadow-[0_0_20px_rgba(244,63,94,0.35)]'
                 }`}
               >
                 {toast.type === 'success' ? (
@@ -1426,19 +1557,23 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                 <div className="flex items-center gap-2 mb-1">
                   <span
                     className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold tracking-wider uppercase font-mono border ${
-                      toast.type === 'success'
-                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                        : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                      isLight
+                        ? toast.type === 'success'
+                          ? 'bg-[#58734B]/15 text-[#58734B] border-[#58734B]/30'
+                          : 'bg-[#A74747]/15 text-[#A74747] border-[#A74747]/30'
+                        : toast.type === 'success'
+                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                          : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
                     }`}
                   >
                     {toast.type === 'success' ? 'Success' : 'Error'}
                   </span>
-                  <span className="text-[11px] text-slate-400 font-mono">DiwaliPlay Admin</span>
+                  <span className={`text-[11px] font-mono ${secondaryText}`}>DiwaliPlay Admin</span>
                 </div>
-                <h4 className="text-sm sm:text-base font-bold text-white tracking-wide leading-tight">
+                <h4 className={`text-sm sm:text-base font-bold tracking-wide leading-tight ${primaryText}`}>
                   {toast.title}
                 </h4>
-                <p className="text-xs sm:text-[13px] text-slate-200/90 leading-snug mt-1 break-words">
+                <p className={`text-xs sm:text-[13px] leading-snug mt-1 break-words ${secondaryText}`}>
                   {toast.message}
                 </p>
               </div>
@@ -1447,7 +1582,9 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
               <button
                 type="button"
                 onClick={dismissToast}
-                className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer shrink-0"
+                className={`p-1.5 rounded-xl transition-colors cursor-pointer shrink-0 ${
+                  isLight ? 'text-[#806B58] hover:text-[#493426] hover:bg-black/5' : 'text-slate-400 hover:text-white hover:bg-white/10'
+                }`}
                 title="Dismiss notification"
                 aria-label="Dismiss notification"
               >
@@ -1456,13 +1593,13 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
             </div>
 
             {/* Countdown progress bar (3.5s) */}
-            <div className="h-1.5 w-full bg-black/40 overflow-hidden">
+            <div className="h-1.5 w-full bg-black/20 overflow-hidden">
               <div
                 key={toast.id}
                 className={`h-full animate-toast-progress ${
                   toast.type === 'success'
-                    ? 'bg-gradient-to-r from-emerald-500 to-teal-400'
-                    : 'bg-gradient-to-r from-rose-500 to-red-400'
+                    ? isLight ? 'bg-[#58734B]' : 'bg-gradient-to-r from-emerald-500 to-teal-400'
+                    : isLight ? 'bg-[#A74747]' : 'bg-gradient-to-r from-rose-500 to-red-400'
                 }`}
               />
             </div>
@@ -1477,29 +1614,39 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
         <div
           role="dialog"
           aria-modal="true"
-          className="fixed inset-0 z-[99998] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+          className="fixed inset-0 z-[99998] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
         >
-          <div className="bg-[#0D1527] border border-rose-500/40 rounded-2xl p-6 max-w-md w-full shadow-[0_20px_60px_rgba(0,0,0,0.85)] relative">
+          <div className={`border rounded-2xl p-6 max-w-md w-full relative ${
+            isLight
+              ? 'bg-[#FBF5EA] border-[#D8C7AE] text-[#493426] shadow-[0_20px_60px_rgba(73,52,38,0.3)]'
+              : 'bg-[#0D1527] border-rose-500/40 text-slate-100 shadow-[0_20px_60px_rgba(0,0,0,0.85)]'
+          }`}>
             <div className="flex flex-col items-center text-center">
-              <div className="w-14 h-14 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400 mb-4 shadow-[0_0_20px_rgba(244,63,94,0.2)]">
+              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-4 border ${
+                isLight
+                  ? 'bg-[#A74747]/10 border-[#A74747]/30 text-[#A74747]'
+                  : 'bg-rose-500/15 border-rose-500/30 text-rose-400 shadow-[0_0_20px_rgba(244,63,94,0.2)]'
+              }`}>
                 <Trash2 className="w-7 h-7" />
               </div>
 
-              <h3 className="text-lg font-bold text-slate-100">
+              <h3 className={`text-lg font-bold ${primaryText}`}>
                 Delete {itemToDelete.type === 'logo' ? 'Brand Logo' : 'Wallpaper'}?
               </h3>
 
-              <p className="text-xs text-slate-300 mt-2 leading-relaxed">
+              <p className={`text-xs mt-2 leading-relaxed ${secondaryText}`}>
                 Are you sure you want to permanently remove{' '}
-                <span className="font-semibold text-rose-300">
+                <span className={`font-semibold ${isLight ? 'text-[#A74747]' : 'text-rose-300'}`}>
                   "{itemToDelete.asset.displayName || itemToDelete.asset.originalFilename}"
                 </span>{' '}
                 from storage? This action cannot be undone.
               </p>
 
               {/* Asset Preview Thumbnail */}
-              <div className="mt-4 p-2.5 rounded-xl bg-slate-950/80 border border-slate-800 w-full flex items-center gap-3">
-                <div className="w-14 h-14 rounded-lg bg-slate-900 border border-slate-800 overflow-hidden flex items-center justify-center shrink-0">
+              <div className={`mt-4 p-2.5 rounded-xl border w-full flex items-center gap-3 ${cardSubBg}`}>
+                <div className={`w-14 h-14 rounded-lg border overflow-hidden flex items-center justify-center shrink-0 ${
+                  isLight ? 'bg-[#F1E8D9] border-[#D8C7AE]' : 'bg-slate-900 border-slate-800'
+                }`}>
                   <img
                     src={itemToDelete.asset.url}
                     alt={itemToDelete.asset.displayName || 'Thumbnail'}
@@ -1507,10 +1654,10 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                   />
                 </div>
                 <div className="flex-1 text-left min-w-0">
-                  <div className="text-xs font-semibold text-slate-200 truncate">
+                  <div className={`text-xs font-semibold truncate ${primaryText}`}>
                     {itemToDelete.asset.displayName || itemToDelete.asset.originalFilename}
                   </div>
-                  <div className="text-[11px] text-slate-400 font-mono mt-0.5">
+                  <div className={`text-[11px] font-mono mt-0.5 ${secondaryText}`}>
                     {(itemToDelete.asset.fileSize / (1024 * 1024)).toFixed(2)} MB · {itemToDelete.type === 'logo' ? 'Brand Logo' : 'Wallpaper'}
                   </div>
                 </div>
@@ -1522,7 +1669,11 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                   type="button"
                   disabled={isDeletingAsset}
                   onClick={() => setItemToDelete(null)}
-                  className="flex-1 py-2.5 px-4 rounded-xl border border-slate-700 bg-slate-900/80 hover:bg-slate-800 text-slate-300 text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50"
+                  className={`flex-1 py-2.5 px-4 rounded-xl border text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50 ${
+                    isLight
+                      ? 'bg-[#FAF4E8] hover:bg-[#F1E8D9] border-[#D8C7AE] text-[#493426]'
+                      : 'bg-slate-900/80 hover:bg-slate-800 border-slate-700 text-slate-300'
+                  }`}
                 >
                   Cancel
                 </button>
@@ -1531,7 +1682,11 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                   type="button"
                   disabled={isDeletingAsset}
                   onClick={handleConfirmDelete}
-                  className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-rose-600 to-rose-500 hover:from-rose-500 hover:to-rose-400 text-white text-xs font-bold transition-all shadow-[0_2px_15px_rgba(244,63,94,0.3)] cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+                  className={`flex-1 py-2.5 px-4 rounded-xl text-white text-xs font-bold transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2 ${
+                    isLight
+                      ? 'bg-[#A74747] hover:bg-[#8F3C3C] shadow-[0_2px_10px_rgba(167,71,71,0.25)]'
+                      : 'bg-gradient-to-r from-rose-600 to-rose-500 hover:from-rose-500 hover:to-rose-400 shadow-[0_2px_15px_rgba(244,63,94,0.3)]'
+                  }`}
                 >
                   {isDeletingAsset ? (
                     <>

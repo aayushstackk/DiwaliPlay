@@ -35,6 +35,7 @@ import {
   Zap,
   RotateCcw,
 } from 'lucide-react';
+import { useAdminTheme } from '../AdminThemeContext';
 
 const PRESET_COLORS = [
   '#EF4444', // Red
@@ -65,6 +66,7 @@ const IMAGE_PRESETS: { id: BombImagePreset; label: string; desc: string }[] = [
 ];
 
 export const BombManagementSection: React.FC = () => {
+  const { isLight } = useAdminTheme();
   const [bombs, setBombs] = useState<BombConfig[]>([]);
   const [settings, setSettings] = useState<BombGameSettings>({
     ...DEFAULT_BOMB_SETTINGS
@@ -422,20 +424,37 @@ export const BombManagementSection: React.FC = () => {
   const disabledBombs = bombs.filter((b) => !b.isActive || b.isDeleted);
   const totalActiveWeight = activeBombs.reduce((sum, b) => sum + Math.max(1, b.spawnWeight || 5), 0);
 
+  const cardBg = isLight
+    ? 'bg-[#FBF5EA] border-[#D8C7AE] shadow-[0_2px_8px_rgba(73,52,38,0.05)]'
+    : 'bg-[#0F1B2E]/90 border-slate-800 shadow-xl';
+  const cardSubBg = isLight ? 'bg-[#FAF4E8] border-[#D8C7AE]' : 'bg-slate-950/60 border-slate-800';
+  const labelColor = isLight ? 'text-[#806B58]' : 'text-slate-400';
+  const primaryText = isLight ? 'text-[#493426]' : 'text-slate-100';
+  const secondaryText = isLight ? 'text-[#806B58]' : 'text-slate-400';
+  const inputBg = isLight
+    ? 'bg-[#FAF4E8] border-[#D8C7AE] text-[#493426] placeholder-[#806B58]/60 focus:border-[#B36D4E]'
+    : 'bg-slate-900 border-slate-700 text-slate-100 placeholder-slate-500 focus:border-cyan-400';
+
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-8">
       {/* 1. Header Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-cyan-500/15 pb-6">
+      <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-6 ${
+        isLight ? 'border-[#D8C7AE]' : 'border-cyan-500/15'
+      }`}>
         <div>
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
+            <div className={`p-2.5 rounded-xl border ${
+              isLight
+                ? 'bg-[#76513D]/10 border-[#76513D]/30 text-[#76513D]'
+                : 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400'
+            }`}>
               <Bomb className="w-6 h-6" />
             </div>
             <div>
-              <h1 className="text-xl sm:text-2xl font-bold text-slate-100 tracking-wider">
+              <h1 className={`text-xl sm:text-2xl font-bold tracking-wider ${primaryText}`}>
                 BOMB MANAGEMENT
               </h1>
-              <p className="text-xs sm:text-sm text-slate-400">
+              <p className={`text-xs sm:text-sm ${labelColor}`}>
                 Configure colourful floating bomb targets, point rewards, penalty bombs, burst sounds & spawn rates.
               </p>
             </div>
@@ -446,14 +465,22 @@ export const BombManagementSection: React.FC = () => {
           <button
             onClick={loadData}
             disabled={isLoading}
-            className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer"
+            className={`px-3.5 py-2 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+              isLight
+                ? 'bg-[#FAF4E8] hover:bg-[#F3E9DA] border-[#D8C7AE] text-[#493426]'
+                : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-300'
+            }`}
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-cyan-400' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''} ${isLight ? 'text-[#76513D]' : 'text-cyan-400'}`} />
             <span>Refresh</span>
           </button>
           <button
             onClick={handleOpenAdd}
-            className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 via-cyan-400 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-slate-950 font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-[0_0_20px_rgba(6,182,212,0.3)] cursor-pointer"
+            className={`px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer ${
+              isLight
+                ? 'bg-[#76513D] hover:bg-[#5D3F2E] text-[#FDF9F3] shadow-[0_2px_10px_rgba(118,81,61,0.25)]'
+                : 'bg-gradient-to-r from-cyan-500 via-cyan-400 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-slate-950 shadow-[0_0_20px_rgba(6,182,212,0.3)]'
+            }`}
           >
             <Plus className="w-4 h-4" />
             <span>Add New Bomb</span>
@@ -466,21 +493,25 @@ export const BombManagementSection: React.FC = () => {
         <div
           className={`p-4 rounded-xl border flex items-center justify-between gap-3 text-xs sm:text-sm animate-fade-in ${
             feedback.type === 'success'
-              ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
-              : 'bg-rose-950/40 border-rose-500/40 text-rose-200'
+              ? isLight
+                ? 'bg-[#58734B]/15 border-[#58734B]/40 text-[#3B5031]'
+                : 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200'
+              : isLight
+                ? 'bg-[#A74747]/15 border-[#A74747]/40 text-[#782828]'
+                : 'bg-rose-950/40 border-rose-500/40 text-rose-200'
           }`}
         >
           <div className="flex items-center gap-2.5">
             {feedback.type === 'success' ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+              <CheckCircle2 className={`w-4 h-4 flex-shrink-0 ${isLight ? 'text-[#58734B]' : 'text-emerald-400'}`} />
             ) : (
-              <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+              <AlertCircle className={`w-4 h-4 flex-shrink-0 ${isLight ? 'text-[#A74747]' : 'text-rose-400'}`} />
             )}
-            <span>{feedback.message}</span>
+            <span className="font-semibold">{feedback.message}</span>
           </div>
           <button
             onClick={() => setFeedback(null)}
-            className="text-slate-400 hover:text-white cursor-pointer"
+            className="hover:opacity-75 cursor-pointer p-1"
           >
             <X className="w-4 h-4" />
           </button>
@@ -488,22 +519,28 @@ export const BombManagementSection: React.FC = () => {
       )}
 
       {/* 3. Global Spawn Dynamics Settings */}
-      <div className="bg-[#0F1B2E]/90 border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xl">
-        <div className="flex items-center justify-between border-b border-slate-800 pb-4 mb-5">
+      <div className={`${cardBg} border rounded-2xl p-5 sm:p-6`}>
+        <div className={`flex items-center justify-between border-b pb-4 mb-5 ${
+          isLight ? 'border-[#D8C7AE]' : 'border-slate-800'
+        }`}>
           <div className="flex items-center gap-2.5">
-            <Sliders className="w-5 h-5 text-cyan-400" />
-            <h2 className="text-sm sm:text-base font-bold text-cyan-200 uppercase tracking-wider">
+            <Sliders className={`w-5 h-5 ${isLight ? 'text-[#76513D]' : 'text-cyan-400'}`} />
+            <h2 className={`text-sm sm:text-base font-bold uppercase tracking-wider ${primaryText}`}>
               Gameplay Spawn Settings
             </h2>
           </div>
-          <span className="text-[11px] font-mono text-slate-400 bg-slate-900/80 px-2.5 py-1 rounded-lg border border-slate-800">
+          <span className={`text-[11px] font-mono px-2.5 py-1 rounded-lg border ${
+            isLight
+              ? 'bg-[#FAF4E8] text-[#806B58] border-[#D8C7AE]'
+              : 'text-slate-400 bg-slate-900/80 border-slate-800'
+          }`}>
             Global Rules
           </span>
         </div>
 
         <form onSubmit={handleSaveSettings} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           <div>
-            <label className="block text-[11px] font-bold text-slate-300 uppercase mb-1.5">
+            <label className={`block text-[11px] font-bold uppercase mb-1.5 ${isLight ? 'text-[#493426]' : 'text-slate-300'}`}>
               Min Spawn Delay
             </label>
             <div className="relative">
@@ -516,17 +553,21 @@ export const BombManagementSection: React.FC = () => {
                 onChange={(e) =>
                   setSettings({ ...settings, minSpawnDelayMs: Number(e.target.value) })
                 }
-                className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 font-mono text-xs focus:border-cyan-400 focus:outline-none"
+                className={`w-full px-3 py-2 rounded-xl font-mono text-xs outline-none transition-colors ${
+                  isLight
+                    ? 'bg-[#FAF4E8] border border-[#D8C7AE] text-[#493426] focus:border-[#B36D4E]'
+                    : 'bg-slate-900 border border-slate-700 text-slate-100 focus:border-cyan-400'
+                }`}
               />
-              <span className="absolute right-3 top-2.5 text-[11px] text-slate-500 font-mono">
+              <span className={`absolute right-3 top-2.5 text-[11px] font-mono ${labelColor}`}>
                 ms
               </span>
             </div>
-            <p className="text-[10px] text-slate-500 mt-1">Minimum wait before spawning next launch</p>
+            <p className={`text-[10px] mt-1 ${labelColor}`}>Minimum wait before spawning next launch</p>
           </div>
 
           <div>
-            <label className="block text-[11px] font-bold text-slate-300 uppercase mb-1.5">
+            <label className={`block text-[11px] font-bold uppercase mb-1.5 ${isLight ? 'text-[#493426]' : 'text-slate-300'}`}>
               Max Spawn Delay
             </label>
             <div className="relative">
@@ -539,17 +580,21 @@ export const BombManagementSection: React.FC = () => {
                 onChange={(e) =>
                   setSettings({ ...settings, maxSpawnDelayMs: Number(e.target.value) })
                 }
-                className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 font-mono text-xs focus:border-cyan-400 focus:outline-none"
+                className={`w-full px-3 py-2 rounded-xl font-mono text-xs outline-none transition-colors ${
+                  isLight
+                    ? 'bg-[#FAF4E8] border border-[#D8C7AE] text-[#493426] focus:border-[#B36D4E]'
+                    : 'bg-slate-900 border border-slate-700 text-slate-100 focus:border-cyan-400'
+                }`}
               />
-              <span className="absolute right-3 top-2.5 text-[11px] text-slate-500 font-mono">
+              <span className={`absolute right-3 top-2.5 text-[11px] font-mono ${labelColor}`}>
                 ms
               </span>
             </div>
-            <p className="text-[10px] text-slate-500 mt-1">Maximum wait between launches</p>
+            <p className={`text-[10px] mt-1 ${labelColor}`}>Maximum wait between launches</p>
           </div>
 
           <div>
-            <label className="block text-[11px] font-bold text-slate-300 uppercase mb-1.5">
+            <label className={`block text-[11px] font-bold uppercase mb-1.5 ${isLight ? 'text-[#493426]' : 'text-slate-300'}`}>
               Max Concurrent Bombs
             </label>
             <div className="relative">
@@ -561,17 +606,21 @@ export const BombManagementSection: React.FC = () => {
                 onChange={(e) =>
                   setSettings({ ...settings, maxConcurrentBombs: Number(e.target.value) })
                 }
-                className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 font-mono text-xs focus:border-cyan-400 focus:outline-none"
+                className={`w-full px-3 py-2 rounded-xl font-mono text-xs outline-none transition-colors ${
+                  isLight
+                    ? 'bg-[#FAF4E8] border border-[#D8C7AE] text-[#493426] focus:border-[#B36D4E]'
+                    : 'bg-slate-900 border border-slate-700 text-slate-100 focus:border-cyan-400'
+                }`}
               />
-              <span className="absolute right-3 top-2.5 text-[11px] text-slate-500 font-mono">
+              <span className={`absolute right-3 top-2.5 text-[11px] font-mono ${labelColor}`}>
                 active
               </span>
             </div>
-            <p className="text-[10px] text-slate-500 mt-1">Maximum bombs simultaneously on screen</p>
+            <p className={`text-[10px] mt-1 ${labelColor}`}>Maximum bombs simultaneously on screen</p>
           </div>
 
           <div>
-            <label className="block text-[11px] font-bold text-slate-300 uppercase mb-1.5">
+            <label className={`block text-[11px] font-bold uppercase mb-1.5 ${isLight ? 'text-[#493426]' : 'text-slate-300'}`}>
               Max Burst Size
             </label>
             <div className="relative">
@@ -584,17 +633,21 @@ export const BombManagementSection: React.FC = () => {
                 onChange={(e) =>
                   setSettings({ ...settings, maxBurstSize: Number(e.target.value) })
                 }
-                className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 font-mono text-xs focus:border-cyan-400 focus:outline-none"
+                className={`w-full px-3 py-2 rounded-xl font-mono text-xs outline-none transition-colors ${
+                  isLight
+                    ? 'bg-[#FAF4E8] border border-[#D8C7AE] text-[#493426] focus:border-[#B36D4E]'
+                    : 'bg-slate-900 border border-slate-700 text-slate-100 focus:border-cyan-400'
+                }`}
               />
-              <span className="absolute right-3 top-2.5 text-[11px] text-slate-500 font-mono">
+              <span className={`absolute right-3 top-2.5 text-[11px] font-mono ${labelColor}`}>
                 bombs
               </span>
             </div>
-            <p className="text-[10px] text-slate-500 mt-1">Max bombs fired in one burst (1–3)</p>
+            <p className={`text-[10px] mt-1 ${labelColor}`}>Max bombs fired in one burst (1–3)</p>
           </div>
 
           <div>
-            <label className="block text-[11px] font-bold text-slate-300 uppercase mb-1.5">
+            <label className={`block text-[11px] font-bold uppercase mb-1.5 ${isLight ? 'text-[#493426]' : 'text-slate-300'}`}>
               Launch Speed Multiplier
             </label>
             <div className="relative">
@@ -607,17 +660,21 @@ export const BombManagementSection: React.FC = () => {
                 onChange={(e) =>
                   setSettings({ ...settings, launchSpeedMultiplier: Number(e.target.value) })
                 }
-                className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 font-mono text-xs focus:border-cyan-400 focus:outline-none"
+                className={`w-full px-3 py-2 rounded-xl font-mono text-xs outline-none transition-colors ${
+                  isLight
+                    ? 'bg-[#FAF4E8] border border-[#D8C7AE] text-[#493426] focus:border-[#B36D4E]'
+                    : 'bg-slate-900 border border-slate-700 text-slate-100 focus:border-cyan-400'
+                }`}
               />
-              <span className="absolute right-3 top-2.5 text-[11px] text-slate-500 font-mono">
+              <span className={`absolute right-3 top-2.5 text-[11px] font-mono ${labelColor}`}>
                 x
               </span>
             </div>
-            <p className="text-[10px] text-slate-500 mt-1">Arcade velocity (1.45 = +45% faster launch)</p>
+            <p className={`text-[10px] mt-1 ${labelColor}`}>Arcade velocity (1.45 = +45% faster launch)</p>
           </div>
 
           <div>
-            <label className="block text-[11px] font-bold text-slate-300 uppercase mb-1.5">
+            <label className={`block text-[11px] font-bold uppercase mb-1.5 ${isLight ? 'text-[#493426]' : 'text-slate-300'}`}>
               Burst Stagger Interval
             </label>
             <div className="relative">
@@ -630,20 +687,28 @@ export const BombManagementSection: React.FC = () => {
                 onChange={(e) =>
                   setSettings({ ...settings, burstIntervalMs: Number(e.target.value) })
                 }
-                className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 font-mono text-xs focus:border-cyan-400 focus:outline-none"
+                className={`w-full px-3 py-2 rounded-xl font-mono text-xs outline-none transition-colors ${
+                  isLight
+                    ? 'bg-[#FAF4E8] border border-[#D8C7AE] text-[#493426] focus:border-[#B36D4E]'
+                    : 'bg-slate-900 border border-slate-700 text-slate-100 focus:border-cyan-400'
+                }`}
               />
-              <span className="absolute right-3 top-2.5 text-[11px] text-slate-500 font-mono">
+              <span className={`absolute right-3 top-2.5 text-[11px] font-mono ${labelColor}`}>
                 ms
               </span>
             </div>
-            <p className="text-[10px] text-slate-500 mt-1">Delay between rapid burst shots (50–100ms)</p>
+            <p className={`text-[10px] mt-1 ${labelColor}`}>Delay between rapid burst shots (50–100ms)</p>
           </div>
 
           <div className="sm:col-span-2 lg:col-span-3 xl:col-span-2 flex flex-col justify-end">
             <button
               type="submit"
               disabled={isSavingSettings}
-              className="w-full py-2.5 px-4 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-[0_0_15px_rgba(6,182,212,0.25)] flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              className={`w-full py-2.5 px-4 font-bold text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 ${
+                isLight
+                  ? 'bg-[#76513D] hover:bg-[#5D3F2E] text-[#FDF9F3] shadow-[0_2px_10px_rgba(118,81,61,0.25)]'
+                  : 'bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 shadow-[0_0_15px_rgba(6,182,212,0.25)]'
+              }`}
             >
               {isSavingSettings ? (
                 <RefreshCw className="w-3.5 h-3.5 animate-spin" />
@@ -660,22 +725,24 @@ export const BombManagementSection: React.FC = () => {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <h2 className="text-base sm:text-lg font-bold text-slate-100 tracking-wider">
+            <h2 className={`text-base sm:text-lg font-bold tracking-wider ${primaryText}`}>
               Configured Bomb Types
             </h2>
-            <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-slate-800 text-cyan-300 border border-cyan-500/20">
+            <span className={`text-xs font-mono px-2 py-0.5 rounded-full border ${
+              isLight ? 'bg-[#FAF4E8] text-[#76513D] border-[#D8C7AE]' : 'bg-slate-800 text-cyan-300 border border-cyan-500/20'
+            }`}>
               {activeBombs.length} Active
             </span>
           </div>
         </div>
 
         {isLoading ? (
-          <div className="p-12 text-center text-slate-400 text-xs font-mono">
-            <RefreshCw className="w-6 h-6 animate-spin mx-auto text-cyan-400 mb-2" />
+          <div className={`p-12 text-center text-xs font-mono ${secondaryText}`}>
+            <RefreshCw className={`w-6 h-6 animate-spin mx-auto mb-2 ${isLight ? 'text-[#B36D4E]' : 'text-cyan-400'}`} />
             Loading bomb configurations...
           </div>
         ) : activeBombs.length === 0 ? (
-          <div className="p-8 text-center text-slate-400 text-xs font-mono border border-slate-800 rounded-2xl bg-slate-950/40">
+          <div className={`p-8 text-center text-xs font-mono border rounded-2xl ${cardSubBg} ${secondaryText}`}>
             No active bombs currently configured. Re-enable an archived bomb below or create a new bomb above.
           </div>
         ) : (
@@ -690,10 +757,14 @@ export const BombManagementSection: React.FC = () => {
               return (
                 <div
                   key={bomb.id}
-                  className={`bg-[#0F1B2E]/90 border rounded-2xl p-5 flex flex-col justify-between transition-all duration-200 hover:shadow-2xl ${
-                    isPenalty
-                      ? 'border-rose-500/30 hover:border-rose-500/60 shadow-[0_4px_20px_rgba(244,63,94,0.15)]'
-                      : 'border-slate-800 hover:border-cyan-500/50 shadow-[0_4px_20px_rgba(0,0,0,0.4)]'
+                  className={`border rounded-2xl p-5 flex flex-col justify-between transition-all duration-200 hover:shadow-xl ${
+                    isLight
+                      ? isPenalty
+                        ? 'bg-[#FBF5EA] border-[#A74747]/40 shadow-[0_2px_12px_rgba(167,71,71,0.1)]'
+                        : 'bg-[#FBF5EA] border-[#D8C7AE] hover:border-[#B36D4E] shadow-[0_2px_12px_rgba(73,52,38,0.06)]'
+                      : isPenalty
+                        ? 'bg-[#0F1B2E]/90 border-rose-500/30 hover:border-rose-500/60 shadow-[0_4px_20px_rgba(244,63,94,0.15)]'
+                        : 'bg-[#0F1B2E]/90 border-slate-800 hover:border-cyan-500/50 shadow-[0_4px_20px_rgba(0,0,0,0.4)]'
                   }`}
                 >
                   <div>
@@ -701,7 +772,13 @@ export const BombManagementSection: React.FC = () => {
                     <div className="flex items-center justify-between mb-3">
                       <span
                         className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md border ${
-                          isPenalty
+                          isLight
+                            ? isPenalty
+                              ? 'bg-[#A74747]/10 border-[#A74747]/30 text-[#A74747]'
+                              : bomb.points >= 300
+                              ? 'bg-[#58734B]/10 border-[#58734B]/30 text-[#58734B]'
+                              : 'bg-[#B36D4E]/10 border-[#B36D4E]/30 text-[#B36D4E]'
+                            : isPenalty
                             ? 'bg-rose-950/80 border-rose-500 text-rose-300'
                             : bomb.points >= 300
                             ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300'
@@ -713,7 +790,11 @@ export const BombManagementSection: React.FC = () => {
 
                       <button
                         onClick={() => handleToggleActive(bomb)}
-                        className="text-[10px] font-mono px-2 py-0.5 rounded-md border cursor-pointer transition-all bg-emerald-950/60 border-emerald-500/50 text-emerald-300 hover:bg-emerald-900/80"
+                        className={`text-[10px] font-mono px-2 py-0.5 rounded-md border cursor-pointer transition-all ${
+                          isLight
+                            ? 'bg-[#58734B]/10 border-[#58734B]/30 text-[#58734B] hover:bg-[#58734B]/20'
+                            : 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300 hover:bg-emerald-900/80'
+                        }`}
                         title="Click to quickly disable"
                       >
                         Active
@@ -722,30 +803,34 @@ export const BombManagementSection: React.FC = () => {
 
                     {/* Centered Bomb Visual Preview */}
                     <div className="py-4 flex flex-col items-center justify-center">
-                      <div className="p-3 rounded-2xl bg-slate-950/80 border border-slate-800 shadow-inner">
+                      <div className={`p-3 rounded-2xl border shadow-inner ${
+                        isLight ? 'bg-[#FAF4E8] border-[#D8C7AE]' : 'bg-slate-950/80 border-slate-800'
+                      }`}>
                         <CartoonBombSvg bomb={bomb} size={84} showBadge={true} />
                       </div>
-                      <h3 className="text-base font-bold text-slate-100 mt-3 text-center tracking-wide">
+                      <h3 className={`text-base font-bold mt-3 text-center tracking-wide ${primaryText}`}>
                         {bomb.name}
                       </h3>
                       <div className="flex items-center gap-1.5 mt-1">
                         <span
-                          className="w-2.5 h-2.5 rounded-full inline-block"
+                          className="w-2.5 h-2.5 rounded-full inline-block border border-black/10"
                           style={{ backgroundColor: bomb.color }}
                         />
-                        <span className="font-mono text-xs text-slate-400">
+                        <span className={`font-mono text-xs ${secondaryText}`}>
                           {bomb.color}
                         </span>
                       </div>
                     </div>
 
                     {/* Stats & Attributes */}
-                    <div className="mt-2 space-y-2 text-xs border-t border-slate-800/80 pt-3">
+                    <div className={`mt-2 space-y-2 text-xs border-t pt-3 ${isLight ? 'border-[#D8C7AE]/60' : 'border-slate-800/80'}`}>
                       <div className="flex items-center justify-between">
-                        <span className="text-slate-400">Score Value:</span>
+                        <span className={secondaryText}>Score Value:</span>
                         <span
                           className={`font-mono font-bold text-sm ${
-                            isPenalty ? 'text-rose-400' : 'text-emerald-400'
+                            isLight
+                              ? isPenalty ? 'text-[#A74747]' : 'text-[#58734B]'
+                              : isPenalty ? 'text-rose-400' : 'text-emerald-400'
                           }`}
                         >
                           {bomb.points > 0 ? `+${bomb.points}` : bomb.points} pts
@@ -753,34 +838,40 @@ export const BombManagementSection: React.FC = () => {
                       </div>
 
                       <div className="flex items-center justify-between">
-                        <span className="text-slate-400">Spawn Frequency:</span>
+                        <span className={secondaryText}>Spawn Frequency:</span>
                         <div className="flex items-center gap-1.5">
-                          <span className="font-mono text-slate-200">
+                          <span className={`font-mono ${primaryText}`}>
                             Weight {bomb.spawnWeight}
                           </span>
-                          <span className="text-[10px] font-mono text-cyan-300 bg-cyan-500/10 px-1.5 py-0.5 rounded">
+                          <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                            isLight ? 'text-[#B36D4E] bg-[#B36D4E]/10 border border-[#B36D4E]/20' : 'text-cyan-300 bg-cyan-500/10'
+                          }`}>
                             ~{probPercent}%
                           </span>
                         </div>
                       </div>
 
                       <div className="flex items-center justify-between">
-                        <span className="text-slate-400">Bomb Size:</span>
-                        <span className="font-mono text-cyan-300 font-bold text-xs">
+                        <span className={secondaryText}>Bomb Size:</span>
+                        <span className={`font-mono font-bold text-xs ${isLight ? 'text-[#76513D]' : 'text-cyan-300'}`}>
                           {bomb.sizePercent ?? 100}%
                         </span>
                       </div>
 
                       <div className="flex items-center justify-between">
-                        <span className="text-slate-400">Burst Sound:</span>
+                        <span className={secondaryText}>Burst Sound:</span>
                         <div className="flex items-center gap-1.5">
-                          <span className="font-mono text-[11px] text-slate-300 capitalize">
+                          <span className={`font-mono text-[11px] capitalize ${primaryText}`}>
                             {bomb.soundPreset}
                           </span>
                           <button
                             onClick={() => previewSound(bomb.soundPreset, bomb.soundUrl)}
                             title="Play Audio Preview"
-                            className="p-1 rounded-md bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 cursor-pointer transition-all"
+                            className={`p-1 rounded-md border cursor-pointer transition-all ${
+                              isLight
+                                ? 'bg-[#FAF4E8] hover:bg-[#F1E8D9] text-[#76513D] border-[#D8C7AE]'
+                                : 'bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30'
+                            }`}
                           >
                             <Volume2 className="w-3 h-3" />
                           </button>
@@ -790,22 +881,30 @@ export const BombManagementSection: React.FC = () => {
                   </div>
 
                   {/* Actions Footer */}
-                  <div className="flex items-center gap-2 mt-4 pt-3 border-t border-slate-800/80">
+                  <div className={`flex items-center gap-2 mt-4 pt-3 border-t ${isLight ? 'border-[#D8C7AE]/60' : 'border-slate-800/80'}`}>
                     <button
                       onClick={() => handleOpenEdit(bomb)}
-                      className="flex-1 py-1.5 px-3 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                      className={`flex-1 py-1.5 px-3 border rounded-xl text-xs font-medium flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                        isLight
+                          ? 'bg-[#FAF4E8] hover:bg-[#F1E8D9] border-[#D8C7AE] text-[#493426]'
+                          : 'bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200'
+                      }`}
                     >
-                      <Edit2 className="w-3.5 h-3.5 text-cyan-400" />
+                      <Edit2 className={`w-3.5 h-3.5 ${isLight ? 'text-[#B36D4E]' : 'text-cyan-400'}`} />
                       <span>Edit</span>
                     </button>
                     <button
                       onClick={() => handleRequestDelete(bomb)}
                       disabled={deletingBombId !== null}
                       title="Delete Bomb"
-                      className="p-2 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/50 text-rose-300 hover:text-rose-100 rounded-xl transition-all cursor-pointer disabled:opacity-50"
+                      className={`p-2 border rounded-xl transition-all cursor-pointer disabled:opacity-50 ${
+                        isLight
+                          ? 'bg-[#A74747]/10 hover:bg-[#A74747]/20 border-[#A74747]/30 text-[#A74747]'
+                          : 'bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/50 text-rose-300 hover:text-rose-100'
+                      }`}
                     >
                       {deletingBombId === bomb.id ? (
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-rose-400" />
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                       ) : (
                         <Trash2 className="w-3.5 h-3.5" />
                       )}
@@ -820,17 +919,19 @@ export const BombManagementSection: React.FC = () => {
 
       {/* 5. Disabled / Archived Bombs */}
       {disabledBombs.length > 0 && (
-        <div className="space-y-4 pt-6 border-t border-slate-800/80">
+        <div className={`space-y-4 pt-6 border-t ${isLight ? 'border-[#D8C7AE]' : 'border-slate-800/80'}`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <h2 className="text-base sm:text-lg font-bold text-slate-300 tracking-wider">
+              <h2 className={`text-base sm:text-lg font-bold tracking-wider ${primaryText}`}>
                 Disabled / Archived Bomb Types
               </h2>
-              <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-slate-900 text-rose-300 border border-rose-500/30">
+              <span className={`text-xs font-mono px-2 py-0.5 rounded-full border ${
+                isLight ? 'bg-[#FAF4E8] text-[#806B58] border-[#D8C7AE]' : 'bg-slate-900 text-rose-300 border border-rose-500/30'
+              }`}>
                 {disabledBombs.length} Inactive
               </span>
             </div>
-            <p className="hidden sm:block text-xs text-slate-500">
+            <p className={`hidden sm:block text-xs ${secondaryText}`}>
               Archived records are excluded from gameplay. Click Re-enable to restore.
             </p>
           </div>
@@ -841,55 +942,67 @@ export const BombManagementSection: React.FC = () => {
               return (
                 <div
                   key={bomb.id}
-                  className="bg-[#0b1322] border border-slate-800 rounded-2xl p-5 flex flex-col justify-between opacity-80 hover:opacity-100 transition-all duration-200"
+                  className={`border rounded-2xl p-5 flex flex-col justify-between opacity-80 hover:opacity-100 transition-all duration-200 ${
+                    isLight ? 'bg-[#FAF4E8] border-[#D8C7AE]' : 'bg-[#0b1322] border-slate-800'
+                  }`}
                 >
                   <div>
                     {/* Top Status & Point Tag */}
                     <div className="flex items-center justify-between mb-3">
-                      <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md border bg-slate-900 border-slate-700 text-slate-400">
+                      <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md border ${
+                        isLight ? 'bg-[#F1E8D9] border-[#D8C7AE] text-[#806B58]' : 'bg-slate-900 border-slate-700 text-slate-400'
+                      }`}>
                         {isPenalty ? 'Penalty Target' : 'Reward Target'}
                       </span>
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-md border bg-rose-950/60 border-rose-500/40 text-rose-300">
+                      <span className={`text-[10px] font-mono px-2 py-0.5 rounded-md border ${
+                        isLight ? 'bg-[#A74747]/10 border-[#A74747]/30 text-[#A74747]' : 'bg-rose-950/60 border-rose-500/40 text-rose-300'
+                      }`}>
                         Disabled
                       </span>
                     </div>
 
                     {/* Centered Bomb Visual Preview */}
                     <div className="py-4 flex flex-col items-center justify-center grayscale opacity-60">
-                      <div className="p-3 rounded-2xl bg-slate-950/80 border border-slate-800 shadow-inner">
+                      <div className={`p-3 rounded-2xl border shadow-inner ${
+                        isLight ? 'bg-[#F1E8D9] border-[#D8C7AE]' : 'bg-slate-950/80 border-slate-800'
+                      }`}>
                         <CartoonBombSvg bomb={bomb} size={72} showBadge={false} />
                       </div>
-                      <h3 className="text-base font-bold text-slate-300 mt-3 text-center tracking-wide line-through decoration-rose-500/50">
+                      <h3 className={`text-base font-bold mt-3 text-center tracking-wide line-through ${
+                        isLight ? 'text-[#806B58] decoration-[#A74747]/50' : 'text-slate-300 decoration-rose-500/50'
+                      }`}>
                         {bomb.name}
                       </h3>
                       <div className="flex items-center gap-1.5 mt-1">
                         <span
-                          className="w-2.5 h-2.5 rounded-full inline-block"
+                          className="w-2.5 h-2.5 rounded-full inline-block border border-black/10"
                           style={{ backgroundColor: bomb.color }}
                         />
-                        <span className="font-mono text-xs text-slate-500">
+                        <span className={`font-mono text-xs ${secondaryText}`}>
                           {bomb.isDefault ? 'Default Preset' : 'Custom Bomb'}
                         </span>
                       </div>
                     </div>
 
                     {/* Stats & Attributes */}
-                    <div className="mt-2 space-y-2 text-xs border-t border-slate-800/80 pt-3 text-slate-400">
+                    <div className={`mt-2 space-y-2 text-xs border-t pt-3 ${
+                      isLight ? 'border-[#D8C7AE]/60 text-[#806B58]' : 'border-slate-800/80 text-slate-400'
+                    }`}>
                       <div className="flex items-center justify-between">
                         <span>Score Value:</span>
-                        <span className="font-mono font-bold text-xs text-slate-300">
+                        <span className={`font-mono font-bold text-xs ${primaryText}`}>
                           {bomb.points > 0 ? `+${bomb.points}` : bomb.points} pts
                         </span>
                       </div>
                       <div className="flex items-center justify-between">
                         <span>Burst Sound:</span>
-                        <span className="font-mono text-[11px] text-slate-400 capitalize">
+                        <span className={`font-mono text-[11px] capitalize ${secondaryText}`}>
                           {bomb.soundPreset}
                         </span>
                       </div>
                       <div className="flex items-center justify-between">
                         <span>Bomb Size:</span>
-                        <span className="font-mono text-xs text-slate-400">
+                        <span className={`font-mono text-xs ${secondaryText}`}>
                           {bomb.sizePercent ?? 100}%
                         </span>
                       </div>
@@ -897,13 +1010,17 @@ export const BombManagementSection: React.FC = () => {
                   </div>
 
                   {/* Actions Footer */}
-                  <div className="flex items-center gap-2 mt-4 pt-3 border-t border-slate-800/80">
+                  <div className={`flex items-center gap-2 mt-4 pt-3 border-t ${isLight ? 'border-[#D8C7AE]/60' : 'border-slate-800/80'}`}>
                     <button
                       type="button"
                       onClick={() => handleReEnableBomb(bomb)}
-                      className="w-full py-2 px-3 bg-emerald-950/50 hover:bg-emerald-900/70 border border-emerald-600/50 hover:border-emerald-500 text-emerald-300 hover:text-emerald-100 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-[0_0_12px_rgba(16,185,129,0.15)]"
+                      className={`w-full py-2 px-3 border rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                        isLight
+                          ? 'bg-[#58734B] hover:bg-[#465C3B] text-[#FDF9F3] border-[#58734B] shadow-[0_2px_8px_rgba(88,115,75,0.25)]'
+                          : 'bg-emerald-950/50 hover:bg-emerald-900/70 border border-emerald-600/50 hover:border-emerald-500 text-emerald-300 hover:text-emerald-100 shadow-[0_0_12px_rgba(16,185,129,0.15)]'
+                      }`}
                     >
-                      <Zap className="w-3.5 h-3.5 text-emerald-400" />
+                      <Zap className="w-3.5 h-3.5" />
                       <span>Re-enable Bomb</span>
                     </button>
                   </div>
@@ -916,20 +1033,26 @@ export const BombManagementSection: React.FC = () => {
 
       {/* 5. Add / Edit Bomb Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
-          <div className="bg-[#0F1B2E] border border-cyan-500/30 rounded-2xl max-w-4xl w-full p-4 sm:p-6 shadow-2xl relative my-auto max-h-[92vh] flex flex-col">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
+          <div className={`border rounded-2xl max-w-4xl w-full p-4 sm:p-6 shadow-2xl relative my-auto max-h-[92vh] flex flex-col ${
+            isLight
+              ? 'bg-[#FBF5EA] border-[#D8C7AE] text-[#493426] shadow-[0_10px_35px_rgba(73,52,38,0.2)]'
+              : 'bg-[#0F1B2E] border-cyan-500/30 text-slate-100'
+          }`}>
             {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-cyan-500/15 pb-4 mb-4 shrink-0">
+            <div className={`flex items-center justify-between border-b pb-4 mb-4 shrink-0 ${isLight ? 'border-[#D8C7AE]' : 'border-cyan-500/15'}`}>
               <div className="flex items-center gap-2.5">
-                <Bomb className="w-5 h-5 text-cyan-400 shrink-0" />
-                <h3 className="text-base sm:text-lg font-bold text-slate-100 tracking-wider">
+                <Bomb className={`w-5 h-5 shrink-0 ${isLight ? 'text-[#B36D4E]' : 'text-cyan-400'}`} />
+                <h3 className={`text-base sm:text-lg font-bold tracking-wider ${primaryText}`}>
                   {editingBomb ? `Edit Bomb: ${editingBomb.name}` : 'Create New Bomb Type'}
                 </h3>
               </div>
               <button
                 type="button"
                 onClick={() => setIsModalOpen(false)}
-                className="text-slate-400 hover:text-white cursor-pointer p-1 rounded-lg hover:bg-slate-800 transition-colors"
+                className={`cursor-pointer p-1 rounded-lg transition-colors ${
+                  isLight ? 'text-[#806B58] hover:text-[#493426] hover:bg-[#F1E8D9]' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                }`}
                 title="Close modal"
               >
                 <X className="w-5 h-5" />
@@ -942,7 +1065,7 @@ export const BombManagementSection: React.FC = () => {
                 <div className="md:col-span-7 space-y-4">
                   {/* Name */}
                   <div>
-                    <label className="block text-xs font-bold text-slate-300 uppercase mb-1">
+                    <label className={`block text-xs font-bold uppercase mb-1 ${isLight ? 'text-[#493426]' : 'text-slate-300'}`}>
                       Bomb Name
                     </label>
                     <input
@@ -951,14 +1074,14 @@ export const BombManagementSection: React.FC = () => {
                       value={formName}
                       onChange={(e) => setFormName(e.target.value)}
                       placeholder="e.g. Red Bomb, Golden Bomb"
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 text-xs focus:border-cyan-400 focus:outline-none"
+                      className={`w-full px-3 py-2 rounded-xl text-xs focus:outline-none transition-colors border ${inputBg}`}
                     />
                   </div>
 
                   {/* Points & Weight */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs font-bold text-slate-300 uppercase mb-1">
+                      <label className={`block text-xs font-bold uppercase mb-1 ${isLight ? 'text-[#493426]' : 'text-slate-300'}`}>
                         Point Value
                       </label>
                       <input
@@ -966,34 +1089,42 @@ export const BombManagementSection: React.FC = () => {
                         required
                         value={formPoints}
                         onChange={(e) => setFormPoints(Number(e.target.value))}
-                        className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 font-mono text-xs focus:border-cyan-400 focus:outline-none"
+                        className={`w-full px-3 py-2 rounded-xl font-mono text-xs focus:outline-none transition-colors border ${inputBg}`}
                       />
                       <div className="flex flex-wrap gap-1 mt-1.5">
                         <button
                           type="button"
                           onClick={() => setFormPoints(100)}
-                          className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 hover:text-white"
+                          className={`text-[9px] font-mono px-1.5 py-0.5 rounded border transition-colors cursor-pointer ${
+                            isLight ? 'bg-[#FAF4E8] text-[#493426] border-[#D8C7AE] hover:bg-[#F1E8D9]' : 'bg-slate-800 text-slate-300 hover:text-white border-transparent'
+                          }`}
                         >
                           +100
                         </button>
                         <button
                           type="button"
                           onClick={() => setFormPoints(150)}
-                          className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 hover:text-white"
+                          className={`text-[9px] font-mono px-1.5 py-0.5 rounded border transition-colors cursor-pointer ${
+                            isLight ? 'bg-[#FAF4E8] text-[#493426] border-[#D8C7AE] hover:bg-[#F1E8D9]' : 'bg-slate-800 text-slate-300 hover:text-white border-transparent'
+                          }`}
                         >
                           +150
                         </button>
                         <button
                           type="button"
                           onClick={() => setFormPoints(300)}
-                          className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 hover:text-white"
+                          className={`text-[9px] font-mono px-1.5 py-0.5 rounded border transition-colors cursor-pointer ${
+                            isLight ? 'bg-[#FAF4E8] text-[#493426] border-[#D8C7AE] hover:bg-[#F1E8D9]' : 'bg-slate-800 text-slate-300 hover:text-white border-transparent'
+                          }`}
                         >
                           +300
                         </button>
                         <button
                           type="button"
                           onClick={() => setFormPoints(-150)}
-                          className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-rose-950 text-rose-300 hover:text-white border border-rose-800"
+                          className={`text-[9px] font-mono px-1.5 py-0.5 rounded border transition-colors cursor-pointer ${
+                            isLight ? 'bg-[#A74747]/10 text-[#A74747] border-[#A74747]/30 hover:bg-[#A74747]/20' : 'bg-rose-950 text-rose-300 hover:text-white border border-rose-800'
+                          }`}
                         >
                           -150 (Penalty)
                         </button>
@@ -1001,7 +1132,7 @@ export const BombManagementSection: React.FC = () => {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-bold text-slate-300 uppercase mb-1">
+                      <label className={`block text-xs font-bold uppercase mb-1 ${isLight ? 'text-[#493426]' : 'text-slate-300'}`}>
                         Spawn Weight (1 - 50)
                       </label>
                       <input
@@ -1011,34 +1142,42 @@ export const BombManagementSection: React.FC = () => {
                         required
                         value={formSpawnWeight}
                         onChange={(e) => setFormSpawnWeight(Number(e.target.value))}
-                        className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 font-mono text-xs focus:border-cyan-400 focus:outline-none"
+                        className={`w-full px-3 py-2 rounded-xl font-mono text-xs focus:outline-none transition-colors border ${inputBg}`}
                       />
-                      <p className="text-[10px] text-slate-500 mt-1">Relative random likelihood</p>
+                      <p className={`text-[10px] mt-1 ${secondaryText}`}>Relative random likelihood</p>
                     </div>
                   </div>
 
                   {/* Bomb Size Slider */}
-                  <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-2">
+                  <div className={`p-3.5 rounded-xl border space-y-2 ${cardSubBg}`}>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                        <label className={`text-xs font-bold uppercase tracking-wider ${isLight ? 'text-[#493426]' : 'text-slate-300'}`}>
                           Bomb Size
                         </label>
-                        <span className="text-[10px] font-mono text-slate-500">(40% – 180%)</span>
+                        <span className={`text-[10px] font-mono ${secondaryText}`}>(40% – 180%)</span>
                       </div>
 
                       <div className="flex items-center gap-2">
-                        <span className="px-2.5 py-0.5 rounded-md text-xs font-mono font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                        <span className={`px-2.5 py-0.5 rounded-md text-xs font-mono font-bold border ${
+                          isLight
+                            ? 'bg-[#B36D4E]/10 text-[#B36D4E] border-[#B36D4E]/30'
+                            : 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30'
+                        }`}>
                           {formSizePercent}%
                         </span>
                         {formSizePercent !== 100 && (
                           <button
                             type="button"
                             onClick={() => setFormSizePercent(100)}
-                            className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-600 transition-colors cursor-pointer flex items-center gap-1"
+                            className={`text-[10px] font-mono px-2 py-0.5 rounded-md border transition-colors cursor-pointer flex items-center gap-1 ${
+                              isLight
+                                ? 'bg-[#FAF4E8] hover:bg-[#F1E8D9] text-[#76513D] border-[#D8C7AE]'
+                                : 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-600'
+                            }`}
                             title="Reset to 100% default size"
                           >
-                            <RotateCcw className="w-2.5 h-2.5 text-cyan-400" />
+                            <RotateCcw className={`w-2.5 h-2.5 ${isLight ? 'text-[#B36D4E]' : 'text-cyan-400'}`} />
                             <span>Reset</span>
                           </button>
                         )}
@@ -1053,11 +1192,15 @@ export const BombManagementSection: React.FC = () => {
                         step={1}
                         value={formSizePercent}
                         onChange={(e) => setFormSizePercent(Number(e.target.value))}
-                        className="w-full h-2 bg-slate-900 rounded-lg appearance-none cursor-pointer accent-cyan-400 border border-slate-700"
+                        className={`w-full h-2 rounded-lg appearance-none cursor-pointer border ${
+                          isLight
+                            ? 'bg-[#FAF4E8] accent-[#B36D4E] border-[#D8C7AE]'
+                            : 'bg-slate-900 accent-cyan-400 border-slate-700'
+                        }`}
                       />
-                      <div className="flex justify-between text-[10px] font-mono text-slate-500">
+                      <div className={`flex justify-between text-[10px] font-mono ${secondaryText}`}>
                         <span>40% (Compact)</span>
-                        <span className={formSizePercent === 100 ? 'text-cyan-400 font-bold' : ''}>100% (Default)</span>
+                        <span className={formSizePercent === 100 ? (isLight ? 'text-[#B36D4E] font-bold' : 'text-cyan-400 font-bold') : ''}>100% (Default)</span>
                         <span>180% (Massive)</span>
                       </div>
                     </div>
@@ -1065,7 +1208,7 @@ export const BombManagementSection: React.FC = () => {
 
                   {/* Theme Color */}
                   <div>
-                    <label className="block text-xs font-bold text-slate-300 uppercase mb-1">
+                    <label className={`block text-xs font-bold uppercase mb-1 ${isLight ? 'text-[#493426]' : 'text-slate-300'}`}>
                       Theme Color
                     </label>
                     <div className="flex items-center gap-2">
@@ -1073,13 +1216,13 @@ export const BombManagementSection: React.FC = () => {
                         type="color"
                         value={formColor}
                         onChange={(e) => setFormColor(e.target.value)}
-                        className="w-10 h-8 rounded-lg cursor-pointer bg-slate-900 border border-slate-700"
+                        className={`w-10 h-8 rounded-lg cursor-pointer border ${isLight ? 'bg-[#FAF4E8] border-[#D8C7AE]' : 'bg-slate-900 border-slate-700'}`}
                       />
                       <input
                         type="text"
                         value={formColor}
                         onChange={(e) => setFormColor(e.target.value)}
-                        className="w-28 px-2 py-1.5 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 font-mono text-xs"
+                        className={`w-28 px-2 py-1.5 rounded-xl font-mono text-xs border ${inputBg}`}
                       />
                       <div className="flex items-center gap-1 ml-2">
                         {PRESET_COLORS.map((c) => (
@@ -1087,7 +1230,7 @@ export const BombManagementSection: React.FC = () => {
                             key={c}
                             type="button"
                             onClick={() => setFormColor(c)}
-                            className="w-5 h-5 rounded-full border border-white/20 transition-transform hover:scale-125 cursor-pointer"
+                            className="w-5 h-5 rounded-full border border-black/15 transition-transform hover:scale-125 cursor-pointer shadow-sm"
                             style={{ backgroundColor: c }}
                           />
                         ))}
@@ -1097,13 +1240,13 @@ export const BombManagementSection: React.FC = () => {
 
                   {/* Cartoon Preset / Custom Image */}
                   <div>
-                    <label className="block text-xs font-bold text-slate-300 uppercase mb-1">
+                    <label className={`block text-xs font-bold uppercase mb-1 ${isLight ? 'text-[#493426]' : 'text-slate-300'}`}>
                       Visual Style & Preset
                     </label>
                     <select
                       value={formImagePreset}
                       onChange={(e) => setFormImagePreset(e.target.value as BombImagePreset)}
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 text-xs focus:border-cyan-400 focus:outline-none"
+                      className={`w-full px-3 py-2 rounded-xl text-xs focus:outline-none transition-colors border ${inputBg}`}
                     >
                       {IMAGE_PRESETS.map((p) => (
                         <option key={p.id} value={p.id}>
@@ -1113,9 +1256,9 @@ export const BombManagementSection: React.FC = () => {
                     </select>
 
                     {formImagePreset === 'custom' && (
-                      <div className="mt-2.5 p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+                      <div className={`mt-2.5 p-3 rounded-xl border space-y-2 ${cardSubBg}`}>
                         <div className="flex items-center justify-between">
-                          <span className="text-[11px] text-slate-400">Custom Image Asset:</span>
+                          <span className={`text-[11px] ${secondaryText}`}>Custom Image Asset:</span>
                           <input
                             ref={imageFileInputRef}
                             type="file"
@@ -1127,14 +1270,18 @@ export const BombManagementSection: React.FC = () => {
                             type="button"
                             onClick={() => imageFileInputRef.current?.click()}
                             disabled={isUploadingAsset}
-                            className="px-2.5 py-1 bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 text-xs rounded-lg flex items-center gap-1.5 cursor-pointer"
+                            className={`px-2.5 py-1 text-xs rounded-lg flex items-center gap-1.5 cursor-pointer border transition-colors ${
+                              isLight
+                                ? 'bg-[#FAF4E8] hover:bg-[#F1E8D9] text-[#76513D] border-[#D8C7AE]'
+                                : 'bg-cyan-500/20 hover:bg-cyan-500/30 border-cyan-500/40 text-cyan-300'
+                            }`}
                           >
                             <Upload className="w-3 h-3" />
                             <span>{isUploadingAsset ? 'Uploading...' : 'Upload Image'}</span>
                           </button>
                         </div>
                         {formImageUrl && (
-                          <div className="text-[10px] font-mono text-slate-400 truncate">
+                          <div className={`text-[10px] font-mono truncate ${secondaryText}`}>
                             URL: {formImageUrl}
                           </div>
                         )}
@@ -1144,7 +1291,7 @@ export const BombManagementSection: React.FC = () => {
 
                   {/* Burst Sound Effect (Clean unclipped row) */}
                   <div>
-                    <label className="block text-xs font-bold text-slate-300 uppercase mb-1">
+                    <label className={`block text-xs font-bold uppercase mb-1 ${isLight ? 'text-[#493426]' : 'text-slate-300'}`}>
                       Burst Sound Effect
                     </label>
                     <div className="flex items-center gap-2">
@@ -1155,7 +1302,7 @@ export const BombManagementSection: React.FC = () => {
                           setFormSoundPreset(val);
                           previewSound(val, formSoundUrl);
                         }}
-                        className="min-w-0 flex-1 px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 text-xs focus:border-cyan-400 focus:outline-none truncate"
+                        className={`min-w-0 flex-1 px-3 py-2 rounded-xl text-xs focus:outline-none truncate border ${inputBg}`}
                       >
                         {SOUND_PRESETS.map((s) => (
                           <option key={s.id} value={s.id}>
@@ -1167,18 +1314,22 @@ export const BombManagementSection: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => previewSound(formSoundPreset, formSoundUrl)}
-                        className="shrink-0 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 text-xs rounded-xl flex items-center gap-1.5 cursor-pointer transition-colors"
+                        className={`shrink-0 px-3.5 py-2 border text-xs rounded-xl flex items-center gap-1.5 cursor-pointer transition-colors ${
+                          isLight
+                            ? 'bg-[#FAF4E8] hover:bg-[#F1E8D9] border-[#D8C7AE] text-[#493426]'
+                            : 'bg-slate-800 hover:bg-slate-700 border-slate-600 text-slate-200'
+                        }`}
                         title="Test Sound"
                       >
-                        <Play className="w-3.5 h-3.5 text-cyan-400" />
+                        <Play className={`w-3.5 h-3.5 ${isLight ? 'text-[#B36D4E]' : 'text-cyan-400'}`} />
                         <span>Test</span>
                       </button>
                     </div>
 
                     {formSoundPreset === 'custom' && (
-                      <div className="mt-2.5 p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+                      <div className={`mt-2.5 p-3 rounded-xl border space-y-2 ${cardSubBg}`}>
                         <div className="flex items-center justify-between">
-                          <span className="text-[11px] text-slate-400">Custom Audio File:</span>
+                          <span className={`text-[11px] ${secondaryText}`}>Custom Audio File:</span>
                           <input
                             ref={audioFileInputRef}
                             type="file"
@@ -1190,14 +1341,18 @@ export const BombManagementSection: React.FC = () => {
                             type="button"
                             onClick={() => audioFileInputRef.current?.click()}
                             disabled={isUploadingAsset}
-                            className="px-2.5 py-1 bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 text-xs rounded-lg flex items-center gap-1.5 cursor-pointer"
+                            className={`px-2.5 py-1 text-xs rounded-lg flex items-center gap-1.5 cursor-pointer border transition-colors ${
+                              isLight
+                                ? 'bg-[#FAF4E8] hover:bg-[#F1E8D9] text-[#76513D] border-[#D8C7AE]'
+                                : 'bg-cyan-500/20 hover:bg-cyan-500/30 border-cyan-500/40 text-cyan-300'
+                            }`}
                           >
                             <Upload className="w-3 h-3" />
                             <span>{isUploadingAsset ? 'Uploading...' : 'Upload Audio'}</span>
                           </button>
                         </div>
                         {formSoundUrl && (
-                          <div className="text-[10px] font-mono text-slate-400 truncate">
+                          <div className={`text-[10px] font-mono truncate ${secondaryText}`}>
                             URL: {formSoundUrl}
                           </div>
                         )}
@@ -1212,28 +1367,38 @@ export const BombManagementSection: React.FC = () => {
                       id="formIsActive"
                       checked={formIsActive}
                       onChange={(e) => setFormIsActive(e.target.checked)}
-                      className="w-4 h-4 rounded text-cyan-500 bg-slate-900 border-slate-700 focus:ring-0 cursor-pointer"
+                      className={`w-4 h-4 rounded cursor-pointer ${
+                        isLight ? 'accent-[#B36D4E] border-[#D8C7AE]' : 'text-cyan-500 bg-slate-900 border-slate-700 focus:ring-0'
+                      }`}
                     />
-                    <label htmlFor="formIsActive" className="text-xs text-slate-200 cursor-pointer select-none">
+                    <label htmlFor="formIsActive" className={`text-xs cursor-pointer select-none font-medium ${primaryText}`}>
                       Enable this bomb in active gameplay
                     </label>
                   </div>
                 </div>
 
                 {/* Right Interactive Live Preview Card (5 cols on desktop, responsive) */}
-                <div className="md:col-span-5 flex flex-col items-center p-4 sm:p-5 rounded-2xl bg-slate-950/90 border border-slate-800/90 shadow-lg md:sticky md:top-2">
-                  <div className="w-full flex items-center justify-between pb-2.5 mb-3 border-b border-slate-800/60">
-                    <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-widest flex items-center gap-1.5">
-                      <Sparkles className="w-3 h-3 text-cyan-400" />
+                <div className={`md:col-span-5 flex flex-col items-center p-4 sm:p-5 rounded-2xl border shadow-lg md:sticky md:top-2 ${
+                  isLight ? 'bg-[#FAF4E8] border-[#D8C7AE]' : 'bg-slate-950/90 border-slate-800/90'
+                }`}>
+                  <div className={`w-full flex items-center justify-between pb-2.5 mb-3 border-b ${isLight ? 'border-[#D8C7AE]' : 'border-slate-800/60'}`}>
+                    <span className={`text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5 ${
+                      isLight ? 'text-[#76513D]' : 'text-cyan-400'
+                    }`}>
+                      <Sparkles className={`w-3 h-3 ${isLight ? 'text-[#B36D4E]' : 'text-cyan-400'}`} />
                       Live Preview
                     </span>
-                    <span className="text-[10px] font-mono font-bold text-cyan-300 bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/30">
+                    <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
+                      isLight ? 'text-[#76513D] bg-[#F1E8D9] border-[#D8C7AE]' : 'text-cyan-300 bg-cyan-500/10 border-cyan-500/30'
+                    }`}>
                       Size: {formSizePercent}%
                     </span>
                   </div>
 
                   {/* Contained Stage that comfortably encloses bombs up to 180% size */}
-                  <div className="w-full h-56 sm:h-64 rounded-2xl bg-[#090D1A] border border-cyan-500/20 shadow-inner flex items-center justify-center p-3 relative overflow-hidden">
+                  <div className={`w-full h-56 sm:h-64 rounded-2xl border shadow-inner flex items-center justify-center p-3 relative overflow-hidden ${
+                    isLight ? 'bg-[#090D1A] border-[#D8C7AE]' : 'bg-[#090D1A] border-cyan-500/20'
+                  }`}>
                     {/* Subtle 100% standard baseline reference ring */}
                     <div
                       className="absolute w-24 h-24 rounded-full border border-dashed border-slate-700/60 pointer-events-none"
@@ -1257,21 +1422,25 @@ export const BombManagementSection: React.FC = () => {
                     </div>
                   </div>
 
-                  <span className="text-sm font-bold text-slate-100 mt-3 text-center truncate max-w-full px-2">
+                  <span className={`text-sm font-bold mt-3 text-center truncate max-w-full px-2 ${primaryText}`}>
                     {formName || 'Bomb Preview'}
                   </span>
 
                   <div className="flex items-center gap-2 mt-1">
                     <span
                       className={`text-xs font-mono font-bold px-2 py-0.5 rounded ${
-                        formPoints < 0
-                          ? 'bg-rose-950/60 text-rose-300 border border-rose-500/30'
-                          : 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/30'
+                        isLight
+                          ? formPoints < 0
+                            ? 'bg-[#A74747]/10 text-[#A74747] border border-[#A74747]/30'
+                            : 'bg-[#58734B]/10 text-[#58734B] border border-[#58734B]/30'
+                          : formPoints < 0
+                            ? 'bg-rose-950/60 text-rose-300 border border-rose-500/30'
+                            : 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/30'
                       }`}
                     >
                       {formPoints > 0 ? `+${formPoints}` : formPoints} pts
                     </span>
-                    <span className="text-[11px] font-mono text-slate-400">
+                    <span className={`text-[11px] font-mono ${secondaryText}`}>
                       Radius: ~{Math.round(52 * (formSizePercent / 100))}px
                     </span>
                   </div>
@@ -1279,22 +1448,30 @@ export const BombManagementSection: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => previewSound(formSoundPreset, formSoundUrl)}
-                    className="mt-3.5 w-full py-2 bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-cyan-500/40 text-slate-300 hover:text-white text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-all shadow-sm"
+                    className={`mt-3.5 w-full py-2 border text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-all shadow-sm ${
+                      isLight
+                        ? 'bg-[#FBF5EA] hover:bg-[#F1E8D9] border-[#D8C7AE] text-[#493426]'
+                        : 'bg-slate-900 hover:bg-slate-800 border-slate-700 hover:border-cyan-500/40 text-slate-300 hover:text-white'
+                    }`}
                   >
-                    <Volume2 className="w-3.5 h-3.5 text-cyan-400" />
+                    <Volume2 className={`w-3.5 h-3.5 ${isLight ? 'text-[#B36D4E]' : 'text-cyan-400'}`} />
                     <span>Play Sound Effect</span>
                   </button>
                 </div>
               </div>
 
               {/* Form Footer */}
-              <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-800 shrink-0">
+              <div className={`flex flex-wrap items-center justify-between gap-3 pt-4 border-t shrink-0 ${isLight ? 'border-[#D8C7AE]' : 'border-slate-800'}`}>
                 {editingBomb ? (
                   <button
                     type="button"
                     disabled={deletingBombId !== null}
                     onClick={() => handleRequestDelete(editingBomb)}
-                    className="px-3.5 py-2 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/50 text-rose-300 hover:text-rose-100 text-xs font-semibold rounded-xl flex items-center gap-1.5 cursor-pointer transition-all disabled:opacity-50"
+                    className={`px-3.5 py-2 border text-xs font-semibold rounded-xl flex items-center gap-1.5 cursor-pointer transition-all disabled:opacity-50 ${
+                      isLight
+                        ? 'bg-[#A74747]/10 hover:bg-[#A74747]/20 border-[#A74747]/30 text-[#A74747]'
+                        : 'bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/50 text-rose-300 hover:text-rose-100'
+                    }`}
                   >
                     {deletingBombId === editingBomb.id ? (
                       <RefreshCw className="w-3.5 h-3.5 animate-spin" />
@@ -1310,14 +1487,22 @@ export const BombManagementSection: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setIsModalOpen(false)}
-                    className="px-4 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs font-medium rounded-xl cursor-pointer transition-colors"
+                    className={`px-4 py-2 border text-xs font-medium rounded-xl cursor-pointer transition-colors ${
+                      isLight
+                        ? 'bg-[#FAF4E8] hover:bg-[#F1E8D9] border-[#D8C7AE] text-[#493426]'
+                        : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-300 hover:text-white'
+                    }`}
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={isSavingBomb}
-                    className="px-5 py-2 bg-gradient-to-r from-cyan-500 via-cyan-400 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-slate-950 font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-[0_0_20px_rgba(6,182,212,0.3)] flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    className={`px-5 py-2 font-bold text-xs uppercase tracking-wider rounded-xl transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                      isLight
+                        ? 'bg-[#76513D] hover:bg-[#5D3F2E] text-[#FDF9F3] shadow-[0_2px_10px_rgba(118,81,61,0.25)]'
+                        : 'bg-gradient-to-r from-cyan-500 via-cyan-400 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-slate-950 shadow-[0_0_20px_rgba(6,182,212,0.3)]'
+                    }`}
                   >
                     {isSavingBomb ? (
                       <RefreshCw className="w-3.5 h-3.5 animate-spin" />
@@ -1334,43 +1519,55 @@ export const BombManagementSection: React.FC = () => {
       )}
       {/* 6. Dedicated Delete Confirmation Modal */}
       {confirmDeleteBomb && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-          <div className="bg-[#0F1B2E] border border-rose-500/30 rounded-2xl max-w-md w-full p-6 shadow-2xl relative overflow-hidden">
-            <div className="absolute -right-10 -top-10 w-32 h-32 bg-rose-500/10 rounded-full blur-2xl pointer-events-none" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className={`border rounded-2xl max-w-md w-full p-6 shadow-2xl relative overflow-hidden ${
+            isLight
+              ? 'bg-[#FBF5EA] border-[#D8C7AE] text-[#493426] shadow-[0_10px_35px_rgba(73,52,38,0.2)]'
+              : 'bg-[#0F1B2E] border-rose-500/30 text-slate-100'
+          }`}>
+            <div className={`absolute -right-10 -top-10 w-32 h-32 rounded-full blur-2xl pointer-events-none ${
+              isLight ? 'bg-[#A74747]/10' : 'bg-rose-500/10'
+            }`} />
 
             <div className="flex items-start gap-4">
-              <div className="p-3 rounded-xl bg-rose-950/60 border border-rose-500/40 text-rose-400 shrink-0">
+              <div className={`p-3 rounded-xl border shrink-0 ${
+                isLight ? 'bg-[#A74747]/10 border-[#A74747]/30 text-[#A74747]' : 'bg-rose-950/60 border-rose-500/40 text-rose-400'
+              }`}>
                 <Trash2 className="w-6 h-6" />
               </div>
               <div className="flex-1 min-w-0">
-                <h3 className="text-lg font-bold text-slate-100 tracking-wide">
+                <h3 className={`text-lg font-bold tracking-wide ${primaryText}`}>
                   Delete Bomb Configuration
                 </h3>
-                <p className="text-xs text-slate-400 mt-1">
-                  Are you sure you want to remove <span className="text-rose-300 font-semibold font-mono">"{confirmDeleteBomb.name}"</span>?
+                <p className={`text-xs mt-1 ${secondaryText}`}>
+                  Are you sure you want to remove <span className={`font-semibold font-mono ${isLight ? 'text-[#A74747]' : 'text-rose-300'}`}>"{confirmDeleteBomb.name}"</span>?
                 </p>
               </div>
             </div>
 
             {/* Bomb Mini Preview */}
-            <div className="mt-4 p-3 rounded-xl bg-slate-950/70 border border-slate-800 flex items-center gap-3">
-              <div className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 shrink-0">
+            <div className={`mt-4 p-3 rounded-xl border flex items-center gap-3 ${cardSubBg}`}>
+              <div className={`p-1.5 rounded-lg border shrink-0 ${isLight ? 'bg-[#F1E8D9] border-[#D8C7AE]' : 'bg-slate-900 border-slate-800'}`}>
                 <CartoonBombSvg bomb={confirmDeleteBomb} size={48} showBadge={false} />
               </div>
               <div className="flex-1 text-xs">
-                <div className="font-bold text-slate-200">{confirmDeleteBomb.name}</div>
-                <div className="text-slate-400 text-[11px] mt-0.5">
+                <div className={`font-bold ${primaryText}`}>{confirmDeleteBomb.name}</div>
+                <div className={`text-[11px] mt-0.5 ${secondaryText}`}>
                   Value:{' '}
-                  <span className="font-mono text-emerald-400">
+                  <span className={`font-mono ${isLight ? 'text-[#58734B]' : 'text-emerald-400'}`}>
                     {confirmDeleteBomb.points > 0 ? `+${confirmDeleteBomb.points}` : confirmDeleteBomb.points} pts
                   </span>{' '}
-                  • Weight: <span className="font-mono text-cyan-300">{confirmDeleteBomb.spawnWeight}</span>
+                  • Weight: <span className={`font-mono ${isLight ? 'text-[#76513D]' : 'text-cyan-300'}`}>{confirmDeleteBomb.spawnWeight}</span>
                 </div>
               </div>
             </div>
 
-            <div className="mt-4 p-3 rounded-xl bg-cyan-500/5 border border-cyan-500/20 text-[11px] text-cyan-300/90 leading-relaxed flex items-start gap-2">
-              <ShieldAlert className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+            <div className={`mt-4 p-3 rounded-xl border text-[11px] leading-relaxed flex items-start gap-2 ${
+              isLight
+                ? 'bg-[#B36D4E]/10 border-[#B36D4E]/20 text-[#806B58]'
+                : 'bg-cyan-500/5 border border-cyan-500/20 text-cyan-300/90'
+            }`}>
+              <ShieldAlert className={`w-4 h-4 shrink-0 mt-0.5 ${isLight ? 'text-[#B36D4E]' : 'text-cyan-400'}`} />
               <span>
                 {confirmDeleteBomb.isDefault
                   ? 'This is a default bomb type. It will be safely disabled and hidden from new games without affecting historical player scores.'
@@ -1378,12 +1575,16 @@ export const BombManagementSection: React.FC = () => {
               </span>
             </div>
 
-            <div className="flex items-center justify-end gap-3 mt-6 pt-4 border-t border-slate-800">
+            <div className={`flex items-center justify-end gap-3 mt-6 pt-4 border-t ${isLight ? 'border-[#D8C7AE]' : 'border-slate-800'}`}>
               <button
                 type="button"
                 disabled={deletingBombId !== null}
                 onClick={() => setConfirmDeleteBomb(null)}
-                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 text-xs rounded-xl cursor-pointer disabled:opacity-50 transition-all"
+                className={`px-4 py-2 border text-xs rounded-xl cursor-pointer disabled:opacity-50 transition-all ${
+                  isLight
+                    ? 'bg-[#FAF4E8] hover:bg-[#F1E8D9] border-[#D8C7AE] text-[#493426]'
+                    : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-300'
+                }`}
               >
                 Cancel
               </button>
@@ -1391,7 +1592,11 @@ export const BombManagementSection: React.FC = () => {
                 type="button"
                 disabled={deletingBombId !== null}
                 onClick={handleConfirmDelete}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-[0_0_15px_rgba(225,29,72,0.4)] flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                className={`px-4 py-2 font-bold text-xs uppercase tracking-wider rounded-xl transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                  isLight
+                    ? 'bg-[#A74747] hover:bg-[#8F3C3C] text-white shadow-[0_2px_10px_rgba(167,71,71,0.25)]'
+                    : 'bg-rose-600 hover:bg-rose-500 text-white shadow-[0_0_15px_rgba(225,29,72,0.4)]'
+                }`}
               >
                 {deletingBombId === confirmDeleteBomb.id ? (
                   <>

@@ -20,6 +20,7 @@ import {
   X,
   Users
 } from 'lucide-react';
+import { useAdminTheme } from '../AdminThemeContext';
 
 interface PlayersSectionProps {
   users: User[];
@@ -34,6 +35,7 @@ export const PlayersSection: React.FC<PlayersSectionProps> = ({
   error,
   onRefresh
 }) => {
+  const { isLight } = useAdminTheme();
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
   const [revealedMobiles, setRevealedMobiles] = useState<Record<string, boolean>>({});
@@ -135,6 +137,13 @@ export const PlayersSection: React.FC<PlayersSectionProps> = ({
     }
   };
 
+  // Theme-aware style helpers
+  const cardBg = isLight
+    ? 'bg-[#FBF5EA] border-[#D8C7AE] shadow-[0_2px_8px_rgba(73,52,38,0.05)]'
+    : 'bg-[#0F1B2E]/90 border-slate-800 shadow-sm';
+  const labelColor = isLight ? 'text-[#806B58]' : 'text-slate-400';
+  const primaryText = isLight ? 'text-[#493426]' : 'text-slate-100';
+
   return (
     <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto">
       {/* Top Feedback Banner */}
@@ -142,22 +151,26 @@ export const PlayersSection: React.FC<PlayersSectionProps> = ({
         <div
           className={`p-3.5 rounded-xl border text-xs flex items-center justify-between gap-3 ${
             feedback.type === 'success'
-              ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-200'
-              : 'bg-rose-950/60 border-rose-500/40 text-rose-200'
+              ? isLight
+                ? 'bg-[#58734B]/15 border-[#58734B]/40 text-[#3B5031]'
+                : 'bg-emerald-950/60 border-emerald-500/40 text-emerald-200'
+              : isLight
+                ? 'bg-[#A74747]/15 border-[#A74747]/40 text-[#782828]'
+                : 'bg-rose-950/60 border-rose-500/40 text-rose-200'
           }`}
         >
           <div className="flex items-center gap-2.5">
             {feedback.type === 'success' ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              <CheckCircle2 className={`w-4 h-4 shrink-0 ${isLight ? 'text-[#58734B]' : 'text-emerald-400'}`} />
             ) : (
-              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+              <AlertCircle className={`w-4 h-4 shrink-0 ${isLight ? 'text-[#A74747]' : 'text-rose-400'}`} />
             )}
-            <span>{feedback.message}</span>
+            <span className="font-medium">{feedback.message}</span>
           </div>
           <button
             type="button"
             onClick={() => setFeedback(null)}
-            className="p-1 hover:opacity-75 transition-opacity"
+            className="p-1 hover:opacity-75 transition-opacity cursor-pointer"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -165,11 +178,11 @@ export const PlayersSection: React.FC<PlayersSectionProps> = ({
       )}
 
       {/* Controls Bar */}
-      <div className="bg-[#0F1B2E]/90 border border-slate-800 rounded-2xl p-4 flex flex-col md:flex-row gap-4 justify-between items-stretch md:items-center shadow-sm">
+      <div className={`${cardBg} border rounded-2xl p-4 flex flex-col md:flex-row gap-4 justify-between items-stretch md:items-center`}>
         {/* Search Input */}
         <div className="relative flex-1 max-w-md">
           <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-            <Search className="w-4 h-4 text-cyan-400/80" />
+            <Search className={`w-4 h-4 ${isLight ? 'text-[#B36D4E]' : 'text-cyan-400/80'}`} />
           </div>
           <input
             type="text"
@@ -179,24 +192,34 @@ export const PlayersSection: React.FC<PlayersSectionProps> = ({
               setCurrentPage(1);
             }}
             placeholder="Search by player name or mobile..."
-            className="w-full pl-10 pr-4 py-2 bg-slate-900/90 border border-slate-700 focus:border-cyan-400 rounded-xl text-slate-100 text-xs placeholder-slate-500 transition-colors outline-none"
+            className={`w-full pl-10 pr-4 py-2 rounded-xl text-xs transition-colors outline-none ${
+              isLight
+                ? 'bg-[#FAF4E8] border border-[#D8C7AE] text-[#493426] placeholder-[#806B58] focus:border-[#B36D4E]'
+                : 'bg-slate-900/90 border border-slate-700 text-slate-100 placeholder-slate-500 focus:border-cyan-400'
+            }`}
           />
         </div>
 
         {/* Right Action Controls: Sort + Delete All */}
         <div className="flex items-center gap-3 self-start md:self-auto">
           {/* Sort Control */}
-          <div className="flex items-center gap-1 p-1 bg-slate-900/90 rounded-xl border border-slate-800">
+          <div className={`flex items-center gap-1 p-1 rounded-xl border ${
+            isLight ? 'bg-[#FAF4E8] border-[#D8C7AE]' : 'bg-slate-900/90 border-slate-800'
+          }`}>
             <button
               type="button"
               onClick={() => {
                 setSortOrder('newest');
                 setCurrentPage(1);
               }}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors cursor-pointer ${
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
                 sortOrder === 'newest'
-                  ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-500/40 shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
+                  ? isLight
+                    ? 'bg-[#76513D] text-[#FDF9F3] shadow-sm'
+                    : 'bg-cyan-500/20 text-cyan-200 border border-cyan-500/40 shadow-sm'
+                  : isLight
+                    ? 'text-[#806B58] hover:text-[#493426]'
+                    : 'text-slate-400 hover:text-slate-200'
               }`}
             >
               Newest First
@@ -207,10 +230,14 @@ export const PlayersSection: React.FC<PlayersSectionProps> = ({
                 setSortOrder('oldest');
                 setCurrentPage(1);
               }}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors cursor-pointer ${
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
                 sortOrder === 'oldest'
-                  ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-500/40 shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200'
+                  ? isLight
+                    ? 'bg-[#76513D] text-[#FDF9F3] shadow-sm'
+                    : 'bg-cyan-500/20 text-cyan-200 border border-cyan-500/40 shadow-sm'
+                  : isLight
+                    ? 'text-[#806B58] hover:text-[#493426]'
+                    : 'text-slate-400 hover:text-slate-200'
               }`}
             >
               Oldest First
@@ -222,9 +249,13 @@ export const PlayersSection: React.FC<PlayersSectionProps> = ({
             <button
               type="button"
               onClick={() => setShowDeleteAllModal(true)}
-              className="px-3.5 py-2 rounded-xl bg-rose-500/10 border border-rose-500/30 hover:bg-rose-500/20 text-rose-300 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                isLight
+                  ? 'bg-[#A74747]/10 border border-[#A74747]/30 hover:bg-[#A74747]/20 text-[#A74747]'
+                  : 'bg-rose-500/10 border border-rose-500/30 hover:bg-rose-500/20 text-rose-300'
+              }`}
             >
-              <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+              <Trash2 className="w-3.5 h-3.5" />
               <span>Delete All Players</span>
             </button>
           )}
@@ -232,34 +263,38 @@ export const PlayersSection: React.FC<PlayersSectionProps> = ({
       </div>
 
       {/* Players Table Card */}
-      <div className="bg-[#0F1B2E]/90 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+      <div className={`${cardBg} border rounded-2xl overflow-hidden shadow-xl`}>
         {isLoading ? (
-          <div className="p-12 text-center text-slate-400 text-xs flex flex-col items-center">
-            <div className="w-8 h-8 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin mb-3 shadow-[0_0_15px_rgba(6,182,212,0.4)]" />
+          <div className={`p-12 text-center text-xs flex flex-col items-center ${labelColor}`}>
+            <div className={`w-8 h-8 border-2 ${isLight ? 'border-[#76513D]' : 'border-cyan-400'} border-t-transparent rounded-full animate-spin mb-3`} />
             <span>Loading player records...</span>
           </div>
         ) : error ? (
-          <div className="p-8 text-center text-rose-300 text-xs">
+          <div className={`p-8 text-center text-xs ${isLight ? 'text-[#A74747]' : 'text-rose-300'}`}>
             {error}
           </div>
         ) : filteredUsers.length === 0 ? (
-          <div className="p-12 text-center text-slate-500 text-xs">
+          <div className={`p-12 text-center text-xs ${labelColor}`}>
             No player records match your search.
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
-                <tr className="border-b border-cyan-500/15 bg-slate-950/60 text-slate-400 uppercase tracking-wider text-[10px]">
-                  <th className="py-3.5 px-4 font-semibold">Player Name</th>
-                  <th className="py-3.5 px-4 font-semibold">Mobile Number</th>
-                  <th className="py-3.5 px-4 font-semibold">Registration Date</th>
-                  <th className="py-3.5 px-4 font-semibold">Game Feedback</th>
-                  <th className="py-3.5 px-4 font-semibold text-right">Game Count</th>
-                  <th className="py-3.5 px-4 font-semibold text-center w-20">Actions</th>
+                <tr className={`border-b uppercase tracking-wider text-[10px] ${
+                  isLight
+                    ? 'bg-[#F3E9DA] border-[#D8C7AE] text-[#493426]'
+                    : 'bg-slate-950/60 border-cyan-500/15 text-slate-400'
+                }`}>
+                  <th className="py-3.5 px-4 font-bold">Player Name</th>
+                  <th className="py-3.5 px-4 font-bold">Mobile Number</th>
+                  <th className="py-3.5 px-4 font-bold">Registration Date</th>
+                  <th className="py-3.5 px-4 font-bold">Game Feedback</th>
+                  <th className="py-3.5 px-4 font-bold text-right">Game Count</th>
+                  <th className="py-3.5 px-4 font-bold text-center w-20">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60">
+              <tbody className={`divide-y ${isLight ? 'divide-[#E8DCCB]' : 'divide-slate-800/60'}`}>
                 {paginatedUsers.map((user) => {
                   const isRevealed = !!revealedMobiles[user.id];
                   const displayMobile = isRevealed
@@ -269,19 +304,21 @@ export const PlayersSection: React.FC<PlayersSectionProps> = ({
                   return (
                     <tr
                       key={user.id}
-                      className="hover:bg-slate-900/50 transition-colors"
+                      className={`transition-colors ${isLight ? 'hover:bg-[#F5ECE0]' : 'hover:bg-slate-900/50'}`}
                     >
-                      <td className="py-3 px-4 font-medium text-slate-100">
+                      <td className={`py-3 px-4 font-semibold ${primaryText}`}>
                         {user.name}
                       </td>
 
-                      <td className="py-3 px-4 text-slate-300 font-mono">
+                      <td className={`py-3 px-4 font-mono ${primaryText}`}>
                         <div className="inline-flex items-center gap-2">
                           <span>{displayMobile}</span>
                           <button
                             type="button"
                             onClick={() => toggleMobileReveal(user.id)}
-                            className="p-1 rounded text-slate-500 hover:text-cyan-300 transition-colors cursor-pointer"
+                            className={`p-1 rounded transition-colors cursor-pointer ${
+                              isLight ? 'text-[#806B58] hover:text-[#B36D4E]' : 'text-slate-500 hover:text-cyan-300'
+                            }`}
                             title={isRevealed ? 'Mask phone number' : 'Reveal full phone number'}
                           >
                             {isRevealed ? (
@@ -293,7 +330,7 @@ export const PlayersSection: React.FC<PlayersSectionProps> = ({
                         </div>
                       </td>
 
-                      <td className="py-3 px-4 text-slate-400">
+                      <td className={`py-3 px-4 ${labelColor}`}>
                         {new Date(user.createdAt).toLocaleString([], {
                           dateStyle: 'medium',
                           timeStyle: 'short'
@@ -302,25 +339,41 @@ export const PlayersSection: React.FC<PlayersSectionProps> = ({
 
                       <td className="py-3 px-4">
                         {user.feedback === 'Excellent' ? (
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${
+                            isLight
+                              ? 'bg-[#58734B]/15 text-[#3B5031] border-[#58734B]/30'
+                              : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                          }`}>
                             Excellent
                           </span>
                         ) : user.feedback === 'Good' ? (
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${
+                            isLight
+                              ? 'bg-[#B36D4E]/15 text-[#8B452B] border-[#B36D4E]/30'
+                              : 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'
+                          }`}>
                             Good
                           </span>
                         ) : user.feedback === 'Needs Improvement' ? (
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-500/15 text-rose-300 border border-rose-500/30">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${
+                            isLight
+                              ? 'bg-[#A74747]/15 text-[#782828] border-[#A74747]/30'
+                              : 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+                          }`}>
                             Needs Improvement
                           </span>
                         ) : (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium text-slate-400 bg-slate-800/60 border border-slate-700/50">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium border ${
+                            isLight
+                              ? 'bg-[#FAF4E8] text-[#806B58] border-[#D8C7AE]'
+                              : 'bg-slate-800/60 text-slate-400 border-slate-700/50'
+                          }`}>
                             Not Submitted
                           </span>
                         )}
                       </td>
 
-                      <td className="py-3 px-4 text-right font-mono font-bold text-slate-200">
+                      <td className={`py-3 px-4 text-right font-mono font-bold ${primaryText}`}>
                         {user.playCount || (user.hasPlayed ? 1 : 0)}
                       </td>
 
@@ -329,7 +382,11 @@ export const PlayersSection: React.FC<PlayersSectionProps> = ({
                         <button
                           type="button"
                           onClick={() => setUserToDelete(user)}
-                          className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 hover:border-rose-500/50 text-slate-400 hover:text-rose-400 transition-colors"
+                          className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${
+                            isLight
+                              ? 'bg-[#FAF4E8] border-[#D8C7AE] text-[#806B58] hover:text-[#A74747] hover:border-[#A74747]/50'
+                              : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-rose-400 hover:border-rose-500/50'
+                          }`}
                           title="Delete player registration"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -345,18 +402,22 @@ export const PlayersSection: React.FC<PlayersSectionProps> = ({
 
         {/* Pagination Footer */}
         {filteredUsers.length > 0 && (
-          <div className="p-4 border-t border-slate-800 bg-slate-950/40 flex items-center justify-between text-xs text-slate-400">
+          <div className={`p-4 border-t flex items-center justify-between text-xs ${
+            isLight
+              ? 'border-[#D8C7AE] bg-[#F3E9DA] text-[#806B58]'
+              : 'border-slate-800 bg-slate-950/40 text-slate-400'
+          }`}>
             <div>
               Showing{' '}
-              <span className="font-semibold text-slate-200">
+              <span className={`font-bold ${primaryText}`}>
                 {(currentPage - 1) * pageSize + 1}
               </span>{' '}
               to{' '}
-              <span className="font-semibold text-slate-200">
+              <span className={`font-bold ${primaryText}`}>
                 {Math.min(currentPage * pageSize, filteredUsers.length)}
               </span>{' '}
               of{' '}
-              <span className="font-semibold text-slate-200">
+              <span className={`font-bold ${primaryText}`}>
                 {filteredUsers.length}
               </span>{' '}
               players
@@ -366,20 +427,28 @@ export const PlayersSection: React.FC<PlayersSectionProps> = ({
               <button
                 disabled={currentPage <= 1}
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 hover:border-cyan-500/30 text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                className={`p-1.5 rounded-lg border transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                  isLight
+                    ? 'bg-[#FAF4E8] border-[#D8C7AE] text-[#493426] hover:border-[#B36D4E]'
+                    : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-cyan-500/30'
+                }`}
                 aria-label="Previous page"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
 
-              <span className="px-2 font-mono text-slate-300">
+              <span className={`px-2 font-mono font-bold ${primaryText}`}>
                 {currentPage} / {totalPages}
               </span>
 
               <button
                 disabled={currentPage >= totalPages}
                 onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 hover:border-cyan-500/30 text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                className={`p-1.5 rounded-lg border transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                  isLight
+                    ? 'bg-[#FAF4E8] border-[#D8C7AE] text-[#493426] hover:border-[#B36D4E]'
+                    : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-cyan-500/30'
+                }`}
                 aria-label="Next page"
               >
                 <ChevronRight className="w-4 h-4" />
@@ -391,30 +460,42 @@ export const PlayersSection: React.FC<PlayersSectionProps> = ({
 
       {/* Confirmation Modal: Delete Single Player */}
       {userToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="bg-[#0F1B2E] border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className={`rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 border ${
+            isLight
+              ? 'bg-[#FBF5EA] border-[#D8C7AE]'
+              : 'bg-[#0F1B2E] border-slate-800'
+          }`}>
             <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400 shrink-0">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${
+                isLight
+                  ? 'bg-[#A74747]/15 border-[#A74747]/30 text-[#A74747]'
+                  : 'bg-rose-500/15 border-rose-500/30 text-rose-400'
+              }`}>
                 <Trash2 className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-slate-100">
+                <h3 className={`text-base font-bold ${primaryText}`}>
                   Delete Player Registration
                 </h3>
-                <p className="text-xs text-slate-400 mt-1">
+                <p className={`text-xs mt-1 ${labelColor}`}>
                   Are you sure you want to delete this player? Active game codes for this player will also be removed.
                 </p>
               </div>
             </div>
 
-            <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 text-xs space-y-1.5">
+            <div className={`p-3.5 rounded-xl border text-xs space-y-1.5 ${
+              isLight ? 'bg-[#FAF4E8] border-[#D8C7AE]' : 'bg-slate-900/80 border-slate-800'
+            }`}>
               <div className="flex items-center justify-between">
-                <span className="text-slate-400">Player Name:</span>
-                <span className="font-bold text-slate-100">{userToDelete.name}</span>
+                <span className={labelColor}>Player Name:</span>
+                <span className={`font-bold ${primaryText}`}>{userToDelete.name}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-slate-400">Mobile Number:</span>
-                <span className="font-mono text-cyan-300">{userToDelete.mobileNumber}</span>
+                <span className={labelColor}>Mobile Number:</span>
+                <span className={`font-mono font-bold ${isLight ? 'text-[#B36D4E]' : 'text-cyan-300'}`}>
+                  {userToDelete.mobileNumber}
+                </span>
               </div>
             </div>
 
@@ -423,7 +504,11 @@ export const PlayersSection: React.FC<PlayersSectionProps> = ({
                 type="button"
                 onClick={() => setUserToDelete(null)}
                 disabled={isDeletingSingle}
-                className="px-4 py-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 text-xs font-semibold transition-colors disabled:opacity-50"
+                className={`px-4 py-2 rounded-xl text-xs font-semibold transition-colors cursor-pointer border ${
+                  isLight
+                    ? 'bg-[#FAF4E8] border-[#D8C7AE] text-[#493426] hover:bg-[#F3E9DA]'
+                    : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'
+                }`}
               >
                 Cancel
               </button>
@@ -431,7 +516,11 @@ export const PlayersSection: React.FC<PlayersSectionProps> = ({
                 type="button"
                 onClick={handleConfirmDeleteSingle}
                 disabled={isDeletingSingle}
-                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-[0_0_15px_rgba(244,63,94,0.3)] transition-all disabled:opacity-50"
+                className={`px-4 py-2 rounded-xl text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  isLight
+                    ? 'bg-[#A74747] hover:bg-[#8D3838] shadow-[0_2px_12px_rgba(167,71,71,0.25)]'
+                    : 'bg-rose-600 hover:bg-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.3)]'
+                }`}
               >
                 {isDeletingSingle ? (
                   <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -447,24 +536,36 @@ export const PlayersSection: React.FC<PlayersSectionProps> = ({
 
       {/* Confirmation Modal: Delete ALL Players */}
       {showDeleteAllModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="bg-[#0F1B2E] border border-rose-500/40 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className={`rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 border ${
+            isLight
+              ? 'bg-[#FBF5EA] border-[#A74747]/40'
+              : 'bg-[#0F1B2E] border-rose-500/40'
+          }`}>
             <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 shrink-0">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${
+                isLight
+                  ? 'bg-[#A74747]/15 border-[#A74747]/30 text-[#A74747]'
+                  : 'bg-rose-500/20 border-rose-500/40 text-rose-400'
+              }`}>
                 <AlertTriangle className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-rose-200">
+                <h3 className={`text-base font-bold ${isLight ? 'text-[#782828]' : 'text-rose-200'}`}>
                   Delete All Player Registrations?
                 </h3>
-                <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                  This will permanently delete <strong className="text-slate-200">all {users.length} player registrations</strong> and their associated active game codes. Game session telemetry logs will be preserved.
+                <p className={`text-xs mt-1 leading-relaxed ${labelColor}`}>
+                  This will permanently delete <strong className={primaryText}>all {users.length} player registrations</strong> and their associated active game codes. Game session telemetry logs will be preserved.
                 </p>
               </div>
             </div>
 
-            <div className="p-3.5 rounded-xl bg-rose-950/30 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+            <div className={`p-3.5 rounded-xl border text-xs flex items-center gap-2 ${
+              isLight
+                ? 'bg-[#A74747]/10 border-[#A74747]/30 text-[#782828]'
+                : 'bg-rose-950/30 border-rose-500/30 text-rose-300'
+            }`}>
+              <AlertTriangle className={`w-4 h-4 shrink-0 ${isLight ? 'text-[#A74747]' : 'text-rose-400'}`} />
               <span>This action is irreversible and cannot be undone.</span>
             </div>
 
@@ -473,7 +574,11 @@ export const PlayersSection: React.FC<PlayersSectionProps> = ({
                 type="button"
                 onClick={() => setShowDeleteAllModal(false)}
                 disabled={isDeletingAll}
-                className="px-4 py-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 text-xs font-semibold transition-colors disabled:opacity-50"
+                className={`px-4 py-2 rounded-xl text-xs font-semibold transition-colors cursor-pointer border ${
+                  isLight
+                    ? 'bg-[#FAF4E8] border-[#D8C7AE] text-[#493426] hover:bg-[#F3E9DA]'
+                    : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'
+                }`}
               >
                 Cancel
               </button>
@@ -481,7 +586,11 @@ export const PlayersSection: React.FC<PlayersSectionProps> = ({
                 type="button"
                 onClick={handleConfirmDeleteAll}
                 disabled={isDeletingAll}
-                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-[0_0_20px_rgba(244,63,94,0.4)] transition-all disabled:opacity-50"
+                className={`px-4 py-2 rounded-xl text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  isLight
+                    ? 'bg-[#A74747] hover:bg-[#8D3838] shadow-[0_2px_15px_rgba(167,71,71,0.3)]'
+                    : 'bg-rose-600 hover:bg-rose-500 shadow-[0_0_20px_rgba(244,63,94,0.4)]'
+                }`}
               >
                 {isDeletingAll ? (
                   <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />

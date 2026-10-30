@@ -6,6 +6,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { SystemSettings, AssetRecord } from '../../types/backend';
 import { adminApi } from '../../services/api';
+import { useAdminTheme } from '../AdminThemeContext';
 import {
   Image as ImageIcon,
   Upload,
@@ -29,6 +30,15 @@ export const WallpapersSection: React.FC<WallpapersSectionProps> = ({
   settings,
   onSettingsUpdated
 }) => {
+  const { isLight } = useAdminTheme();
+
+  const cardBg = isLight
+    ? 'bg-[#FBF5EA] border-[#D8C7AE] text-[#493426] shadow-[0_2px_8px_rgba(73,52,38,0.05)]'
+    : 'bg-[#0F1B2E]/90 border-slate-800 text-slate-100 shadow-sm';
+  const cardSubBg = isLight ? 'bg-[#FAF4E8] border-[#D8C7AE]' : 'bg-slate-900/60 border-slate-800';
+  const primaryText = isLight ? 'text-[#493426]' : 'text-slate-100';
+  const secondaryText = isLight ? 'text-[#806B58]' : 'text-slate-400';
+
   const [wallpapers, setWallpapers] = useState<AssetRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
@@ -149,28 +159,36 @@ export const WallpapersSection: React.FC<WallpapersSectionProps> = ({
     <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto">
       {/* Storage Provider Status Notice */}
       <div className={`p-4 rounded-2xl border text-xs flex items-start justify-between gap-4 ${
-        isProductionReady
-          ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-200'
-          : 'bg-cyan-500/10 border-cyan-500/30 text-cyan-200'
+        isLight
+          ? 'bg-[#FAF4E8] border-[#D8C7AE] text-[#493426]'
+          : isProductionReady
+            ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-200'
+            : 'bg-cyan-500/10 border-cyan-500/30 text-cyan-200'
       }`}>
         <div className="flex items-start gap-3">
           {isProductionReady ? (
-            <Cloud className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+            <Cloud className={`w-5 h-5 shrink-0 mt-0.5 ${isLight ? 'text-[#58734B]' : 'text-emerald-400'}`} />
           ) : (
-            <Server className="w-5 h-5 text-cyan-400 shrink-0 mt-0.5" />
+            <Server className={`w-5 h-5 shrink-0 mt-0.5 ${isLight ? 'text-[#B36D4E]' : 'text-cyan-400'}`} />
           )}
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <h3 className="font-semibold text-sm text-slate-100">
+              <h3 className={`font-semibold text-sm ${primaryText}`}>
                 Storage Provider: {storageProvider === 'gcs' ? 'Google Cloud Storage' : 'Local Storage Adapter'}
               </h3>
-              <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-                isProductionReady ? 'bg-emerald-500/20 text-emerald-300' : 'bg-cyan-500/20 text-cyan-300'
+              <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
+                isLight
+                  ? isProductionReady
+                    ? 'bg-[#58734B]/10 text-[#58734B] border-[#58734B]/30'
+                    : 'bg-[#B36D4E]/10 text-[#B36D4E] border-[#B36D4E]/30'
+                  : isProductionReady
+                    ? 'bg-emerald-500/20 text-emerald-300 border-transparent'
+                    : 'bg-cyan-500/20 text-cyan-300 border-transparent'
               }`}>
                 {isProductionReady ? 'PRODUCTION DURABLE' : 'LOCAL DEV / STAGING'}
               </span>
             </div>
-            <p className="leading-relaxed opacity-90 text-slate-300">
+            <p className={`leading-relaxed ${secondaryText}`}>
               {isProductionReady
                 ? 'Binary assets are durably stored in Google Cloud Storage and persisted independently of Cloud Run container recycles.'
                 : setupHelp || 'Files are stored on the local container filesystem. For production durability on Cloud Run, set the GCS_BUCKET_NAME environment variable.'}
@@ -180,10 +198,14 @@ export const WallpapersSection: React.FC<WallpapersSectionProps> = ({
 
         <button
           onClick={loadWallpapers}
-          className="p-1.5 rounded-lg bg-slate-900 border border-slate-700 hover:border-cyan-500/40 text-slate-300 cursor-pointer"
+          className={`p-1.5 rounded-lg border cursor-pointer transition-colors ${
+            isLight
+              ? 'bg-[#F1E8D9] border-[#D8C7AE] text-[#493426] hover:border-[#B36D4E]'
+              : 'bg-slate-900 border-slate-700 hover:border-cyan-500/40 text-slate-300'
+          }`}
           title="Refresh wallpapers"
         >
-          <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-cyan-400' : ''}`} />
+          <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''} ${isLight ? 'text-[#B36D4E]' : 'text-cyan-400'}`} />
         </button>
       </div>
 
@@ -204,12 +226,12 @@ export const WallpapersSection: React.FC<WallpapersSectionProps> = ({
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Active Wallpaper Preview */}
-        <div className="bg-[#0F1B2E]/90 border border-slate-800 rounded-2xl p-5 sm:p-6 flex flex-col justify-between shadow-sm">
+        <div className={`border rounded-2xl p-5 sm:p-6 flex flex-col justify-between shadow-sm ${cardBg}`}>
           <div>
-            <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-800">
+            <div className={`flex items-center justify-between mb-4 pb-3 border-b ${isLight ? 'border-[#D8C7AE]' : 'border-slate-800'}`}>
               <div className="flex items-center gap-2">
-                <ImageIcon className="w-5 h-5 text-cyan-400" />
-                <h2 className="text-base font-bold text-slate-100">
+                <ImageIcon className={`w-5 h-5 ${isLight ? 'text-[#B36D4E]' : 'text-cyan-400'}`} />
+                <h2 className={`text-base font-bold ${primaryText}`}>
                   Active Kiosk Wallpaper
                 </h2>
               </div>
@@ -217,7 +239,9 @@ export const WallpapersSection: React.FC<WallpapersSectionProps> = ({
                 <button
                   type="button"
                   onClick={handleClearActive}
-                  className="text-[11px] text-slate-400 hover:text-cyan-300 transition-colors cursor-pointer"
+                  className={`text-[11px] transition-colors cursor-pointer ${
+                    isLight ? 'text-[#B36D4E] hover:text-[#8F4C30]' : 'text-slate-400 hover:text-cyan-300'
+                  }`}
                 >
                   Reset to Default
                 </button>
@@ -225,7 +249,9 @@ export const WallpapersSection: React.FC<WallpapersSectionProps> = ({
             </div>
 
             {/* Visual Preview */}
-            <div className="rounded-xl border border-slate-800 bg-slate-950/80 overflow-hidden relative aspect-video flex items-center justify-center shadow-inner">
+            <div className={`rounded-xl border overflow-hidden relative aspect-video flex items-center justify-center shadow-inner ${
+              isLight ? 'border-[#D8C7AE] bg-[#090D1A]' : 'border-slate-800 bg-slate-950/80'
+            }`}>
               {currentWallpaperUrl ? (
                 <img
                   src={currentWallpaperUrl}
@@ -234,60 +260,62 @@ export const WallpapersSection: React.FC<WallpapersSectionProps> = ({
                 />
               ) : (
                 <div className="text-center p-6 flex flex-col items-center">
-                  <div className="w-12 h-12 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center mb-3">
-                    <Sparkles className="w-6 h-6 text-cyan-400" />
+                  <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-3 border ${
+                    isLight ? 'bg-[#FAF4E8] border-[#D8C7AE]' : 'bg-cyan-500/10 border-cyan-500/20'
+                  }`}>
+                    <Sparkles className={`w-6 h-6 ${isLight ? 'text-[#B36D4E]' : 'text-cyan-400'}`} />
                   </div>
-                  <h4 className="text-sm font-semibold text-slate-200 mb-1">
+                  <h4 className={`text-sm font-semibold mb-1 ${primaryText}`}>
                     Standard Procedural Festive Background
                   </h4>
-                  <p className="text-[11px] text-slate-400 max-w-sm">
+                  <p className={`text-[11px] max-w-sm ${secondaryText}`}>
                     Interactive dark background with sparkle particles, diya lamp glow, and motion reactive bursts.
                   </p>
                 </div>
               )}
             </div>
 
-            <div className="mt-4 p-3 rounded-xl bg-slate-900/60 border border-slate-800 text-xs">
-              <span className="text-[10px] text-slate-500 uppercase tracking-wider block font-semibold mb-1">
+            <div className={`mt-4 p-3 rounded-xl border text-xs ${cardSubBg}`}>
+              <span className={`text-[10px] uppercase tracking-wider block font-semibold mb-1 ${secondaryText}`}>
                 Active Wallpaper Source:
               </span>
-              <span className="font-mono text-slate-300 break-all text-[11px]">
+              <span className={`font-mono break-all text-[11px] ${primaryText}`}>
                 {currentWallpaperUrl || '(Procedural Canvas Default)'}
               </span>
             </div>
           </div>
 
-          <div className="mt-4 text-[11px] text-slate-500">
+          <div className={`mt-4 text-[11px] ${secondaryText}`}>
             Kiosk displays this background behind motion-tracking gameplay and attract screens.
           </div>
         </div>
 
         {/* Upload New Wallpaper */}
-        <div className="bg-[#0F1B2E]/90 border border-slate-800 rounded-2xl p-5 sm:p-6 flex flex-col justify-between shadow-sm">
+        <div className={`border rounded-2xl p-5 sm:p-6 flex flex-col justify-between shadow-sm ${cardBg}`}>
           <div>
-            <div className="flex items-center gap-2 mb-4 pb-3 border-b border-slate-800">
-              <Upload className="w-5 h-5 text-cyan-400" />
-              <h2 className="text-base font-bold text-slate-100">
+            <div className={`flex items-center gap-2 mb-4 pb-3 border-b ${isLight ? 'border-[#D8C7AE]' : 'border-slate-800'}`}>
+              <Upload className={`w-5 h-5 ${isLight ? 'text-[#B36D4E]' : 'text-cyan-400'}`} />
+              <h2 className={`text-base font-bold ${primaryText}`}>
                 Upload Kiosk Wallpaper
               </h2>
             </div>
 
-            <p className="text-xs text-slate-300 leading-relaxed mb-4">
+            <p className={`text-xs leading-relaxed mb-4 ${secondaryText}`}>
               Upload 1080p or 4K wallpaper images optimized for 65" horizontal displays. Files are validated for magic byte signatures and stored in persistent object storage.
             </p>
 
-            <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-2 mb-5 text-[11px] text-slate-400">
+            <div className={`p-4 rounded-xl border space-y-2 mb-5 text-[11px] ${cardSubBg}`}>
               <div className="flex items-center justify-between">
-                <span>Allowed Formats:</span>
-                <span className="font-mono text-slate-200 font-semibold">JPEG, PNG, WebP</span>
+                <span className={secondaryText}>Allowed Formats:</span>
+                <span className={`font-mono font-semibold ${primaryText}`}>JPEG, PNG, WebP</span>
               </div>
               <div className="flex items-center justify-between">
-                <span>Maximum File Size:</span>
-                <span className="font-mono text-slate-200 font-semibold">15 MB</span>
+                <span className={secondaryText}>Maximum File Size:</span>
+                <span className={`font-mono font-semibold ${primaryText}`}>15 MB</span>
               </div>
               <div className="flex items-center justify-between">
-                <span>Recommended Aspect:</span>
-                <span className="font-mono text-slate-200 font-semibold">16:9 (1920×1080 or 3840×2160)</span>
+                <span className={secondaryText}>Recommended Aspect:</span>
+                <span className={`font-mono font-semibold ${primaryText}`}>16:9 (1920×1080 or 3840×2160)</span>
               </div>
             </div>
 
@@ -304,33 +332,37 @@ export const WallpapersSection: React.FC<WallpapersSectionProps> = ({
               type="button"
               disabled={isUploading}
               onClick={() => fileInputRef.current?.click()}
-              className="w-full py-4 px-4 rounded-xl border-2 border-dashed border-cyan-500/30 hover:border-cyan-400 hover:bg-cyan-500/5 text-cyan-200 text-xs font-semibold flex flex-col items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+              className={`w-full py-4 px-4 rounded-xl border-2 border-dashed text-xs font-semibold flex flex-col items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 ${
+                isLight
+                  ? 'border-[#D8C7AE] hover:border-[#B36D4E] bg-[#FAF4E8] hover:bg-[#F1E8D9] text-[#76513D]'
+                  : 'border-cyan-500/30 hover:border-cyan-400 hover:bg-cyan-500/5 text-cyan-200'
+              }`}
             >
-              <Upload className="w-6 h-6 text-cyan-400" />
+              <Upload className={`w-6 h-6 ${isLight ? 'text-[#B36D4E]' : 'text-cyan-400'}`} />
               <span>{isUploading ? 'Validating and Uploading...' : 'Click to Select & Upload Wallpaper File'}</span>
-              <span className="text-[10px] text-slate-500">Files are checked for valid image headers</span>
+              <span className={`text-[10px] ${secondaryText}`}>Files are checked for valid image headers</span>
             </button>
           </div>
 
-          <div className="mt-4 text-[11px] text-slate-500 text-center">
+          <div className={`mt-4 text-[11px] text-center ${secondaryText}`}>
             Uploaded wallpapers will appear in the wallpaper library below.
           </div>
         </div>
       </div>
 
       {/* Uploaded Wallpaper Library */}
-      <div className="bg-[#0F1B2E]/90 border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xl">
-        <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-800">
+      <div className={`border rounded-2xl p-5 sm:p-6 shadow-xl ${cardBg}`}>
+        <div className={`flex items-center justify-between mb-4 pb-3 border-b ${isLight ? 'border-[#D8C7AE]' : 'border-slate-800'}`}>
           <div>
-            <h3 className="text-sm font-bold text-slate-100 tracking-wide">
+            <h3 className={`text-sm font-bold tracking-wide ${primaryText}`}>
               Persistent Wallpaper Library ({wallpapers.length})
             </h3>
-            <p className="text-[11px] text-slate-400">Manage uploaded backgrounds stored on object storage</p>
+            <p className={`text-[11px] ${secondaryText}`}>Manage uploaded backgrounds stored on object storage</p>
           </div>
         </div>
 
         {wallpapers.length === 0 ? (
-          <div className="p-8 text-center text-slate-500 text-xs">
+          <div className={`p-8 text-center text-xs ${secondaryText}`}>
             No custom wallpapers uploaded yet. Upload an image above to populate the gallery.
           </div>
         ) : (
@@ -341,10 +373,14 @@ export const WallpapersSection: React.FC<WallpapersSectionProps> = ({
               return (
                 <div
                   key={asset.id}
-                  className={`rounded-xl border overflow-hidden flex flex-col justify-between bg-slate-900/80 transition-all ${
-                    isActive
-                      ? 'border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.2)]'
-                      : 'border-slate-800 hover:border-cyan-500/30'
+                  className={`rounded-xl border overflow-hidden flex flex-col justify-between transition-all ${
+                    isLight
+                      ? isActive
+                        ? 'bg-[#FAF4E8] border-[#B36D4E] shadow-[0_0_12px_rgba(179,109,78,0.25)]'
+                        : 'bg-[#FAF4E8] border-[#D8C7AE] hover:border-[#B36D4E]'
+                      : isActive
+                        ? 'bg-slate-900/80 border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.2)]'
+                        : 'bg-slate-900/80 border-slate-800 hover:border-cyan-500/30'
                   }`}
                 >
                   <div className="aspect-video relative bg-slate-950 overflow-hidden">
@@ -354,7 +390,9 @@ export const WallpapersSection: React.FC<WallpapersSectionProps> = ({
                       className="w-full h-full object-cover"
                     />
                     {isActive && (
-                      <div className="absolute top-2 right-2 px-2 py-0.5 rounded bg-cyan-500 text-slate-950 font-bold text-[10px] flex items-center gap-1 shadow">
+                      <div className={`absolute top-2 right-2 px-2 py-0.5 rounded font-bold text-[10px] flex items-center gap-1 shadow ${
+                        isLight ? 'bg-[#76513D] text-[#FDF9F3]' : 'bg-cyan-500 text-slate-950'
+                      }`}>
                         <Check className="w-3 h-3" />
                         <span>ACTIVE</span>
                       </div>
@@ -363,26 +401,32 @@ export const WallpapersSection: React.FC<WallpapersSectionProps> = ({
 
                   <div className="p-3 flex-1 flex flex-col justify-between">
                     <div>
-                      <h4 className="text-xs font-semibold text-slate-200 truncate">
+                      <h4 className={`text-xs font-semibold truncate ${primaryText}`}>
                         {asset.displayName || asset.originalFilename}
                       </h4>
-                      <div className="text-[10px] text-slate-400 mt-1 flex items-center gap-1.5 font-mono">
+                      <div className={`text-[10px] mt-1 flex items-center gap-1.5 font-mono ${secondaryText}`}>
                         <span>{(asset.fileSize / (1024 * 1024)).toFixed(2)} MB</span>
                         <span>·</span>
                         <span>{new Date(asset.createdAt).toLocaleDateString()}</span>
                       </div>
                     </div>
 
-                    <div className="mt-3 pt-2 border-t border-slate-800 flex items-center justify-between gap-2">
+                    <div className={`mt-3 pt-2 border-t flex items-center justify-between gap-2 ${
+                      isLight ? 'border-[#D8C7AE]/60' : 'border-slate-800'
+                    }`}>
                       {isActive ? (
-                        <span className="text-[11px] text-cyan-300 font-semibold">
+                        <span className={`text-[11px] font-semibold ${isLight ? 'text-[#58734B]' : 'text-cyan-300'}`}>
                           Currently Active
                         </span>
                       ) : (
                         <button
                           type="button"
                           onClick={() => handleSetActive(asset)}
-                          className="px-2.5 py-1 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200 border border-cyan-500/40 text-[11px] font-medium cursor-pointer transition-colors"
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-medium cursor-pointer transition-colors border ${
+                            isLight
+                              ? 'bg-[#FAF4E8] hover:bg-[#F1E8D9] text-[#76513D] border-[#D8C7AE] hover:border-[#B36D4E]'
+                              : 'bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200 border border-cyan-500/40'
+                          }`}
                         >
                           Set as Active
                         </button>
@@ -392,7 +436,11 @@ export const WallpapersSection: React.FC<WallpapersSectionProps> = ({
                         type="button"
                         onClick={() => handleDelete(asset)}
                         disabled={isActive}
-                        className="p-1 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-950/30 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                        className={`p-1 rounded-lg transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed ${
+                          isLight
+                            ? 'text-[#806B58] hover:text-[#A74747] hover:bg-[#A74747]/10'
+                            : 'text-slate-500 hover:text-rose-400 hover:bg-rose-950/30'
+                        }`}
                         title={isActive ? 'Cannot delete active wallpaper' : 'Delete asset'}
                       >
                         <Trash2 className="w-3.5 h-3.5" />

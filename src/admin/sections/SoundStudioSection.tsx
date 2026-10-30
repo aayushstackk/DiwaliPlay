@@ -38,8 +38,10 @@ import {
   Flame,
   Check
 } from 'lucide-react';
+import { useAdminTheme } from '../AdminThemeContext';
 
 export const SoundStudioSection: React.FC = () => {
+  const { isLight } = useAdminTheme();
   // Audio Engine instance for previewing tracks and combo sounds
   const previewEngineRef = useRef<SoundEngine | null>(null);
   if (!previewEngineRef.current) {
@@ -304,8 +306,8 @@ export const SoundStudioSection: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="p-8 flex flex-col items-center justify-center min-h-[350px] text-slate-400">
-        <div className="w-8 h-8 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin mb-3 shadow-[0_0_15px_rgba(6,182,212,0.4)]" />
+      <div className={`p-8 flex flex-col items-center justify-center min-h-[350px] ${isLight ? 'text-[#806B58]' : 'text-slate-400'}`}>
+        <div className={`w-8 h-8 border-2 ${isLight ? 'border-[#76513D]' : 'border-cyan-400'} border-t-transparent rounded-full animate-spin mb-3`} />
         <p className="text-xs">Loading Sound Studio settings...</p>
       </div>
     );
@@ -313,6 +315,13 @@ export const SoundStudioSection: React.FC = () => {
 
   const currentBgm = audioSettings.bgm;
   const currentCombo = audioSettings.combo || { soundId: 'combo_ding', volume: 90 };
+
+  // Theme-aware styles
+  const cardBg = isLight
+    ? 'bg-[#FBF5EA] border-[#D8C7AE] shadow-[0_2px_8px_rgba(73,52,38,0.05)]'
+    : 'bg-[#0F1B2E]/90 border-slate-800 shadow-xl';
+  const labelColor = isLight ? 'text-[#806B58]' : 'text-slate-400';
+  const primaryText = isLight ? 'text-[#493426]' : 'text-slate-100';
 
   return (
     <div className="p-4 sm:p-6 space-y-6 max-w-6xl mx-auto">
@@ -326,17 +335,23 @@ export const SoundStudioSection: React.FC = () => {
       />
 
       {/* Top Header & Save Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+      <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b ${
+        isLight ? 'border-[#D8C7AE]' : 'border-slate-800'
+      }`}>
         <div>
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+            <div className={`w-8 h-8 rounded-xl flex items-center justify-center border ${
+              isLight
+                ? 'bg-[#76513D]/10 border-[#76513D]/30 text-[#76513D]'
+                : 'bg-cyan-500/15 border-cyan-500/30 text-cyan-400'
+            }`}>
               <Music className="w-4 h-4" />
             </div>
-            <h1 className="text-xl font-bold text-slate-100 tracking-wide">
+            <h1 className={`text-xl font-bold tracking-wide ${primaryText}`}>
               Sound Studio
             </h1>
           </div>
-          <p className="text-xs text-slate-400 mt-1">
+          <p className={`text-xs mt-1 ${labelColor}`}>
             Configure gameplay Background Music and Combo celebration sounds
           </p>
         </div>
@@ -345,9 +360,13 @@ export const SoundStudioSection: React.FC = () => {
           <button
             type="button"
             onClick={handleResetDefaults}
-            className="px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-slate-100 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+            className={`px-3.5 py-2 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+              isLight
+                ? 'bg-[#FAF4E8] border-[#D8C7AE] text-[#493426] hover:bg-[#F3E9DA]'
+                : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700 hover:text-slate-100'
+            }`}
           >
-            <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
+            <RotateCcw className={`w-3.5 h-3.5 ${labelColor}`} />
             <span>Reset Defaults</span>
           </button>
 
@@ -355,10 +374,16 @@ export const SoundStudioSection: React.FC = () => {
             type="button"
             onClick={handleSaveSettings}
             disabled={isSaving}
-            className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-400 hover:to-teal-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-[0_0_20px_rgba(6,182,212,0.3)] transition-all disabled:opacity-50"
+            className={`px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 ${
+              isLight
+                ? 'bg-[#76513D] hover:bg-[#5D3F2E] text-[#FDF9F3] shadow-[0_2px_10px_rgba(118,81,61,0.25)]'
+                : 'bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-400 hover:to-teal-400 text-slate-950 shadow-[0_0_20px_rgba(6,182,212,0.3)]'
+            }`}
           >
             {isSaving ? (
-              <div className="w-3.5 h-3.5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+              <div className={`w-3.5 h-3.5 border-2 border-t-transparent rounded-full animate-spin ${
+                isLight ? 'border-white' : 'border-slate-950'
+              }`} />
             ) : (
               <Save className="w-3.5 h-3.5" />
             )}
@@ -372,41 +397,55 @@ export const SoundStudioSection: React.FC = () => {
         <div
           className={`p-3.5 rounded-xl border text-xs flex items-center gap-2.5 transition-all ${
             feedback.type === 'success'
-              ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-200'
-              : 'bg-rose-950/60 border-rose-500/40 text-rose-200'
+              ? isLight
+                ? 'bg-[#58734B]/15 border-[#58734B]/40 text-[#3B5031]'
+                : 'bg-emerald-950/60 border-emerald-500/40 text-emerald-200'
+              : isLight
+                ? 'bg-[#A74747]/15 border-[#A74747]/40 text-[#782828]'
+                : 'bg-rose-950/60 border-rose-500/40 text-rose-200'
           }`}
         >
           {feedback.type === 'success' ? (
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <CheckCircle2 className={`w-4 h-4 shrink-0 ${isLight ? 'text-[#58734B]' : 'text-emerald-400'}`} />
           ) : (
-            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            <AlertCircle className={`w-4 h-4 shrink-0 ${isLight ? 'text-[#A74747]' : 'text-rose-400'}`} />
           )}
-          <span>{feedback.message}</span>
+          <span className="font-semibold">{feedback.message}</span>
         </div>
       )}
 
       {/* Two-Feature Tab Navigation */}
-      <div className="flex items-center gap-2 p-1.5 bg-slate-950/80 border border-slate-800 rounded-2xl w-fit">
+      <div className={`flex items-center gap-2 p-1.5 border rounded-2xl w-fit ${
+        isLight ? 'bg-[#FAF4E8] border-[#D8C7AE]' : 'bg-slate-950/80 border-slate-800'
+      }`}>
         <button
           type="button"
           onClick={() => {
             stopCurrentPreview();
             setActiveTab('bgm');
           }}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
             activeTab === 'bgm'
-              ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-[0_0_15px_rgba(6,182,212,0.25)]'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
+              ? isLight
+                ? 'bg-[#76513D] text-[#FDF9F3] shadow-sm'
+                : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-[0_0_15px_rgba(6,182,212,0.25)]'
+              : isLight
+                ? 'text-[#806B58] hover:text-[#493426] hover:bg-[#EFE4D2]'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
           }`}
         >
           <Music className="w-3.5 h-3.5" />
           <span>Background Music</span>
           {currentBgm.isMuted ? (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 font-mono">
+            <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
+              isLight ? 'bg-[#A74747]/15 text-[#782828]' : 'bg-rose-500/20 text-rose-300'
+            }`}>
               MUTED
             </span>
           ) : (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-mono">
+            <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
+              isLight ? (activeTab === 'bgm' ? 'bg-[#FDF9F3]/20 text-[#FDF9F3]' : 'bg-[#58734B]/15 text-[#3B5031]') : 'bg-cyan-500/20 text-cyan-300'
+            }`}>
               ACTIVE
             </span>
           )}
@@ -418,15 +457,23 @@ export const SoundStudioSection: React.FC = () => {
             stopCurrentPreview();
             setActiveTab('combo');
           }}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
             activeTab === 'combo'
-              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 shadow-[0_0_15px_rgba(244,63,94,0.25)]'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
+              ? isLight
+                ? 'bg-[#B36D4E] text-white shadow-sm'
+                : 'bg-rose-500/20 text-rose-300 border border-rose-500/40 shadow-[0_0_15px_rgba(244,63,94,0.25)]'
+              : isLight
+                ? 'text-[#806B58] hover:text-[#493426] hover:bg-[#EFE4D2]'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
           }`}
         >
           <Flame className="w-3.5 h-3.5" />
           <span>Combo Sounds</span>
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 font-mono">
+          <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
+            isLight
+              ? (activeTab === 'combo' ? 'bg-white/20 text-white' : 'bg-[#B36D4E]/15 text-[#8B452B]')
+              : 'bg-rose-500/20 text-rose-300'
+          }`}>
             {currentCombo.soundId === 'custom' ? 'CUSTOM' : 'BUILT-IN'}
           </span>
         </button>
@@ -438,14 +485,14 @@ export const SoundStudioSection: React.FC = () => {
       {activeTab === 'bgm' && (
         <div className="space-y-6">
           {/* BGM Global Controls Card */}
-          <div className="bg-[#0F1B2E]/90 border border-slate-800 rounded-2xl p-5 shadow-xl">
+          <div className={`${cardBg} border rounded-2xl p-5`}>
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
-                  <Sliders className="w-4 h-4 text-cyan-400" />
+                <h3 className={`text-sm font-bold flex items-center gap-2 ${primaryText}`}>
+                  <Sliders className={`w-4 h-4 ${isLight ? 'text-[#76513D]' : 'text-cyan-400'}`} />
                   <span>BGM Playback & Master Volume</span>
                 </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
+                <p className={`text-xs mt-0.5 ${labelColor}`}>
                   Controls the looping soundtrack played during 35-second gameplay in both Touch & Camera modes.
                 </p>
               </div>
@@ -460,28 +507,34 @@ export const SoundStudioSection: React.FC = () => {
                       bgm: { ...prev.bgm, isMuted: !prev.bgm.isMuted }
                     }))
                   }
-                  className={`px-3.5 py-2 rounded-xl border text-xs font-semibold flex items-center gap-2 transition-all ${
+                  className={`px-3.5 py-2 rounded-xl border text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer ${
                     currentBgm.isMuted
-                      ? 'bg-rose-500/15 border-rose-500/40 text-rose-300'
-                      : 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300'
+                      ? isLight
+                        ? 'bg-[#A74747]/15 border-[#A74747]/40 text-[#782828]'
+                        : 'bg-rose-500/15 border-rose-500/40 text-rose-300'
+                      : isLight
+                        ? 'bg-[#58734B]/15 border-[#58734B]/40 text-[#3B5031]'
+                        : 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300'
                   }`}
                 >
                   {currentBgm.isMuted ? (
                     <>
-                      <VolumeX className="w-4 h-4 text-rose-400" />
+                      <VolumeX className={`w-4 h-4 ${isLight ? 'text-[#A74747]' : 'text-rose-400'}`} />
                       <span>BGM Muted</span>
                     </>
                   ) : (
                     <>
-                      <Volume2 className="w-4 h-4 text-cyan-400" />
+                      <Volume2 className={`w-4 h-4 ${isLight ? 'text-[#58734B]' : 'text-cyan-400'}`} />
                       <span>BGM Unmuted</span>
                     </>
                   )}
                 </button>
 
                 {/* Volume Slider */}
-                <div className="flex items-center gap-2.5 bg-slate-900/80 px-3.5 py-2 rounded-xl border border-slate-800">
-                  <span className="text-[11px] font-mono text-slate-400">Volume:</span>
+                <div className={`flex items-center gap-2.5 px-3.5 py-2 rounded-xl border ${
+                  isLight ? 'bg-[#FAF4E8] border-[#D8C7AE]' : 'bg-slate-900/80 border-slate-800'
+                }`}>
+                  <span className={`text-[11px] font-mono ${labelColor}`}>Volume:</span>
                   <input
                     type="range"
                     min="0"
@@ -495,9 +548,13 @@ export const SoundStudioSection: React.FC = () => {
                         bgm: { ...prev.bgm, volume: vol }
                       }));
                     }}
-                    className="w-24 sm:w-32 accent-cyan-400 cursor-pointer disabled:opacity-40"
+                    className={`w-24 sm:w-32 cursor-pointer disabled:opacity-40 ${
+                      isLight ? 'accent-[#76513D]' : 'accent-cyan-400'
+                    }`}
                   />
-                  <span className="font-mono text-xs font-bold text-cyan-300 w-9 text-right">
+                  <span className={`font-mono text-xs font-bold w-9 text-right ${
+                    isLight ? 'text-[#76513D]' : 'text-cyan-300'
+                  }`}>
                     {currentBgm.isMuted ? '0%' : `${currentBgm.volume}%`}
                   </span>
                 </div>
@@ -509,16 +566,20 @@ export const SoundStudioSection: React.FC = () => {
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
-                  <Radio className="w-4 h-4 text-cyan-400" />
+                <h3 className={`text-sm font-bold flex items-center gap-2 ${primaryText}`}>
+                  <Radio className={`w-4 h-4 ${isLight ? 'text-[#76513D]' : 'text-cyan-400'}`} />
                   <span>5 Predefined Background Music Tracks</span>
                 </h3>
-                <p className="text-xs text-slate-400">
+                <p className={`text-xs ${labelColor}`}>
                   Curated procedural celebratory soundtracks generated with Web Audio API. Zero external lag.
                 </p>
               </div>
 
-              <span className="text-[11px] font-mono text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-2.5 py-1 rounded-lg">
+              <span className={`text-[11px] font-mono px-2.5 py-1 rounded-lg border ${
+                isLight
+                  ? 'bg-[#76513D]/10 text-[#76513D] border-[#76513D]/30'
+                  : 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20'
+              }`}>
                 5 Tracks Available
               </span>
             </div>
@@ -534,35 +595,49 @@ export const SoundStudioSection: React.FC = () => {
                     key={track.id}
                     className={`p-4 rounded-2xl border transition-all flex flex-col justify-between ${
                       isActive
-                        ? 'bg-cyan-500/10 border-cyan-400 shadow-[0_0_20px_rgba(6,182,212,0.2)]'
-                        : 'bg-[#0F1B2E]/90 border-slate-800 hover:border-slate-700'
+                        ? isLight
+                          ? 'bg-[#FAF4E8] border-2 border-[#76513D] shadow-md'
+                          : 'bg-cyan-500/10 border-cyan-400 shadow-[0_0_20px_rgba(6,182,212,0.2)]'
+                        : isLight
+                          ? 'bg-[#FBF5EA] border-[#D8C7AE] hover:border-[#76513D]/50'
+                          : 'bg-[#0F1B2E]/90 border-slate-800 hover:border-slate-700'
                     }`}
                   >
                     <div>
                       <div className="flex items-start justify-between gap-2 mb-2">
-                        <div className="font-bold text-slate-100 text-sm">
+                        <div className={`font-bold text-sm ${primaryText}`}>
                           {track.name}
                         </div>
                         {track.badge && (
-                          <span className="text-[9.5px] font-mono px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                          <span className={`text-[9.5px] font-mono px-2 py-0.5 rounded border ${
+                            isLight
+                              ? 'bg-[#76513D]/10 text-[#76513D] border-[#76513D]/30 font-semibold'
+                              : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                          }`}>
                             {track.badge}
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-slate-400 leading-relaxed mb-4">
+                      <p className={`text-xs leading-relaxed mb-4 ${labelColor}`}>
                         {track.description}
                       </p>
                     </div>
 
-                    <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between gap-2">
+                    <div className={`pt-3 border-t flex items-center justify-between gap-2 ${
+                      isLight ? 'border-[#E8DCCB]' : 'border-slate-800/80'
+                    }`}>
                       {/* Preview Button */}
                       <button
                         type="button"
                         onClick={() => handlePreview(track.id, null, currentBgm.volume)}
-                        className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                        className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
                           isPlaying
-                            ? 'bg-amber-500/20 border-amber-500/50 text-amber-300 animate-pulse'
-                            : 'bg-slate-900 border-slate-700 hover:border-slate-600 text-slate-300'
+                            ? isLight
+                              ? 'bg-[#B36D4E]/20 border-[#B36D4E] text-[#8B452B] animate-pulse'
+                              : 'bg-amber-500/20 border-amber-500/50 text-amber-300 animate-pulse'
+                            : isLight
+                              ? 'bg-[#FAF4E8] border-[#D8C7AE] hover:border-[#76513D] text-[#493426]'
+                              : 'bg-slate-900 border-slate-700 hover:border-slate-600 text-slate-300'
                         }`}
                       >
                         {isPlaying ? (
@@ -593,10 +668,14 @@ export const SoundStudioSection: React.FC = () => {
                             }
                           }));
                         }}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                           isActive
-                            ? 'bg-cyan-500 text-slate-950 shadow-[0_0_12px_rgba(6,182,212,0.4)]'
-                            : 'bg-slate-900 border border-slate-800 hover:border-cyan-500/40 text-slate-300 hover:text-cyan-300'
+                            ? isLight
+                              ? 'bg-[#76513D] text-[#FDF9F3] shadow-sm'
+                              : 'bg-cyan-500 text-slate-950 shadow-[0_0_12px_rgba(6,182,212,0.4)]'
+                            : isLight
+                              ? 'bg-[#FAF4E8] border border-[#D8C7AE] hover:border-[#76513D] text-[#493426]'
+                              : 'bg-slate-900 border border-slate-800 hover:border-cyan-500/40 text-slate-300 hover:text-cyan-300'
                         }`}
                       >
                         {isActive ? (
@@ -616,14 +695,14 @@ export const SoundStudioSection: React.FC = () => {
           </div>
 
           {/* Upload Custom Audio Track Section */}
-          <div className="bg-[#0F1B2E]/90 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+          <div className={`${cardBg} border rounded-2xl p-5 space-y-4`}>
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
-                <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
-                  <Upload className="w-4 h-4 text-cyan-400" />
+                <h3 className={`text-sm font-bold flex items-center gap-2 ${primaryText}`}>
+                  <Upload className={`w-4 h-4 ${isLight ? 'text-[#76513D]' : 'text-cyan-400'}`} />
                   <span>Custom Uploaded Audio Tracks</span>
                 </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
+                <p className={`text-xs mt-0.5 ${labelColor}`}>
                   Upload your own MP3, WAV, or OGG music files to use as gameplay background music.
                 </p>
               </div>
@@ -632,10 +711,16 @@ export const SoundStudioSection: React.FC = () => {
                 type="button"
                 onClick={() => handleTriggerUpload('bgm')}
                 disabled={isUploading}
-                className="px-3.5 py-2 rounded-xl bg-cyan-500/15 border border-cyan-500/40 hover:bg-cyan-500/25 text-cyan-300 text-xs font-bold flex items-center gap-1.5 transition-all self-start sm:self-auto disabled:opacity-50"
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all self-start sm:self-auto cursor-pointer disabled:opacity-50 ${
+                  isLight
+                    ? 'bg-[#76513D] hover:bg-[#5D3F2E] text-[#FDF9F3] shadow-sm'
+                    : 'bg-cyan-500/15 border border-cyan-500/40 hover:bg-cyan-500/25 text-cyan-300'
+                }`}
               >
                 {isUploading ? (
-                  <div className="w-3.5 h-3.5 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+                  <div className={`w-3.5 h-3.5 border-2 border-t-transparent rounded-full animate-spin ${
+                    isLight ? 'border-white' : 'border-cyan-400'
+                  }`} />
                 ) : (
                   <Plus className="w-3.5 h-3.5" />
                 )}
@@ -644,7 +729,9 @@ export const SoundStudioSection: React.FC = () => {
             </div>
 
             {audioAssets.length === 0 ? (
-              <div className="p-8 rounded-xl border border-dashed border-slate-800 text-center text-xs text-slate-500">
+              <div className={`p-8 rounded-xl border border-dashed text-center text-xs ${
+                isLight ? 'border-[#D8C7AE] text-[#806B58] bg-[#FAF4E8]' : 'border-slate-800 text-slate-500'
+              }`}>
                 No custom audio files uploaded yet. Click "Upload Audio File" to add your local music tracks.
               </div>
             ) : (
@@ -658,17 +745,21 @@ export const SoundStudioSection: React.FC = () => {
                       key={asset.id}
                       className={`p-3.5 rounded-xl border flex items-center justify-between gap-3 ${
                         isActive
-                          ? 'bg-cyan-500/10 border-cyan-400'
-                          : 'bg-slate-900/60 border-slate-800'
+                          ? isLight
+                            ? 'bg-[#FAF4E8] border-2 border-[#76513D]'
+                            : 'bg-cyan-500/10 border-cyan-400'
+                          : isLight
+                            ? 'bg-[#FAF4E8] border-[#D8C7AE]'
+                            : 'bg-slate-900/60 border-slate-800'
                       }`}
                     >
                       <div className="flex items-center gap-2.5 truncate">
-                        <FileAudio className="w-4 h-4 text-cyan-400 shrink-0" />
+                        <FileAudio className={`w-4 h-4 shrink-0 ${isLight ? 'text-[#76513D]' : 'text-cyan-400'}`} />
                         <div className="truncate">
-                          <div className="font-semibold text-xs text-slate-200 truncate">
+                          <div className={`font-semibold text-xs truncate ${primaryText}`}>
                             {asset.displayName || asset.originalFilename}
                           </div>
-                          <div className="text-[10px] text-slate-500 font-mono">
+                          <div className={`text-[10px] font-mono ${labelColor}`}>
                             {asset.fileSize ? `${Math.round(asset.fileSize / 1024)} KB` : 'Custom Audio'}
                           </div>
                         </div>
@@ -679,11 +770,15 @@ export const SoundStudioSection: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => handlePreview(asset.id, asset.url, currentBgm.volume)}
-                          className="p-1.5 rounded-lg bg-slate-900 border border-slate-700 hover:border-slate-600 text-slate-300 text-xs"
+                          className={`p-1.5 rounded-lg border text-xs cursor-pointer ${
+                            isLight
+                              ? 'bg-[#FBF5EA] border-[#D8C7AE] text-[#493426] hover:border-[#76513D]'
+                              : 'bg-slate-900 border-slate-700 hover:border-slate-600 text-slate-300'
+                          }`}
                           title="Preview"
                         >
                           {isPlaying ? (
-                            <Square className="w-3.5 h-3.5 text-amber-400 fill-current" />
+                            <Square className="w-3.5 h-3.5 text-amber-500 fill-current" />
                           ) : (
                             <Play className="w-3.5 h-3.5 fill-current" />
                           )}
@@ -704,10 +799,14 @@ export const SoundStudioSection: React.FC = () => {
                               }
                             }));
                           }}
-                          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-all ${
+                          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
                             isActive
-                              ? 'bg-cyan-500 text-slate-950'
-                              : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
+                              ? isLight
+                                ? 'bg-[#76513D] text-[#FDF9F3]'
+                                : 'bg-cyan-500 text-slate-950'
+                              : isLight
+                                ? 'bg-[#FBF5EA] border border-[#D8C7AE] text-[#493426] hover:bg-[#F3E9DA]'
+                                : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
                           }`}
                         >
                           {isActive ? (
@@ -724,7 +823,11 @@ export const SoundStudioSection: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => handleDeleteAsset(asset)}
-                          className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 hover:border-rose-500/40 text-slate-400 hover:text-rose-400 text-xs"
+                          className={`p-1.5 rounded-lg border text-xs cursor-pointer ${
+                            isLight
+                              ? 'bg-[#FBF5EA] border-[#D8C7AE] text-[#806B58] hover:text-[#A74747] hover:border-[#A74747]'
+                              : 'bg-slate-900 border-slate-800 hover:border-rose-500/40 text-slate-400 hover:text-rose-400'
+                          }`}
                           title="Delete audio file"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -745,20 +848,22 @@ export const SoundStudioSection: React.FC = () => {
       {activeTab === 'combo' && (
         <div className="space-y-6">
           {/* Combo Global Controls Card */}
-          <div className="bg-[#0F1B2E]/90 border border-slate-800 rounded-2xl p-5 shadow-xl">
+          <div className={`${cardBg} border rounded-2xl p-5`}>
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
-                  <Flame className="w-4 h-4 text-rose-400" />
+                <h3 className={`text-sm font-bold flex items-center gap-2 ${primaryText}`}>
+                  <Flame className={`w-4 h-4 ${isLight ? 'text-[#B36D4E]' : 'text-rose-400'}`} />
                   <span>Combo Sound Settings</span>
                 </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
+                <p className={`text-xs mt-0.5 ${labelColor}`}>
                   Sound effect triggered whenever a player bursts 3 bombs rapidly within 1 second.
                 </p>
               </div>
 
-              <div className="flex items-center gap-2.5 bg-slate-900/80 px-3.5 py-2 rounded-xl border border-slate-800">
-                <span className="text-[11px] font-mono text-slate-400">Combo Volume:</span>
+              <div className={`flex items-center gap-2.5 px-3.5 py-2 rounded-xl border ${
+                isLight ? 'bg-[#FAF4E8] border-[#D8C7AE]' : 'bg-slate-900/80 border-slate-800'
+              }`}>
+                <span className={`text-[11px] font-mono ${labelColor}`}>Combo Volume:</span>
                 <input
                   type="range"
                   min="0"
@@ -774,9 +879,13 @@ export const SoundStudioSection: React.FC = () => {
                       }
                     }));
                   }}
-                  className="w-24 sm:w-32 accent-rose-400 cursor-pointer"
+                  className={`w-24 sm:w-32 cursor-pointer ${
+                    isLight ? 'accent-[#B36D4E]' : 'accent-rose-400'
+                  }`}
                 />
-                <span className="font-mono text-xs font-bold text-rose-300 w-9 text-right">
+                <span className={`font-mono text-xs font-bold w-9 text-right ${
+                  isLight ? 'text-[#B36D4E]' : 'text-rose-300'
+                }`}>
                   {currentCombo.volume ?? 90}%
                 </span>
               </div>
@@ -787,16 +896,20 @@ export const SoundStudioSection: React.FC = () => {
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-rose-400" />
+                <h3 className={`text-sm font-bold flex items-center gap-2 ${primaryText}`}>
+                  <Sparkles className={`w-4 h-4 ${isLight ? 'text-[#B36D4E]' : 'text-rose-400'}`} />
                   <span>Built-in Combo Sound Choices</span>
                 </h3>
-                <p className="text-xs text-slate-400">
+                <p className={`text-xs ${labelColor}`}>
                   Select which sound effect plays during high-octane 3-bomb combo achievements.
                 </p>
               </div>
 
-              <span className="text-[11px] font-mono text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2.5 py-1 rounded-lg">
+              <span className={`text-[11px] font-mono px-2.5 py-1 rounded-lg border ${
+                isLight
+                  ? 'bg-[#B36D4E]/10 text-[#8B452B] border-[#B36D4E]/30 font-semibold'
+                  : 'text-rose-400 bg-rose-500/10 border border-rose-500/20'
+              }`}>
                 5 Choices Available
               </span>
             </div>
@@ -812,35 +925,49 @@ export const SoundStudioSection: React.FC = () => {
                     key={opt.id}
                     className={`p-4 rounded-2xl border transition-all flex flex-col justify-between ${
                       isActive
-                        ? 'bg-rose-500/10 border-rose-400 shadow-[0_0_20px_rgba(244,63,94,0.2)]'
-                        : 'bg-[#0F1B2E]/90 border-slate-800 hover:border-slate-700'
+                        ? isLight
+                          ? 'bg-[#FAF4E8] border-2 border-[#B36D4E] shadow-md'
+                          : 'bg-rose-500/10 border-rose-400 shadow-[0_0_20px_rgba(244,63,94,0.2)]'
+                        : isLight
+                          ? 'bg-[#FBF5EA] border-[#D8C7AE] hover:border-[#B36D4E]/50'
+                          : 'bg-[#0F1B2E]/90 border-slate-800 hover:border-slate-700'
                     }`}
                   >
                     <div>
                       <div className="flex items-start justify-between gap-2 mb-2">
-                        <div className="font-bold text-slate-100 text-sm">
+                        <div className={`font-bold text-sm ${primaryText}`}>
                           {opt.name}
                         </div>
                         {opt.badge && (
-                          <span className="text-[9.5px] font-mono px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                          <span className={`text-[9.5px] font-mono px-2 py-0.5 rounded border ${
+                            isLight
+                              ? 'bg-[#B36D4E]/10 text-[#8B452B] border-[#B36D4E]/30 font-semibold'
+                              : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                          }`}>
                             {opt.badge}
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-slate-400 leading-relaxed mb-4">
+                      <p className={`text-xs leading-relaxed mb-4 ${labelColor}`}>
                         {opt.description}
                       </p>
                     </div>
 
-                    <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between gap-2">
+                    <div className={`pt-3 border-t flex items-center justify-between gap-2 ${
+                      isLight ? 'border-[#E8DCCB]' : 'border-slate-800/80'
+                    }`}>
                       {/* Preview Button */}
                       <button
                         type="button"
                         onClick={() => handlePreview(opt.id, null, currentCombo.volume ?? 90)}
-                        className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                        className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
                           isPlaying
-                            ? 'bg-amber-500/20 border-amber-500/50 text-amber-300 animate-pulse'
-                            : 'bg-slate-900 border-slate-700 hover:border-slate-600 text-slate-300'
+                            ? isLight
+                              ? 'bg-[#B36D4E]/20 border-[#B36D4E] text-[#8B452B] animate-pulse'
+                              : 'bg-amber-500/20 border-amber-500/50 text-amber-300 animate-pulse'
+                            : isLight
+                              ? 'bg-[#FAF4E8] border-[#D8C7AE] hover:border-[#B36D4E] text-[#493426]'
+                              : 'bg-slate-900 border-slate-700 hover:border-slate-600 text-slate-300'
                         }`}
                       >
                         {isPlaying ? (
@@ -870,10 +997,14 @@ export const SoundStudioSection: React.FC = () => {
                             }
                           }));
                         }}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                           isActive
-                            ? 'bg-rose-500 text-slate-950 shadow-[0_0_12px_rgba(244,63,94,0.4)]'
-                            : 'bg-slate-900 border border-slate-800 hover:border-rose-500/40 text-slate-300 hover:text-rose-300'
+                            ? isLight
+                              ? 'bg-[#B36D4E] text-white shadow-sm'
+                              : 'bg-rose-500 text-slate-950 shadow-[0_0_12px_rgba(244,63,94,0.4)]'
+                            : isLight
+                              ? 'bg-[#FAF4E8] border border-[#D8C7AE] hover:border-[#B36D4E] text-[#493426]'
+                              : 'bg-slate-900 border border-slate-800 hover:border-rose-500/40 text-slate-300 hover:text-rose-300'
                         }`}
                       >
                         {isActive ? (
@@ -893,14 +1024,14 @@ export const SoundStudioSection: React.FC = () => {
           </div>
 
           {/* Custom Combo Sound Upload Section */}
-          <div className="bg-[#0F1B2E]/90 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+          <div className={`${cardBg} border rounded-2xl p-5 space-y-4`}>
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
-                <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
-                  <Upload className="w-4 h-4 text-rose-400" />
+                <h3 className={`text-sm font-bold flex items-center gap-2 ${primaryText}`}>
+                  <Upload className={`w-4 h-4 ${isLight ? 'text-[#B36D4E]' : 'text-rose-400'}`} />
                   <span>Custom Uploaded Combo Sound</span>
                 </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
+                <p className={`text-xs mt-0.5 ${labelColor}`}>
                   Upload a punchy custom sound effect (.wav or .mp3) to replace the combo sound.
                 </p>
               </div>
@@ -909,10 +1040,14 @@ export const SoundStudioSection: React.FC = () => {
                 type="button"
                 onClick={() => handleTriggerUpload('combo')}
                 disabled={isUploading}
-                className="px-3.5 py-2 rounded-xl bg-rose-500/15 border border-rose-500/40 hover:bg-rose-500/25 text-rose-300 text-xs font-bold flex items-center gap-1.5 transition-all self-start sm:self-auto disabled:opacity-50"
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all self-start sm:self-auto cursor-pointer disabled:opacity-50 ${
+                  isLight
+                    ? 'bg-[#B36D4E] hover:bg-[#8E5136] text-white shadow-sm'
+                    : 'bg-rose-500/15 border border-rose-500/40 hover:bg-rose-500/25 text-rose-300'
+                }`}
               >
                 {isUploading ? (
-                  <div className="w-3.5 h-3.5 border-2 border-rose-400 border-t-transparent rounded-full animate-spin" />
+                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 ) : (
                   <Plus className="w-3.5 h-3.5" />
                 )}
@@ -921,7 +1056,9 @@ export const SoundStudioSection: React.FC = () => {
             </div>
 
             {audioAssets.length === 0 ? (
-              <div className="p-8 rounded-xl border border-dashed border-slate-800 text-center text-xs text-slate-500">
+              <div className={`p-8 rounded-xl border border-dashed text-center text-xs ${
+                isLight ? 'border-[#D8C7AE] text-[#806B58] bg-[#FAF4E8]' : 'border-slate-800 text-slate-500'
+              }`}>
                 No custom audio files uploaded yet. Upload an audio file to use as a custom combo sound.
               </div>
             ) : (
@@ -935,17 +1072,21 @@ export const SoundStudioSection: React.FC = () => {
                       key={asset.id}
                       className={`p-3.5 rounded-xl border flex items-center justify-between gap-3 ${
                         isActive
-                          ? 'bg-rose-500/10 border-rose-400'
-                          : 'bg-slate-900/60 border-slate-800'
+                          ? isLight
+                            ? 'bg-[#FAF4E8] border-2 border-[#B36D4E]'
+                            : 'bg-rose-500/10 border-rose-400'
+                          : isLight
+                            ? 'bg-[#FAF4E8] border-[#D8C7AE]'
+                            : 'bg-slate-900/60 border-slate-800'
                       }`}
                     >
                       <div className="flex items-center gap-2.5 truncate">
-                        <FileAudio className="w-4 h-4 text-rose-400 shrink-0" />
+                        <FileAudio className={`w-4 h-4 shrink-0 ${isLight ? 'text-[#B36D4E]' : 'text-rose-400'}`} />
                         <div className="truncate">
-                          <div className="font-semibold text-xs text-slate-200 truncate">
+                          <div className={`font-semibold text-xs truncate ${primaryText}`}>
                             {asset.displayName || asset.originalFilename}
                           </div>
-                          <div className="text-[10px] text-slate-500 font-mono">
+                          <div className={`text-[10px] font-mono ${labelColor}`}>
                             {asset.fileSize ? `${Math.round(asset.fileSize / 1024)} KB` : 'Custom Audio'}
                           </div>
                         </div>
@@ -956,11 +1097,15 @@ export const SoundStudioSection: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => handlePreview(asset.id, asset.url, currentCombo.volume ?? 90)}
-                          className="p-1.5 rounded-lg bg-slate-900 border border-slate-700 hover:border-slate-600 text-slate-300 text-xs"
+                          className={`p-1.5 rounded-lg border text-xs cursor-pointer ${
+                            isLight
+                              ? 'bg-[#FBF5EA] border-[#D8C7AE] text-[#493426] hover:border-[#B36D4E]'
+                              : 'bg-slate-900 border-slate-700 hover:border-slate-600 text-slate-300'
+                          }`}
                           title="Preview"
                         >
                           {isPlaying ? (
-                            <Square className="w-3.5 h-3.5 text-amber-400 fill-current" />
+                            <Square className="w-3.5 h-3.5 text-amber-500 fill-current" />
                           ) : (
                             <Play className="w-3.5 h-3.5 fill-current" />
                           )}
@@ -980,10 +1125,14 @@ export const SoundStudioSection: React.FC = () => {
                               }
                             }));
                           }}
-                          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-all ${
+                          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
                             isActive
-                              ? 'bg-rose-500 text-slate-950'
-                              : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
+                              ? isLight
+                                ? 'bg-[#B36D4E] text-white'
+                                : 'bg-rose-500 text-slate-950'
+                              : isLight
+                                ? 'bg-[#FBF5EA] border border-[#D8C7AE] text-[#493426] hover:bg-[#F3E9DA]'
+                                : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
                           }`}
                         >
                           {isActive ? (
@@ -1000,7 +1149,11 @@ export const SoundStudioSection: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => handleDeleteAsset(asset)}
-                          className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 hover:border-rose-500/40 text-slate-400 hover:text-rose-400 text-xs"
+                          className={`p-1.5 rounded-lg border text-xs cursor-pointer ${
+                            isLight
+                              ? 'bg-[#FBF5EA] border-[#D8C7AE] text-[#806B58] hover:text-[#A74747] hover:border-[#A74747]'
+                              : 'bg-slate-900 border-slate-800 hover:border-rose-500/40 text-slate-400 hover:text-rose-400'
+                          }`}
                           title="Delete audio file"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
