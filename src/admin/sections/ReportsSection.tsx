@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import ExcelJS from 'exceljs';
 import { AdminOverviewStats, GameSession, User } from '../../types/backend';
 import {
@@ -38,8 +38,8 @@ function escapeCsvValue(val: string | number | boolean | null | undefined): stri
   return `"${str.replace(/"/g, '""')}"`;
 }
 
-// Helper to trigger browser download for text/blob content
-function downloadBlob(content: string, mimeType: string, filename: string) {
+// Helper to trigger browser download for text/blob/binary content
+function downloadBlob(content: BlobPart, mimeType: string, filename: string) {
   const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -52,12 +52,116 @@ function downloadBlob(content: string, mimeType: string, filename: string) {
 }
 
 // Generate descriptive filename with export format and current date
-function getExportFilename(format: 'csv' | 'json' | 'pdf'): string {
+function getExportFilename(format: 'csv' | 'json' | 'pdf' | 'xlsx'): string {
   const d = new Date();
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `diwaliplay-report-${year}-${month}-${day}.${format}`;
+}
+
+interface ProcessedPhoto {
+  base64: string;
+  extension: 'jpeg' | 'png';
+  width: number;
+  height: number;
+}
+
+// Safely download and process image bytes for Excel embedding with dimensions for proportional scaling
+async function loadAndProcessImage(url: string): Promise<ProcessedPhoto | null> {
+  if (!url || typeof url !== 'string' || !url.trim()) return null;
+
+  try {
+    // 1. Try Image element + Canvas approach to extract natural dimensions and compressed JPEG base64
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+
+    const loaded = await new Promise<boolean>((resolve) => {
+      img.onload = () => resolve(true);
+      img.onerror = () => resolve(false);
+      setTimeout(() => resolve(false), 6000);
+      img.src = url;
+    });
+
+    if (loaded && img.naturalWidth > 0 && img.naturalHeight > 0) {
+      try {
+        const canvas = document.createElement('canvas');
+        // Cap maximum dimensions to 400px so Excel files stay lightweight & fast to open
+        const maxDim = 400;
+        let targetW = img.naturalWidth;
+        let targetH = img.naturalHeight;
+        if (targetW > maxDim || targetH > maxDim) {
+          if (targetW > targetH) {
+            targetH = Math.round((targetH * maxDim) / targetW);
+            targetW = maxDim;
+          } else {
+            targetW = Math.round((targetW * maxDim) / targetH);
+            targetH = maxDim;
+          }
+        }
+        canvas.width = targetW;
+        canvas.height = targetH;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, targetW, targetH);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+          const base64 = dataUrl.split(',')[1];
+          if (base64) {
+            return {
+              base64,
+              extension: 'jpeg',
+              width: targetW,
+              height: targetH
+            };
+          }
+        }
+      } catch (canvasErr) {
+        console.warn('Canvas export warning (likely CORS on remote image):', canvasErr);
+      }
+    }
+
+    // 2. Direct Data URL fallback
+    if (url.startsWith('data:image/')) {
+      const match = url.match(/^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/);
+      if (match) {
+        let ext = match[1].toLowerCase();
+        if (ext === 'jpg') ext = 'jpeg';
+        if (ext === 'jpeg' || ext === 'png') {
+          return {
+            base64: match[2],
+            extension: ext as 'jpeg' | 'png',
+            width: 400,
+            height: 300
+          };
+        }
+      }
+    }
+
+    // 3. Fallback: fetch blob/arrayBuffer from asset endpoint
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    const ext: 'jpeg' | 'png' = blob.type.includes('png') ? 'png' : 'jpeg';
+
+    const buffer = await blob.arrayBuffer();
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const base64 = btoa(binary);
+
+    return {
+      base64,
+      extension: ext,
+      width: 400,
+      height: 300
+    };
+  } catch (err) {
+    console.warn('Failed to load player photo for Excel export:', err);
+    return null;
+  }
 }
 
 export const ReportsSection: React.FC<ReportsSectionProps> = ({
@@ -66,16 +170,41 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
   users,
   isLoading
 }) => {
-  const [exportingFormat, setExportingFormat] = useState<'pdf' | 'csv' | 'json' | null>(null);
+  const [exportingFormat, setExportingFormat] = useState<'pdf' | 'csv' | 'json' | 'xlsx' | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [exportSuccess, setExportSuccess] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [selectedPhoto, setSelectedPhoto] = useState<{ url: string; playerName: string } | null>(null);
 
-  // Map users for fast lookup
+  // Close photo lightbox with Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSelectedPhoto(null);
+      }
+    };
+    if (selectedPhoto) {
+      window.addEventListener('keydown', handleKeyDown);
+    }
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [selectedPhoto]);
+
+  // Map users for fast lookup by ID
   const userMap = useMemo(() => {
     const map = new Map<string, string>();
     users.forEach((u) => {
       if (u.id) map.set(u.id, u.name);
+    });
+    return map;
+  }, [users]);
+
+  // Full user object map for mobile numbers and additional metadata
+  const userObjMap = useMemo(() => {
+    const map = new Map<string, User>();
+    users.forEach((u) => {
+      if (u.id) map.set(u.id, u);
     });
     return map;
   }, [users]);
@@ -102,16 +231,18 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       list = list.filter((s) => {
-        const playerName = userMap.get(s.userId) || 'Player';
+        const user = userObjMap.get(s.userId);
+        const playerName = user?.name || userMap.get(s.userId) || (s as any).userName || 'Player';
+        const mobileNumber = user?.mobileNumber || (s as any).mobileNumber || '';
         return (
           playerName.toLowerCase().includes(q) ||
-          (s.id && s.id.toLowerCase().includes(q)) ||
-          (s.userId && s.userId.toLowerCase().includes(q))
+          mobileNumber.toLowerCase().includes(q) ||
+          (s.id && s.id.toLowerCase().includes(q))
         );
       });
     }
     return list;
-  }, [completedSessions, searchQuery, userMap]);
+  }, [completedSessions, searchQuery, userMap, userObjMap]);
 
   // Handle Export PDF (Unchanged high-res printable commemorative document)
   const handleExportPDF = () => {
@@ -357,7 +488,7 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
     }
   };
 
-  // Handle Export CSV
+  // Handle Export CSV (Strict 6 columns in exact order, RFC 4180 with UTF-8 BOM)
   const handleExportCSV = () => {
     setExportError(null);
     setExportSuccess(null);
@@ -370,25 +501,28 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
         return;
       }
 
+      // Exactly these 6 columns in this exact order:
+      // 1. Player Name
+      // 2. Mobile Number
+      // 3. Date
+      // 4. Time
+      // 5. Total Score
+      // 6. Photo
       const headers = [
-        'Rank',
         'Player Name',
-        'Score',
-        'Crackers Burst',
-        'Combos',
-        'Target Score',
-        'Target Achieved',
+        'Mobile Number',
         'Date',
         'Time',
-        'Timestamp',
-        'Session ID',
-        'Photo URL'
+        'Total Score',
+        'Photo'
       ];
 
       const csvRows = [headers.map(escapeCsvValue).join(',')];
 
-      exportData.forEach((s, idx) => {
-        const playerName = userMap.get(s.userId) || 'Player';
+      exportData.forEach((s) => {
+        const user = userObjMap.get(s.userId);
+        const playerName = user?.name || userMap.get(s.userId) || (s as any).userName || 'Player';
+        const mobileNumber = user?.mobileNumber || (s as any).mobileNumber || '';
         const startDate = s.startTime ? new Date(s.startTime) : new Date();
         const dateStr = startDate.toLocaleDateString([], {
           month: 'short',
@@ -400,32 +534,30 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
           minute: '2-digit'
         });
 
-        const targetAchievedStr =
-          typeof s.targetAchieved === 'boolean'
-            ? s.targetAchieved
-              ? 'Yes'
-              : 'No'
-            : '';
+        // Do NOT put Base64 image data inside the CSV. Put a valid, accessible photo URL in the Photo column instead.
+        let photoUrl = '';
+        if (s.photoUrl) {
+          if (s.photoUrl.startsWith('http://') || s.photoUrl.startsWith('https://')) {
+            photoUrl = s.photoUrl;
+          } else {
+            const origin = typeof window !== 'undefined' ? window.location.origin : '';
+            photoUrl = `${origin}/api/session/${s.id}/photo`;
+          }
+        }
 
         const row = [
-          idx + 1,
           playerName,
-          s.score ?? 0,
-          s.crackerCount ?? 0,
-          s.combosCount ?? s.comboCount ?? 0,
-          s.targetScore ?? '',
-          targetAchievedStr,
+          mobileNumber,
           dateStr,
           timeStr,
-          s.startTime || startDate.toISOString(),
-          s.id || '',
-          s.photoUrl || ''
+          s.score ?? 0,
+          photoUrl
         ];
 
         csvRows.push(row.map(escapeCsvValue).join(','));
       });
 
-      // Prepend UTF-8 BOM so Microsoft Excel cleanly renders characters and accents
+      // Prepend UTF-8 BOM so Microsoft Excel cleanly renders characters and mobile numbers
       const csvContent = '\uFEFF' + csvRows.join('\r\n');
       const filename = getExportFilename('csv');
       downloadBlob(csvContent, 'text/csv;charset=utf-8;', filename);
@@ -435,6 +567,203 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
     } catch (err: any) {
       console.error('CSV export error:', err);
       setExportError(err?.message || 'Failed to generate and download CSV report.');
+    } finally {
+      setExportingFormat(null);
+    }
+  };
+
+  // Handle Export Excel (.xlsx) with actual embedded player photos in cells
+  const handleExportExcel = async () => {
+    setExportError(null);
+    setExportSuccess(null);
+    setExportingFormat('xlsx');
+
+    try {
+      if (exportData.length === 0) {
+        setExportError('No completed session records available to export.');
+        setExportingFormat(null);
+        return;
+      }
+
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'DiwaliPlay Admin';
+      workbook.lastModifiedBy = 'DiwaliPlay Admin';
+      workbook.created = new Date();
+      workbook.modified = new Date();
+
+      const worksheet = workbook.addWorksheet('Player Sessions', {
+        views: [{ showGridLines: true }]
+      });
+
+      // Exactly the same 6 columns:
+      // Player Name, Mobile Number, Date, Time, Total Score, Photo
+      worksheet.columns = [
+        { header: 'Player Name', key: 'playerName', width: 24 },
+        { header: 'Mobile Number', key: 'mobileNumber', width: 18 },
+        { header: 'Date', key: 'playedDate', width: 16 },
+        { header: 'Time', key: 'playedTime', width: 14 },
+        { header: 'Total Score', key: 'totalScore', width: 16 },
+        { header: 'Photo', key: 'playerPhoto', width: 26 },
+      ];
+
+      // Header styling - Dark navy theme
+      const headerRow = worksheet.getRow(1);
+      headerRow.height = 32;
+      headerRow.eachCell((cell) => {
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF0F172A' }
+        };
+        cell.font = {
+          name: 'Segoe UI',
+          color: { argb: 'FFFFFFFF' },
+          bold: true,
+          size: 11
+        };
+        cell.alignment = {
+          vertical: 'middle',
+          horizontal: 'center',
+          wrapText: true
+        };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FF334155' } },
+          bottom: { style: 'medium', color: { argb: 'FF0284C7' } },
+          left: { style: 'thin', color: { argb: 'FF334155' } },
+          right: { style: 'thin', color: { argb: 'FF334155' } }
+        };
+      });
+
+      // Populate data rows and embed photos
+      for (let i = 0; i < exportData.length; i++) {
+        const s = exportData[i];
+        const rowIndex = i + 2; // Row 1 is header
+        const user = userObjMap.get(s.userId);
+        const playerName = user?.name || userMap.get(s.userId) || 'Player';
+        const mobileNumber = user?.mobileNumber || '';
+        const startDate = s.startTime ? new Date(s.startTime) : new Date();
+        const playedDate = startDate.toLocaleDateString([], {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric'
+        });
+        const playedTime = startDate.toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+        const totalScore = s.score ?? 0;
+
+        const row = worksheet.addRow({
+          playerName,
+          mobileNumber: mobileNumber || '',
+          playedDate,
+          playedTime,
+          totalScore,
+          playerPhoto: ''
+        });
+
+        // Set row height so embedded photo preview is clearly visible
+        row.height = 80;
+
+        // Cell typography & alignment
+        const nameCell = row.getCell('playerName');
+        nameCell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+        nameCell.font = { name: 'Segoe UI', size: 11, bold: true, color: { argb: 'FF0F172A' } };
+
+        const mobileCell = row.getCell('mobileNumber');
+        mobileCell.alignment = { vertical: 'middle', horizontal: 'center' };
+        mobileCell.font = { name: 'Segoe UI', size: 10, color: { argb: 'FF334155' } };
+        mobileCell.numFmt = '@';
+
+        const dateCell = row.getCell('playedDate');
+        dateCell.alignment = { vertical: 'middle', horizontal: 'center' };
+        dateCell.font = { name: 'Segoe UI', size: 10, color: { argb: 'FF475569' } };
+
+        const timeCell = row.getCell('playedTime');
+        timeCell.alignment = { vertical: 'middle', horizontal: 'center' };
+        timeCell.font = { name: 'Segoe UI', size: 10, color: { argb: 'FF475569' } };
+
+        const scoreCell = row.getCell('totalScore');
+        scoreCell.alignment = { vertical: 'middle', horizontal: 'right' };
+        scoreCell.font = { name: 'Segoe UI', size: 12, bold: true, color: { argb: 'FF0284C7' } };
+        scoreCell.numFmt = '#,##0';
+
+        const photoCell = row.getCell('playerPhoto');
+        photoCell.alignment = { vertical: 'middle', horizontal: 'center' };
+
+        const isOdd = i % 2 === 1;
+        row.eachCell({ includeEmpty: true }, (cell) => {
+          if (isOdd) {
+            cell.fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: 'FFF8FAFC' }
+            };
+          }
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+          };
+        });
+
+        // Actual player photo embedding into cell
+        if (s.photoUrl) {
+          try {
+            const photo = await loadAndProcessImage(s.photoUrl);
+            if (photo && photo.base64) {
+              const imageId = workbook.addImage({
+                base64: photo.base64,
+                extension: photo.extension
+              });
+
+              // Proportional fit calculation without distortion
+              const maxW = 140; // px
+              const maxH = 92;  // px
+              const scale = Math.min(maxW / photo.width, maxH / photo.height);
+              const dispWidth = Math.max(20, Math.round(photo.width * scale));
+              const dispHeight = Math.max(20, Math.round(photo.height * scale));
+
+              // Approximate dimensions of cell F{rowIndex} in px (col width 26 ≈ 195px, row height 80pt ≈ 106px)
+              const colWidthPx = 195;
+              const rowHeightPx = 106;
+              const colOffset = Math.max(0, (colWidthPx - dispWidth) / (2 * colWidthPx));
+              const rowOffset = Math.max(0, (rowHeightPx - dispHeight) / (2 * rowHeightPx));
+
+              worksheet.addImage(imageId, {
+                tl: { col: 5 + colOffset, row: (rowIndex - 1) + rowOffset },
+                ext: { width: dispWidth, height: dispHeight },
+                editAs: 'oneCell'
+              });
+            } else {
+              photoCell.value = 'No Photo';
+              photoCell.font = { name: 'Segoe UI', italic: true, size: 10, color: { argb: 'FF94A3B8' } };
+            }
+          } catch (imgErr) {
+            console.warn(`[Excel Export] Could not embed photo for row ${rowIndex}:`, imgErr);
+            photoCell.value = 'No Photo';
+            photoCell.font = { name: 'Segoe UI', italic: true, size: 10, color: { argb: 'FF94A3B8' } };
+          }
+        } else {
+          photoCell.value = 'No Photo';
+          photoCell.font = { name: 'Segoe UI', italic: true, size: 10, color: { argb: 'FF94A3B8' } };
+        }
+      }
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const filename = getExportFilename('xlsx');
+      downloadBlob(
+        buffer,
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        filename
+      );
+
+      setExportSuccess(`Excel report with embedded player photos successfully downloaded as ${filename}`);
+      setTimeout(() => setExportSuccess(null), 5000);
+    } catch (err: any) {
+      console.error('Excel export error:', err);
+      setExportError(err?.message || 'Failed to generate and download Excel (.xlsx) report.');
     } finally {
       setExportingFormat(null);
     }
@@ -455,7 +784,9 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
 
       const generatedAt = new Date().toISOString();
       const records = exportData.map((s, idx) => {
-        const playerName = userMap.get(s.userId) || 'Player';
+        const user = userObjMap.get(s.userId);
+        const playerName = user?.name || userMap.get(s.userId) || 'Player';
+        const mobileNumber = user?.mobileNumber || '';
         const startDate = s.startTime ? new Date(s.startTime) : new Date();
         const dateStr = startDate.toLocaleDateString([], {
           month: 'short',
@@ -471,6 +802,7 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
           rank: idx + 1,
           sessionId: s.id || '',
           playerName,
+          mobileNumber: mobileNumber || null,
           score: s.score ?? 0,
           crackersBurst: s.crackerCount ?? 0,
           combos: s.combosCount ?? s.comboCount ?? 0,
@@ -512,27 +844,35 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
     }
   };
 
-  // Table rows: show search matches when searching, otherwise leaderboard top 10
+  // Exactly 6 columns mapped for the Reports Table:
+  // 1. Player Name, 2. Mobile Number, 3. Date, 4. Time, 5. Total Score, 6. Photo
   const displayedTableRows = useMemo(() => {
-    if (!searchQuery.trim()) {
-      return (stats?.leaderboard || []).map((e) => ({
-        rank: e.rank,
-        playerName: e.userName,
-        score: e.score,
-        crackerCount: e.crackerCount,
-        completedAt: e.completedAt,
-        sessionId: e.sessionId,
-      }));
-    }
-    return exportData.map((s, idx) => ({
-      rank: idx + 1,
-      playerName: userMap.get(s.userId) || 'Player',
-      score: s.score,
-      crackerCount: s.crackerCount || 0,
-      completedAt: s.endTime || s.startTime || new Date().toISOString(),
-      sessionId: s.id,
-    }));
-  }, [stats?.leaderboard, searchQuery, exportData, userMap]);
+    return exportData.map((s) => {
+      const user = userObjMap.get(s.userId);
+      const playerName = user?.name || userMap.get(s.userId) || (s as any).userName || 'Player';
+      const mobileNumber = user?.mobileNumber || (s as any).mobileNumber || '';
+      const startDate = s.startTime ? new Date(s.startTime) : new Date();
+      const dateStr = startDate.toLocaleDateString([], {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+      });
+      const timeStr = startDate.toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+
+      return {
+        id: s.id,
+        playerName,
+        mobileNumber,
+        date: dateStr,
+        time: timeStr,
+        totalScore: s.score ?? 0,
+        photoUrl: s.photoUrl || null
+      };
+    });
+  }, [exportData, userMap, userObjMap]);
 
   return (
     <div className="p-4 sm:p-6 space-y-5 max-w-7xl mx-auto">
@@ -542,46 +882,62 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
           <Info className="w-5 h-5 text-cyan-400 shrink-0 mt-0.5" />
           <div>
             <h3 className="font-semibold text-sm mb-1 text-slate-100">
-              Live Session Telemetry & Reports Export
+              Official Session Reports & Export Center
             </h3>
             <p className="text-cyan-300/80 leading-relaxed max-w-2xl">
-              Export official gameplay audit reports in PDF, CSV, and JSON formats. Includes player names, verified scores, cracker bursts, dates, times, and souvenir photos.
+              Export verified player records in CSV, Excel (.xlsx), PDF, and JSON formats. Formatted with 6 exact audit columns: Player Name, Mobile Number, Date, Time, Total Score, and Souvenir Photo.
             </p>
           </div>
         </div>
 
-        {/* 3 Download Action Buttons: PDF, CSV, JSON */}
+        {/* 4 Download Action Buttons: Excel (.xlsx), PDF, CSV, JSON */}
         <div className="flex flex-wrap items-center gap-2.5 shrink-0 self-start lg:self-auto">
-          {/* Download PDF */}
-          <button
-            type="button"
-            onClick={handleExportPDF}
-            disabled={exportingFormat !== null || isLoading}
-            className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-400 hover:to-teal-400 text-slate-950 text-xs font-bold flex items-center gap-2 shadow-[0_0_15px_rgba(6,182,212,0.3)] transition-all cursor-pointer disabled:opacity-50"
-            title="Download formatted printable PDF report"
-          >
-            {exportingFormat === 'pdf' ? (
-              <div className="w-3.5 h-3.5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <Printer className="w-4 h-4" />
-            )}
-            <span>{exportingFormat === 'pdf' ? 'Generating PDF...' : 'Download PDF'}</span>
-          </button>
-
           {/* Download CSV */}
           <button
             type="button"
             onClick={handleExportCSV}
             disabled={exportingFormat !== null || isLoading}
-            className="px-3.5 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-emerald-500/40 hover:border-emerald-400 text-emerald-300 hover:text-emerald-200 text-xs font-bold flex items-center gap-2 shadow-sm transition-all cursor-pointer disabled:opacity-50"
-            title="Download CSV spreadsheet data"
+            className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-400 hover:to-green-500 text-slate-950 text-xs font-bold flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.3)] transition-all cursor-pointer disabled:opacity-50"
+            title="Download CSV spreadsheet data with 6 standard columns"
           >
             {exportingFormat === 'csv' ? (
+              <div className="w-3.5 h-3.5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <Download className="w-4 h-4" />
+            )}
+            <span>{exportingFormat === 'csv' ? 'Generating CSV...' : 'Download CSV'}</span>
+          </button>
+
+          {/* Download Excel (.xlsx) with actual embedded player photos */}
+          <button
+            type="button"
+            onClick={handleExportExcel}
+            disabled={exportingFormat !== null || isLoading}
+            className="px-3.5 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-emerald-500/40 hover:border-emerald-400 text-emerald-300 hover:text-emerald-200 text-xs font-bold flex items-center gap-2 shadow-sm transition-all cursor-pointer disabled:opacity-50"
+            title="Download Excel (.xlsx) report with embedded player photos"
+          >
+            {exportingFormat === 'xlsx' ? (
               <div className="w-3.5 h-3.5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
             ) : (
               <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
             )}
-            <span>Download CSV</span>
+            <span>{exportingFormat === 'xlsx' ? 'Generating Excel...' : 'Download Excel (.xlsx)'}</span>
+          </button>
+
+          {/* Download PDF */}
+          <button
+            type="button"
+            onClick={handleExportPDF}
+            disabled={exportingFormat !== null || isLoading}
+            className="px-3.5 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-cyan-500/40 hover:border-cyan-400 text-cyan-300 hover:text-cyan-200 text-xs font-bold flex items-center gap-2 shadow-sm transition-all cursor-pointer disabled:opacity-50"
+            title="Download formatted printable PDF report"
+          >
+            {exportingFormat === 'pdf' ? (
+              <div className="w-3.5 h-3.5 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <Printer className="w-4 h-4 text-cyan-400" />
+            )}
+            <span>{exportingFormat === 'pdf' ? 'Generating PDF...' : 'Download PDF'}</span>
           </button>
 
           {/* Download JSON */}
@@ -597,7 +953,7 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
             ) : (
               <FileJson className="w-4 h-4 text-amber-400" />
             )}
-            <span>Download JSON</span>
+            <span>{exportingFormat === 'json' ? 'Generating JSON...' : 'Download JSON'}</span>
           </button>
         </div>
       </div>
@@ -646,7 +1002,7 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Filter records by player name or session ID..."
+            placeholder="Filter records by player name or mobile number..."
             className="w-full pl-10 pr-9 py-2 bg-slate-950/80 border border-slate-800 focus:border-cyan-500/60 rounded-xl text-xs text-slate-200 placeholder-slate-500 outline-none transition-colors"
           />
           {searchQuery && (
@@ -673,132 +1029,154 @@ export const ReportsSection: React.FC<ReportsSectionProps> = ({
         </div>
       </div>
 
-      {/* Summary KPI Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-[#0F1B2E]/90 border border-slate-800 hover:border-cyan-500/30 transition-colors rounded-2xl p-4 shadow-sm">
-          <span className="text-[11px] text-slate-400 font-medium block mb-1">
-            Overall Completion Rate
-          </span>
-          <div className="text-2xl font-black text-cyan-200 font-mono">
-            {completionRate}%
-          </div>
-          <div className="text-[10px] text-slate-500 mt-1">
-            {completedSessions.length} completed vs {abandonedSessions.length} abandoned
-          </div>
-        </div>
-
-        <div className="bg-[#0F1B2E]/90 border border-slate-800 hover:border-cyan-500/30 transition-colors rounded-2xl p-4 shadow-sm">
-          <span className="text-[11px] text-slate-400 font-medium block mb-1">
-            Total Mobile Registrations
-          </span>
-          <div className="text-2xl font-black text-slate-100 font-mono">
-            {users.length}
-          </div>
-          <div className="text-[10px] text-slate-500 mt-1">
-            {users.filter((u) => u.hasPlayed).length} participants played
-          </div>
-        </div>
-
-        <div className="bg-[#0F1B2E]/90 border border-slate-800 hover:border-rose-500/30 transition-colors rounded-2xl p-4 shadow-sm">
-          <span className="text-[11px] text-slate-400 font-medium block mb-1">
-            Avg Crackers per Round
-          </span>
-          <div className="text-2xl font-black text-rose-300 font-mono">
-            {avgCrackers}
-          </div>
-          <div className="text-[10px] text-slate-500 mt-1">
-            Total burst count: {totalCrackers.toLocaleString()}
-          </div>
-        </div>
-
-        <div className="bg-[#0F1B2E]/90 border border-slate-800 hover:border-amber-500/30 transition-colors rounded-2xl p-4 shadow-sm">
-          <span className="text-[11px] text-slate-400 font-medium block mb-1">
-            Top All-Time Score
-          </span>
-          <div className="text-2xl font-black text-amber-300 font-mono">
-            {stats?.highestScore || 0}
-          </div>
-          <div className="text-[10px] text-slate-500 mt-1">
-            Average: {stats?.averageScore || 0} pts
-          </div>
-        </div>
-      </div>
-
-      {/* Leaderboard Table Card (NO Max Velocity) */}
+      {/* Reports Table Card (Strictly 6 Columns: Player Name, Mobile Number, Date, Time, Total Score, Photo) */}
       <div className="bg-[#0F1B2E]/90 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
         <div className="p-4 sm:p-5 border-b border-cyan-500/15 bg-slate-950/60 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Trophy className="w-5 h-5 text-cyan-400" />
+          <div className="flex items-center gap-2.5">
+            <FileSpreadsheet className="w-5 h-5 text-cyan-400" />
             <h2 className="text-sm font-bold text-slate-100 tracking-wide">
-              {searchQuery ? 'Filtered Leaderboard Results' : 'Official Leaderboard Rankings'}
+              {searchQuery ? 'Filtered Player Reports' : 'Official Player Reports'}
             </h2>
           </div>
           <span className="text-xs text-slate-400 font-mono">
-            {searchQuery ? `${displayedTableRows.length} Matches` : 'Top 10 Performers'}
+            {displayedTableRows.length} {displayedTableRows.length === 1 ? 'Record' : 'Records'}
           </span>
         </div>
 
         {isLoading ? (
           <div className="p-8 text-center text-slate-400 text-xs">
-            Loading leaderboard data...
+            Loading report records...
           </div>
         ) : displayedTableRows.length === 0 ? (
           <div className="p-8 text-center text-slate-500 text-xs">
             {searchQuery
-              ? `No completed matches matching "${searchQuery}".`
-              : 'No completed matches available for ranking.'}
+              ? `No completed records matching "${searchQuery}".`
+              : 'No completed session records available.'}
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
-                <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider text-[10px]">
-                  <th className="py-3 px-4 font-semibold text-center w-16">Rank</th>
-                  <th className="py-3 px-4 font-semibold">Player Name</th>
-                  <th className="py-3 px-4 font-semibold text-right">Score</th>
-                  <th className="py-3 px-4 font-semibold text-right">Crackers Burst</th>
-                  <th className="py-3 px-4 font-semibold text-right">Date</th>
-                  <th className="py-3 px-4 font-semibold text-right">Time</th>
+                <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider text-[10px] bg-slate-950/40">
+                  <th className="py-3.5 px-4 font-bold text-left">Player Name</th>
+                  <th className="py-3.5 px-4 font-bold text-left">Mobile Number</th>
+                  <th className="py-3.5 px-4 font-bold text-left">Date</th>
+                  <th className="py-3.5 px-4 font-bold text-left">Time</th>
+                  <th className="py-3.5 px-4 font-bold text-right">Total Score</th>
+                  <th className="py-3.5 px-4 font-bold text-center w-24">Photo</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {displayedTableRows.map((entry) => {
-                  const entryDate = new Date(entry.completedAt);
-                  return (
-                    <tr key={entry.sessionId || entry.rank} className="hover:bg-slate-900/50">
-                      <td className="py-3 px-4 text-center font-mono font-bold text-cyan-400">
-                        #{entry.rank}
-                      </td>
-                      <td className="py-3 px-4 font-semibold text-slate-100">
-                        {entry.playerName}
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono font-bold text-cyan-200">
-                        {entry.score.toLocaleString()}
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono text-slate-300">
-                        {entry.crackerCount}
-                      </td>
-                      <td className="py-3 px-4 text-right text-slate-400">
-                        {entryDate.toLocaleDateString([], {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric'
-                        })}
-                      </td>
-                      <td className="py-3 px-4 text-right text-slate-400 font-mono">
-                        {entryDate.toLocaleTimeString([], {
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {displayedTableRows.map((entry) => (
+                  <tr key={entry.id} className="hover:bg-slate-900/50 transition-colors">
+                    {/* 1. Player Name */}
+                    <td className="py-3.5 px-4 font-semibold text-slate-100">
+                      {entry.playerName}
+                    </td>
+
+                    {/* 2. Mobile Number */}
+                    <td className="py-3.5 px-4 font-mono text-slate-300">
+                      {entry.mobileNumber || '—'}
+                    </td>
+
+                    {/* 3. Date */}
+                    <td className="py-3.5 px-4 text-slate-300 whitespace-nowrap">
+                      {entry.date}
+                    </td>
+
+                    {/* 4. Time */}
+                    <td className="py-3.5 px-4 text-slate-400 font-mono whitespace-nowrap">
+                      {entry.time}
+                    </td>
+
+                    {/* 5. Total Score */}
+                    <td className="py-3.5 px-4 text-right font-mono font-bold text-cyan-300 text-sm">
+                      {entry.totalScore.toLocaleString()}
+                    </td>
+
+                    {/* 6. Photo Thumbnail */}
+                    <td className="py-2.5 px-4 text-center">
+                      {entry.photoUrl ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSelectedPhoto({ url: entry.photoUrl!, playerName: entry.playerName })
+                          }
+                          className="group relative inline-block rounded-xl overflow-hidden border border-slate-700/80 hover:border-cyan-400 transition-all cursor-pointer shadow-sm hover:scale-105"
+                          title={`Click to view full photo of ${entry.playerName}`}
+                        >
+                          <img
+                            src={entry.photoUrl}
+                            alt={entry.playerName}
+                            className="w-12 h-12 object-cover"
+                            loading="lazy"
+                          />
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                            <Camera className="w-4 h-4 text-white" />
+                          </div>
+                        </button>
+                      ) : (
+                        <div className="w-12 h-12 rounded-xl bg-slate-900/80 border border-dashed border-slate-800 flex flex-col items-center justify-center text-slate-500 text-[10px] mx-auto select-none">
+                          <Camera className="w-3.5 h-3.5 mb-0.5 opacity-30" />
+                          <span>No Photo</span>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
         )}
       </div>
+
+      {/* Lightbox Modal for Photo Thumbnail Preview */}
+      {selectedPhoto && (
+        <div
+          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
+          onClick={() => setSelectedPhoto(null)}
+        >
+          <div
+            className="bg-[#0F1B2E] border border-cyan-500/40 rounded-2xl max-w-lg w-full p-4 sm:p-5 shadow-2xl relative space-y-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Camera className="w-4 h-4 text-cyan-400" />
+                <h3 className="font-bold text-sm text-slate-100">
+                  {selectedPhoto.playerName} — Souvenir Photo
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedPhoto(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+                title="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="rounded-xl overflow-hidden bg-black flex items-center justify-center max-h-[70vh]">
+              <img
+                src={selectedPhoto.url}
+                alt={selectedPhoto.playerName}
+                className="w-full h-auto max-h-[70vh] object-contain rounded-xl"
+              />
+            </div>
+
+            <div className="flex justify-end pt-1">
+              <button
+                type="button"
+                onClick={() => setSelectedPhoto(null)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl cursor-pointer transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
