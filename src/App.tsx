@@ -801,6 +801,7 @@ export default function App() {
           earnedReward={earnedReward}
           rewardsEnabled={rewardsEnabled}
           onOpenSpinWheel={() => setIsSpinWheelOpen(true)}
+          mobileNumber={currentUser?.mobileNumber || ''}
         />
       )}
 

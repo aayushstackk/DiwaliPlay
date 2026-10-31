@@ -23,6 +23,25 @@
   animation: floatFade 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+@keyframes voucherZoom {
+  0% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  75% {
+    opacity: 1;
+    transform: scale(1.03);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-voucher-zoom {
+  animation: voucherZoom 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
 @keyframes toastSlideDown {
   0% {
     opacity: 0;
