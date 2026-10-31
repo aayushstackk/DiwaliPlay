@@ -1341,52 +1341,72 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
 
                   {/* Envelope State 3: OPENED DIWALI WISH CARD */}
                   {envelopeState === 'OPENED' && (
-                    <div className="flex flex-col items-center justify-between w-full h-full text-center animate-[fadeIn_0.4s_ease-out]">
+                    <div className="flex flex-col justify-between w-full h-full text-center animate-[fadeIn_0.4s_ease-out] overflow-hidden">
                       {/* Top Header */}
-                      <div className="inline-flex items-center justify-center gap-1 sm:gap-1.5 text-[8.5px] sm:text-[9.5px] md:text-[10px] font-bold text-amber-300 uppercase tracking-wider font-['Cinzel',serif] shrink-0 leading-tight">
-                        <span className="text-[9px] sm:text-[10px]">🪔</span>
+                      <div className="inline-flex items-center justify-center gap-1.5 text-[9.5px] sm:text-[10.5px] font-bold text-amber-300 uppercase tracking-widest font-['Cinzel',serif] shrink-0 pt-0.5">
+                        <span className="text-[10px] sm:text-xs">🪔</span>
                         <span>YOUR SPECIAL WISH FROM {brandName.toUpperCase()}</span>
-                        <span className="text-[9px] sm:text-[10px]">🪔</span>
+                        <span className="text-[10px] sm:text-xs">🪔</span>
                       </div>
 
-                      {/* Main Wish Content Card */}
-                      <div className="w-full bg-[#140D26]/90 border border-amber-500/40 rounded-lg px-2 py-1 sm:px-2.5 sm:py-1.5 my-0.5 shadow-inner text-center flex flex-col justify-center items-center flex-1 min-h-0 overflow-y-auto">
-                        {/* Heading */}
-                        <h5 className="text-[9.5px] sm:text-[10.5px] md:text-[11px] font-black font-['Cinzel',serif] text-amber-200 uppercase tracking-wide leading-tight shrink-0 mb-0.5">
-                          {personalizedWish.heading}
-                        </h5>
+                      {/* Main Wish Content Container */}
+                      <div className="w-full flex-1 min-h-0 my-1 sm:my-1.5 p-2.5 sm:p-3.5 bg-gradient-to-b from-[#180E2B]/95 via-[#130A24]/95 to-[#0E061D]/95 border border-amber-500/40 rounded-xl shadow-[inset_0_0_25px_rgba(0,0,0,0.6)] flex flex-col justify-between items-center text-center overflow-y-auto">
+                        
+                        {/* 1. Heading Block */}
+                        <div className="w-full flex flex-col items-center shrink-0">
+                          <h4 className="text-xs sm:text-sm lg:text-[15px] font-black font-['Cinzel',serif] text-transparent bg-clip-text bg-gradient-to-r from-amber-100 via-amber-200 to-yellow-300 uppercase tracking-wider leading-snug drop-shadow-sm">
+                            {personalizedWish.heading}
+                          </h4>
+                          <div className="w-16 sm:w-24 h-[1px] bg-gradient-to-r from-transparent via-amber-400/50 to-transparent mt-1" />
+                        </div>
 
-                        {/* Wish Message Lines */}
-                        <div className="w-full my-0.5 space-y-0.5 sm:space-y-1">
+                        {/* 2. Message Paragraphs (spacious, centered in middle) */}
+                        <div className="w-full flex-1 min-h-0 flex flex-col justify-center items-center py-1.5 sm:py-2.5 space-y-1.5 sm:space-y-2 max-w-xl mx-auto">
                           {personalizedWish.lines.map((line, idx) => (
                             <p
                               key={idx}
-                              className="text-[8px] sm:text-[8.5px] md:text-[9px] lg:text-[9.5px] text-amber-100/95 leading-snug font-medium max-w-xl mx-auto font-['Plus_Jakarta_Sans',sans-serif]"
+                              className="text-[11px] sm:text-xs lg:text-[13px] text-amber-100/95 leading-relaxed font-medium font-['Plus_Jakarta_Sans',sans-serif] text-center"
                             >
                               {line}
                             </p>
                           ))}
                         </div>
 
-                        {/* Closing Text & Brand Signature */}
-                        <div className="mt-0.5 sm:mt-1 flex flex-col items-center justify-center text-center shrink-0">
-                          {personalizedWish.signoff.split('\n').map((part, pIdx, arr) => (
-                            <span
-                              key={pIdx}
-                              className={
-                                pIdx === arr.length - 1 && arr.length > 1
-                                  ? "text-[8px] sm:text-[8.5px] md:text-[9px] font-bold font-['Cinzel',serif] text-amber-200 tracking-wider uppercase leading-tight mt-0.5"
-                                  : "text-[7.5px] sm:text-[8px] md:text-[8.5px] font-medium font-['Cinzel',serif] text-amber-300/80 italic leading-tight"
-                              }
-                            >
-                              {part}
-                            </span>
-                          ))}
+                        {/* 3. Closing Wishes & Brand Signature */}
+                        <div className="w-full flex flex-col items-center shrink-0 pt-1.5 border-t border-amber-500/25">
+                          {(() => {
+                            const signoffParts = personalizedWish.signoff.split('\n');
+                            const closingLine =
+                              signoffParts.length > 1
+                                ? signoffParts.slice(0, -1).join(' ')
+                                : personalizedWish.signoff.startsWith('—')
+                                ? null
+                                : personalizedWish.signoff;
+                            const signatureName =
+                              signoffParts.length > 1
+                                ? signoffParts[signoffParts.length - 1]
+                                : personalizedWish.signoff.startsWith('—')
+                                ? personalizedWish.signoff.replace(/^—\s*/, '')
+                                : brandName;
+
+                            return (
+                              <>
+                                {closingLine && (
+                                  <span className="text-[10px] sm:text-[11px] lg:text-xs font-medium font-['Cinzel',serif] text-amber-300/85 italic leading-tight">
+                                    {closingLine}
+                                  </span>
+                                )}
+                                <span className="text-xs sm:text-[13px] lg:text-sm font-bold font-['Cinzel',serif] text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-yellow-200 to-amber-300 tracking-widest uppercase mt-0.5 drop-shadow-sm">
+                                  {signatureName}
+                                </span>
+                              </>
+                            );
+                          })()}
                         </div>
                       </div>
 
-                      {/* Actions */}
-                      <div className="w-full flex items-center justify-between gap-1 text-[8.5px] sm:text-[9.5px] text-amber-300/80 px-1 pt-0.5 shrink-0">
+                      {/* Controls at the Bottom */}
+                      <div className="w-full flex items-center justify-between gap-1 text-[9.5px] sm:text-[10.5px] text-amber-300/80 px-1 pt-0.5 shrink-0">
                         <button
                           type="button"
                           onClick={() => setEnvelopeState('CLOSED')}
@@ -1398,7 +1418,7 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
                         <button
                           type="button"
                           onClick={handleDownloadCard}
-                          className="inline-flex items-center gap-1 px-1.5 py-0.5 sm:px-2 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 rounded text-amber-200 font-mono transition cursor-pointer"
+                          className="inline-flex items-center gap-1.5 px-2 py-0.5 sm:px-2.5 sm:py-1 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 rounded-lg text-amber-200 font-mono transition cursor-pointer"
                         >
                           {isDownloaded ? (
                             <>
