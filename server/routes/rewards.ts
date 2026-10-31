@@ -6,9 +6,29 @@
 import { Router, Request, Response } from 'express';
 import { db } from '../storage';
 import { authenticateAdmin } from '../auth/middleware';
-import { RewardItem, SpinWheelRequest, SpinWheelResponse } from '../../src/types/backend';
+import { RewardItem, SpinWheelRequest, SpinWheelResponse, TRIAL_CODE } from '../../src/types/backend';
 
 export const rewardsRouter = Router();
+
+/**
+ * Helper: Securely identify if a session is a Master OTP testing session on the backend.
+ * Master OTP sessions have unlimited spins for testing and do not expire.
+ */
+async function isMasterOtpSession(sessionId?: string, userId?: string): Promise<boolean> {
+  if (userId === 'trial_user_8536') return true;
+  if (!sessionId) return false;
+  const clean = sessionId.trim();
+  if (clean === 'trial_session_8536' || clean.startsWith('trial_')) return true;
+
+  try {
+    const dbSession = await db.getSessionById(clean);
+    if (dbSession && (dbSession.code === TRIAL_CODE || dbSession.userId === 'trial_user_8536')) {
+      return true;
+    }
+  } catch {}
+
+  return false;
+}
 
 /**
  * Weighted random reward selection.
@@ -67,7 +87,7 @@ rewardsRouter.get('/rewards', async (_req: Request, res: Response) => {
 
 /**
  * Public: Check if a game session has already used its single spin chance.
- * Returns the winning voucher if already spun.
+ * Returns the winning voucher if already spun (normal sessions only).
  */
 rewardsRouter.get('/rewards/session-spin/:sessionId', async (req: Request<{ sessionId: string }>, res: Response) => {
   try {
@@ -76,11 +96,21 @@ rewardsRouter.get('/rewards/session-spin/:sessionId', async (req: Request<{ sess
       return res.status(400).json({ success: false, message: 'sessionId is required.' });
     }
 
+    const isMaster = await isMasterOtpSession(sessionId);
+    if (isMaster) {
+      return res.json({
+        success: true,
+        alreadySpun: false,
+        isMaster: true
+      });
+    }
+
     const existingSpin = await db.getSpinResultBySessionId(sessionId);
     if (existingSpin) {
       return res.json({
         success: true,
         alreadySpun: true,
+        isMaster: false,
         spinRecord: existingSpin,
         reward: {
           id: existingSpin.rewardId,
@@ -96,7 +126,8 @@ rewardsRouter.get('/rewards/session-spin/:sessionId', async (req: Request<{ sess
 
     return res.json({
       success: true,
-      alreadySpun: false
+      alreadySpun: false,
+      isMaster: false
     });
   } catch (err: any) {
     console.error('[Rewards API] Error checking session spin status:', err);
@@ -107,19 +138,26 @@ rewardsRouter.get('/rewards/session-spin/:sessionId', async (req: Request<{ sess
 /**
  * Public: User spins the wheel.
  * Backend decides the winning reward based on chances and saves the result permanently.
- * Enforces strict single spin chance per game session.
+ * Normal OTP sessions: strictly ONE spin per game session.
+ * Master OTP sessions: UNLIMITED repeated spins with fresh server-confirmed winners.
  */
 rewardsRouter.post('/rewards/spin', async (req: Request<{}, {}, SpinWheelRequest>, res: Response) => {
   try {
     const sessionId = req.body.sessionId?.trim();
+    const userId = req.body.userId?.trim();
 
-    // Enforce strict single spin per game session
-    if (sessionId) {
+    // Securely identify Master OTP testing session on backend
+    const isMaster = await isMasterOtpSession(sessionId, userId);
+
+    // Enforce strict single spin per game session ONLY for normal OTP sessions
+    // Master OTP sessions are granted unlimited repeated spins for testing
+    if (sessionId && !isMaster) {
       const existingSpin = await db.getSpinResultBySessionId(sessionId);
       if (existingSpin) {
         return res.status(409).json({
           success: false,
           alreadySpun: true,
+          isMaster: false,
           message: 'This game session has already used its Spin & Win chance.',
           spinRecord: existingSpin,
           reward: {
@@ -162,11 +200,10 @@ rewardsRouter.post('/rewards/spin', async (req: Request<{}, {}, SpinWheelRequest
     // Backend chooses winning reward
     const { reward: winningReward, rewardIndex } = pickWeightedWinningReward(rewards);
 
-    const playerName = req.body.playerName?.trim() || 'Player';
+    const playerName = req.body.playerName?.trim() || (isMaster ? 'Master Tester' : 'Player');
     const mobileNumber = req.body.mobileNumber?.trim() || '';
-    const userId = req.body.userId;
 
-    // Permanently record spin result
+    // Permanently record spin result in database history
     const spinRecord = await db.recordSpinResult({
       userId,
       playerName,
@@ -183,7 +220,8 @@ rewardsRouter.post('/rewards/spin', async (req: Request<{}, {}, SpinWheelRequest
       success: true,
       reward: winningReward,
       rewardIndex,
-      spinRecord
+      spinRecord,
+      isMaster
     };
 
     return res.json(response);

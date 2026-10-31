@@ -107,6 +107,13 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
   const [hasSpun, setHasSpun] = useState<boolean>(false);
   const hasSpunRef = useRef<boolean>(false);
 
+  // Master OTP Testing Session detection (unlimited spins, session never expires)
+  const isMasterSession = Boolean(
+    isTrial ||
+    (typeof window !== 'undefined' && sessionStorage.getItem('diwali_master_otp') === 'true') ||
+    (sessionId?.startsWith('trial_'))
+  );
+
   const wheelSvgRef = useRef<SVGSVGElement | null>(null);
   const isSpinningRef = useRef<boolean>(false);
   const rotationRef = useRef<number>(0);
@@ -190,15 +197,15 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
 
   // Safe fallback: if rewards are completely disabled in admin settings, start 20s countdown automatically
   useEffect(() => {
-    if (!rewardsEnabled) {
+    if (!rewardsEnabled && !isMasterSession) {
       setIsCountdownActive(true);
       setCountdown(AUTO_RETURN_SECONDS);
     }
-  }, [rewardsEnabled]);
+  }, [rewardsEnabled, isMasterSession]);
 
-  // Countdown timer effect: Runs ONLY when isCountdownActive is true
+  // Countdown timer effect: Runs ONLY when isCountdownActive is true and NOT in master testing session
   useEffect(() => {
-    if (!isCountdownActive) return;
+    if (!isCountdownActive || isMasterSession) return;
 
     hasHandledExitRef.current = false;
     const deadline = Date.now() + AUTO_RETURN_SECONDS * 1000;
@@ -350,10 +357,12 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
   // Immediate Spin & Win Execution with Parallel Server Resolution
   // ---------------------------------------------------------------------------
   const handleSpinClick = () => {
-    if (hasSpunRef.current || hasSpun || isSpinningRef.current || wheelState === 'SPINNING' || wheelRewards.length === 0) return;
+    if ((!isMasterSession && (hasSpunRef.current || hasSpun)) || isSpinningRef.current || wheelState === 'SPINNING' || wheelRewards.length === 0) return;
     isSpinningRef.current = true;
-    hasSpunRef.current = true;
-    setHasSpun(true);
+    if (!isMasterSession) {
+      hasSpunRef.current = true;
+      setHasSpun(true);
+    }
     setWheelState('SPINNING');
     setWinningVoucher(null);
     setWheelErrorMessage(null);
@@ -374,9 +383,10 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
 
     gameApi
       .spinWheel({
-        playerName,
+        playerName: playerName || (isMasterSession ? 'Master Tester' : 'Player'),
         mobileNumber: mobileNumber || undefined,
-        sessionId: sessionId || undefined
+        sessionId: sessionId || undefined,
+        userId: isMasterSession ? 'trial_user_8536' : undefined
       })
       .then((res) => {
         if (res.success && res.reward) {
@@ -385,7 +395,7 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
             reward: res.reward,
             rewardIndex: res.rewardIndex
           };
-        } else if (res.alreadySpun && res.reward) {
+        } else if (!isMasterSession && res.alreadySpun && res.reward) {
           serverResult = {
             success: true,
             reward: res.reward,
@@ -400,7 +410,7 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
       })
       .catch((err: any) => {
         const errorMsg = err?.message || '';
-        if (errorMsg.includes('already used') || errorMsg.includes('already spun')) {
+        if (!isMasterSession && (errorMsg.includes('already used') || errorMsg.includes('already spun'))) {
           serverResult = {
             success: false,
             errorMessage: 'This game session has already used its Spin & Win chance.'
@@ -533,11 +543,14 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
             // Zoom in on winning voucher inside the same left-side area
             setWheelState('VOUCHER_ZOOM');
 
-            // Start 20-second countdown only after zoom animation completes (~450ms)
-            setTimeout(() => {
-              setIsCountdownActive(true);
-              setCountdown(AUTO_RETURN_SECONDS);
-            }, 450);
+            // For normal users, start 20-second countdown only after zoom animation completes (~450ms)
+            // Master OTP testing sessions never expire or kick the user out
+            if (!isMasterSession) {
+              setTimeout(() => {
+                setIsCountdownActive(true);
+                setCountdown(AUTO_RETURN_SECONDS);
+              }, 450);
+            }
           }
         }
       }
@@ -785,8 +798,16 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Countdown Badge: Starts ONLY after wheel stops & voucher zooms in */}
-            {isCountdownActive ? (
+            {/* Countdown / Master Badge: Master OTP testing session never auto-exits */}
+            {isMasterSession ? (
+              <div
+                className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full bg-purple-500/20 border border-purple-400/50 text-purple-200 font-mono text-xs font-semibold shadow-inner"
+                title="Master OTP Testing Session (Unlimited Spins Enabled)"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                <span>Master Testing Session</span>
+              </div>
+            ) : isCountdownActive ? (
               <div
                 className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full bg-amber-500/20 border border-amber-400/50 text-amber-200 font-mono text-xs font-semibold shadow-inner animate-[fadeIn_0.3s_ease-out]"
                 title="Automatically returning to code entry screen"
@@ -1178,11 +1199,11 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
                               <button
                                 type="button"
                                 onClick={handleSpinClick}
-                                disabled={hasSpun || wheelState === 'SPINNING' || wheelRewards.length === 0}
+                                disabled={(!isMasterSession && hasSpun) || wheelState === 'SPINNING' || wheelRewards.length === 0}
                                 className="pointer-events-auto w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-amber-500 hover:bg-amber-400 border-4 border-[#1A120B] shadow-md flex items-center justify-center cursor-pointer active:scale-95 transition-transform disabled:opacity-75 disabled:cursor-not-allowed"
                               >
                                 <span className="text-[11px] sm:text-xs font-black font-['Cinzel',serif] tracking-wider text-neutral-950 uppercase">
-                                  {wheelState === 'SPINNING' ? '...' : hasSpun ? 'DONE' : 'SPIN'}
+                                  {wheelState === 'SPINNING' ? '...' : (!isMasterSession && hasSpun) ? 'DONE' : 'SPIN'}
                                 </span>
                               </button>
                             </div>
@@ -1195,6 +1216,8 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
                     <div className="text-[9.5px] sm:text-[10px] text-amber-200/70 font-mono flex-shrink-0">
                       {wheelState === 'SPINNING'
                         ? 'Spinning...'
+                        : isMasterSession
+                        ? 'Master OTP Active: Unlimited spins enabled'
                         : hasSpun
                         ? 'Spin chance used for this game'
                         : 'Tap center SPIN button to win'}
@@ -1247,12 +1270,27 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
                       {winningVoucher.termsAndConditions || winningVoucher.description || 'Present this code to claim your reward.'}
                     </p>
 
-                    {/* Voucher Unlocked Status */}
-                    <div className="flex items-center justify-center pt-0.5 flex-shrink-0">
+                    {/* Voucher Unlocked Status & Spin Again (Master OTP) */}
+                    <div className="flex items-center justify-center gap-2 pt-0.5 flex-shrink-0">
                       <div className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-[9px] sm:text-[10px] font-mono font-bold text-emerald-300 uppercase tracking-wider flex items-center gap-1">
                         <Check className="w-2.5 h-2.5" />
                         <span>VOUCHER UNLOCKED</span>
                       </div>
+                      {isMasterSession && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setWheelState('READY');
+                            setWinningVoucher(null);
+                            setWheelErrorMessage(null);
+                          }}
+                          className="px-2.5 py-0.5 rounded-full bg-amber-500 hover:bg-amber-400 text-neutral-950 text-[9px] sm:text-[10px] font-mono font-bold uppercase tracking-wider flex items-center gap-1 shadow cursor-pointer active:scale-95 transition-transform"
+                          title="Spin again with fresh reward selection (Master OTP)"
+                        >
+                          <RotateCw className="w-2.5 h-2.5" />
+                          <span>Spin Again</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}

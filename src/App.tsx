@@ -121,6 +121,57 @@ export default function App() {
     setIsGameplayActive(isPlaying);
   }, [phase, setIsCrackerModeActive, setIsGameplayActive]);
 
+  // Restore Master OTP session on mount / page reload during testing
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const isMaster = sessionStorage.getItem('diwali_master_otp') === 'true';
+      if (isMaster) {
+        setActiveCode(TRIAL_CODE);
+        const savedSessionId = sessionStorage.getItem('diwali_master_session_id') || `trial_${Date.now()}`;
+        activeSessionIdRef.current = savedSessionId;
+        setActiveSessionId(savedSessionId);
+
+        const savedUser = sessionStorage.getItem('diwali_master_user');
+        if (savedUser) {
+          try {
+            const parsed = JSON.parse(savedUser);
+            setCurrentUser(parsed);
+            setPlayerName(parsed.name || 'Master Tester');
+          } catch {
+            const defaultMasterUser: User = {
+              id: 'trial_user_8536',
+              name: 'Master Tester',
+              mobileNumber: '0000000000',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              hasPlayed: false,
+              playCount: 0
+            };
+            setCurrentUser(defaultMasterUser);
+            setPlayerName('Master Tester');
+          }
+        } else {
+          const defaultMasterUser: User = {
+            id: 'trial_user_8536',
+            name: 'Master Tester',
+            mobileNumber: '0000000000',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            hasPlayed: false,
+            playCount: 0
+          };
+          setCurrentUser(defaultMasterUser);
+          setPlayerName('Master Tester');
+        }
+
+        const savedPhase = sessionStorage.getItem('diwali_game_phase');
+        if (savedPhase === 'GAME_OVER') {
+          setPhase('GAME_OVER');
+        }
+      }
+    }
+  }, []);
+
   // Load Bomb Configurations & Game Settings from backend
   useEffect(() => {
     gameApi
@@ -331,9 +382,13 @@ export default function App() {
           });
       }
 
+      if (typeof window !== 'undefined' && (activeCode === TRIAL_CODE || sessionStorage.getItem('diwali_master_otp') === 'true')) {
+        sessionStorage.setItem('diwali_game_phase', 'GAME_OVER');
+      }
+
       setPhase('GAME_OVER');
     },
-    [playSfx, activeSessionId, gameScore, branding]
+    [playSfx, activeCode, activeSessionId, gameScore, branding]
   );
 
   const handlePlayTick = useCallback(() => {
@@ -358,7 +413,6 @@ export default function App() {
     }
     gameStartTimeRef.current = null;
     bothHandsHoldStartRef.current = null;
-    activeSessionIdRef.current = null;
     isSessionCompletedRef.current = false;
     wasTargetAchievedRef.current = false;
     setHoldProgress(0);
@@ -373,15 +427,35 @@ export default function App() {
     // Stop webcam stream completely
     stopCamera();
 
-    // Completely wipe player, code, and session for next player
-    setActiveCode(null);
-    setCurrentUser(null);
-    setActiveSessionId(null);
-    setPlayerName('');
+    // Handle Master OTP vs Normal player reset
+    const isMaster = activeCode === TRIAL_CODE || (typeof window !== 'undefined' && sessionStorage.getItem('diwali_master_otp') === 'true');
+    if (isMaster) {
+      // Keep Master OTP testing session alive across game rounds
+      const newTrialId = `trial_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      activeSessionIdRef.current = newTrialId;
+      setActiveSessionId(newTrialId);
+      setActiveCode(TRIAL_CODE);
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('diwali_master_session_id', newTrialId);
+        sessionStorage.removeItem('diwali_game_phase');
+      }
+    } else {
+      activeSessionIdRef.current = null;
+      setActiveCode(null);
+      setCurrentUser(null);
+      setActiveSessionId(null);
+      setPlayerName('');
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('diwali_master_otp');
+        sessionStorage.removeItem('diwali_master_session_id');
+        sessionStorage.removeItem('diwali_master_user');
+        sessionStorage.removeItem('diwali_game_phase');
+      }
+    }
 
     setPhase('IDLE');
     branding.advanceWallpaper();
-  }, [stopCamera, stopBgm, resetStats, resetGameScore, setIsCrackerModeActive, branding]);
+  }, [activeCode, stopCamera, stopBgm, resetStats, resetGameScore, setIsCrackerModeActive, branding]);
 
   // Live condition: Target Achieved popup is visible whenever currentScore >= targetScore
   const showTargetAchievedPopup =
@@ -458,10 +532,11 @@ export default function App() {
               setCurrentUser(user);
               setActiveCode(code);
               setPlayerName(user.name);
+              const isMaster = code === TRIAL_CODE;
               if (session?.id) {
                 activeSessionIdRef.current = session.id;
                 setActiveSessionId(session.id);
-              } else if (code === TRIAL_CODE) {
+              } else if (isMaster) {
                 const trialId = `trial_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
                 activeSessionIdRef.current = trialId;
                 setActiveSessionId(trialId);
@@ -470,6 +545,19 @@ export default function App() {
                 activeSessionIdRef.current = guestId;
                 setActiveSessionId(guestId);
               }
+
+              if (typeof window !== 'undefined') {
+                if (isMaster) {
+                  sessionStorage.setItem('diwali_master_otp', 'true');
+                  sessionStorage.setItem('diwali_master_session_id', activeSessionIdRef.current || `trial_${Date.now()}`);
+                  sessionStorage.setItem('diwali_master_user', JSON.stringify(user));
+                } else {
+                  sessionStorage.removeItem('diwali_master_otp');
+                  sessionStorage.removeItem('diwali_master_session_id');
+                  sessionStorage.removeItem('diwali_master_user');
+                }
+              }
+
               await unlockAudio();
 
               if (isTouchMode) {
@@ -799,7 +887,7 @@ export default function App() {
           onUpdatePlayerName={(name) => setPlayerName(name)}
           onPlayChime={() => playSound('FLOWER_POT')}
           sessionId={activeSessionIdRef.current || activeSessionId}
-          isTrial={activeCode === TRIAL_CODE || (activeSessionIdRef.current?.startsWith('trial_') ?? false)}
+          isTrial={activeCode === TRIAL_CODE || (activeSessionIdRef.current?.startsWith('trial_') ?? false) || (typeof window !== 'undefined' && sessionStorage.getItem('diwali_master_otp') === 'true')}
           targetScoreEnabled={branding.targetScoreEnabled}
           targetScore={branding.targetScore}
           achievementTiers={branding.achievementTiers}
@@ -818,6 +906,7 @@ export default function App() {
           playerName={playerName || currentUser?.name || 'Player'}
           mobileNumber={currentUser?.mobileNumber || ''}
           sessionId={activeSessionIdRef.current || activeSessionId}
+          isTestMode={activeCode === TRIAL_CODE || (typeof window !== 'undefined' && sessionStorage.getItem('diwali_master_otp') === 'true')}
         />
       )}
     </div>

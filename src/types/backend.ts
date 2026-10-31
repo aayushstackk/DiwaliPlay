@@ -561,6 +561,7 @@ export interface SpinWheelResponse {
   rewardIndex?: number;
   spinRecord?: SpinRecord;
   alreadySpun?: boolean;
+  isMaster?: boolean;
   message?: string;
 }
 

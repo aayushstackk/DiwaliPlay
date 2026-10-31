@@ -57,6 +57,13 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
   const [winningReward, setWinningReward] = useState<RewardItem | null>(null);
   const [showPrizeModal, setShowPrizeModal] = useState(false);
 
+  // Master OTP Testing Session detection (unlimited spins)
+  const isMasterSession = Boolean(
+    isTestMode ||
+    (typeof window !== 'undefined' && sessionStorage.getItem('diwali_master_otp') === 'true') ||
+    (sessionId?.startsWith('trial_'))
+  );
+
   const audioCtxRef = useRef<AudioContext | null>(null);
   const animFrameRef = useRef<number | null>(null);
   const isSpinningRef = useRef<boolean>(false);
@@ -185,9 +192,11 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
   // Spin Wheel Execution (Immediate animation + Parallel Backend Processing)
   const handleSpinClick = () => {
     // 1. Guard against duplicate spin triggers
-    if (hasSpun || isSpinningRef.current || isSpinning || rewards.length === 0) return;
+    if ((!isMasterSession && hasSpun) || isSpinningRef.current || isSpinning || rewards.length === 0) return;
     isSpinningRef.current = true;
-    setHasSpun(true);
+    if (!isMasterSession) {
+      setHasSpun(true);
+    }
     setIsSpinning(true);
     setWinningReward(null);
     setShowPrizeModal(false);
@@ -211,9 +220,10 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
 
     gameApi
       .spinWheel({
-        playerName,
+        playerName: playerName || (isMasterSession ? 'Master Tester' : 'Player'),
         mobileNumber,
-        sessionId: sessionId || undefined
+        sessionId: sessionId || undefined,
+        userId: isMasterSession ? 'trial_user_8536' : undefined
       })
       .then((res) => {
         if (res.success && res.reward) {
@@ -512,11 +522,11 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
                 <button
                   type="button"
                   onClick={handleSpinClick}
-                  disabled={hasSpun || isSpinning || rewards.length === 0}
+                  disabled={(!isMasterSession && hasSpun) || isSpinning || rewards.length === 0}
                   className="pointer-events-auto w-18 h-18 sm:w-20 sm:h-20 rounded-full bg-amber-500 hover:bg-amber-400 border-4 border-[#1A120B] shadow-md flex items-center justify-center cursor-pointer active:scale-95 transition-transform disabled:opacity-75 disabled:cursor-not-allowed"
                 >
                   <span className="text-xs sm:text-sm font-black font-['Cinzel',serif] tracking-wider text-neutral-950 uppercase">
-                    {isSpinning ? '...' : hasSpun ? 'DONE' : 'SPIN'}
+                    {isSpinning ? '...' : (!isMasterSession && hasSpun) ? 'DONE' : 'SPIN'}
                   </span>
                 </button>
               </div>
