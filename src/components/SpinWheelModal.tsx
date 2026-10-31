@@ -52,6 +52,7 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
 
   // Wheel State
   const [isSpinning, setIsSpinning] = useState(false);
+  const [hasSpun, setHasSpun] = useState(false);
   const [rotation, setRotation] = useState(0);
   const [winningReward, setWinningReward] = useState<RewardItem | null>(null);
   const [showPrizeModal, setShowPrizeModal] = useState(false);
@@ -171,6 +172,38 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
       });
   }, [isOpen]);
 
+  // Check if session has already used its single spin
+  useEffect(() => {
+    if (!sessionId || !isOpen) return;
+    const cacheKey = `diwali_spin_${sessionId}`;
+    try {
+      const cached = sessionStorage.getItem(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed?.name && parsed?.couponCode) {
+          setWinningReward(parsed);
+          setShowPrizeModal(true);
+          setHasSpun(true);
+          return;
+        }
+      }
+    } catch {}
+
+    gameApi
+      .getSessionSpin(sessionId)
+      .then((res) => {
+        if (res.success && res.alreadySpun && res.reward) {
+          setWinningReward(res.reward);
+          setShowPrizeModal(true);
+          setHasSpun(true);
+          try {
+            sessionStorage.setItem(cacheKey, JSON.stringify(res.reward));
+          } catch {}
+        }
+      })
+      .catch(() => {});
+  }, [sessionId, isOpen]);
+
   // Clean up animation on unmount
   useEffect(() => {
     return () => {
@@ -184,8 +217,9 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
   // Spin Wheel Execution (Immediate animation + Parallel Backend Processing)
   const handleSpinClick = () => {
     // 1. Guard against duplicate spin triggers
-    if (isSpinningRef.current || isSpinning || rewards.length === 0) return;
+    if (hasSpun || isSpinningRef.current || isSpinning || rewards.length === 0) return;
     isSpinningRef.current = true;
+    setHasSpun(true);
     setIsSpinning(true);
     setWinningReward(null);
     setShowPrizeModal(false);
@@ -510,11 +544,11 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
                 <button
                   type="button"
                   onClick={handleSpinClick}
-                  disabled={isSpinning || rewards.length === 0}
+                  disabled={hasSpun || isSpinning || rewards.length === 0}
                   className="pointer-events-auto w-18 h-18 sm:w-20 sm:h-20 rounded-full bg-amber-500 hover:bg-amber-400 border-4 border-[#1A120B] shadow-md flex items-center justify-center cursor-pointer active:scale-95 transition-transform disabled:opacity-75 disabled:cursor-not-allowed"
                 >
                   <span className="text-xs sm:text-sm font-black font-['Cinzel',serif] tracking-wider text-neutral-950 uppercase">
-                    {isSpinning ? '...' : 'SPIN'}
+                    {isSpinning ? '...' : hasSpun ? 'DONE' : 'SPIN'}
                   </span>
                 </button>
               </div>

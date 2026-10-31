@@ -1296,5 +1296,12 @@ export class JsonFileStorageAdapter implements StorageAdapter {
     }
     return this.data.spinResults.slice(0, limit);
   }
+
+  public async getSpinResultBySessionId(sessionId: string): Promise<SpinRecord | undefined> {
+    if (!sessionId || !Array.isArray(this.data.spinResults)) {
+      return undefined;
+    }
+    return this.data.spinResults.find((r) => r.sessionId === sessionId);
+  }
 }
 

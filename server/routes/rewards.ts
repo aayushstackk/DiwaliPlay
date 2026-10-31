@@ -66,11 +66,75 @@ rewardsRouter.get('/rewards', async (_req: Request, res: Response) => {
 });
 
 /**
+ * Public: Check if a game session has already used its single spin chance.
+ * Returns the winning voucher if already spun.
+ */
+rewardsRouter.get('/rewards/session-spin/:sessionId', async (req: Request<{ sessionId: string }>, res: Response) => {
+  try {
+    const sessionId = req.params.sessionId?.trim();
+    if (!sessionId) {
+      return res.status(400).json({ success: false, message: 'sessionId is required.' });
+    }
+
+    const existingSpin = await db.getSpinResultBySessionId(sessionId);
+    if (existingSpin) {
+      return res.json({
+        success: true,
+        alreadySpun: true,
+        spinRecord: existingSpin,
+        reward: {
+          id: existingSpin.rewardId,
+          name: existingSpin.rewardName,
+          couponCode: existingSpin.couponCode,
+          imageUrl: existingSpin.rewardImageUrl,
+          termsAndConditions: existingSpin.termsAndConditions,
+          chances: 0,
+          isActive: true
+        }
+      });
+    }
+
+    return res.json({
+      success: true,
+      alreadySpun: false
+    });
+  } catch (err: any) {
+    console.error('[Rewards API] Error checking session spin status:', err);
+    return res.status(500).json({ success: false, message: err.message || 'Failed to check session spin status.' });
+  }
+});
+
+/**
  * Public: User spins the wheel.
  * Backend decides the winning reward based on chances and saves the result permanently.
+ * Enforces strict single spin chance per game session.
  */
 rewardsRouter.post('/rewards/spin', async (req: Request<{}, {}, SpinWheelRequest>, res: Response) => {
   try {
+    const sessionId = req.body.sessionId?.trim();
+
+    // Enforce strict single spin per game session
+    if (sessionId) {
+      const existingSpin = await db.getSpinResultBySessionId(sessionId);
+      if (existingSpin) {
+        return res.status(409).json({
+          success: false,
+          alreadySpun: true,
+          message: 'This game session has already used its Spin & Win chance.',
+          spinRecord: existingSpin,
+          reward: {
+            id: existingSpin.rewardId,
+            name: existingSpin.rewardName,
+            couponCode: existingSpin.couponCode,
+            imageUrl: existingSpin.rewardImageUrl,
+            termsAndConditions: existingSpin.termsAndConditions,
+            chances: 0,
+            isActive: true
+          }
+        });
+      }
+    }
+
     const [settings, allRewards] = await Promise.all([
       db.getRewardsSettings(),
       db.getRewards(false)
@@ -101,7 +165,6 @@ rewardsRouter.post('/rewards/spin', async (req: Request<{}, {}, SpinWheelRequest
     const playerName = req.body.playerName?.trim() || 'Player';
     const mobileNumber = req.body.mobileNumber?.trim() || '';
     const userId = req.body.userId;
-    const sessionId = req.body.sessionId;
 
     // Permanently record spin result
     const spinRecord = await db.recordSpinResult({

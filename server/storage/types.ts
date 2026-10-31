@@ -187,5 +187,6 @@ export interface StorageAdapter {
 
   recordSpinResult(record: Omit<SpinRecord, 'id' | 'timestamp'>): Promise<SpinRecord>;
   getSpinResults(limit?: number): Promise<SpinRecord[]>;
+  getSpinResultBySessionId(sessionId: string): Promise<SpinRecord | undefined>;
 }
 

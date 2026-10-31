@@ -250,6 +250,25 @@ export const gameApi = {
       method: 'POST',
       body: JSON.stringify(req)
     });
+  },
+
+  /**
+   * Check if a game session has already used its single spin chance.
+   */
+  async getSessionSpin(sessionId: string): Promise<{
+    success: boolean;
+    alreadySpun: boolean;
+    spinRecord?: SpinRecord;
+    reward?: RewardItem;
+    message?: string;
+  }> {
+    return request<{
+      success: boolean;
+      alreadySpun: boolean;
+      spinRecord?: SpinRecord;
+      reward?: RewardItem;
+      message?: string;
+    }>(`/rewards/session-spin/${encodeURIComponent(sessionId)}`);
   }
 };
 

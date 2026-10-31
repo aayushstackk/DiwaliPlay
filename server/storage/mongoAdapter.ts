@@ -139,6 +139,7 @@ export class MongoStorageAdapter implements StorageAdapter {
         this.rewardsCol.createIndex({ id: 1 }, { unique: true }),
         this.scoreRewardsCol.createIndex({ id: 1 }, { unique: true }),
         this.spinResultsCol.createIndex({ id: 1 }, { unique: true }),
+        this.spinResultsCol.createIndex({ sessionId: 1 }),
         this.spinResultsCol.createIndex({ timestamp: -1 })
       ]);
 
@@ -1380,6 +1381,14 @@ export class MongoStorageAdapter implements StorageAdapter {
       const { _id, ...clean } = d as any;
       return clean as SpinRecord;
     });
+  }
+
+  public async getSpinResultBySessionId(sessionId: string): Promise<SpinRecord | undefined> {
+    if (!sessionId) return undefined;
+    const doc = await this.spinResultsCol.findOne({ sessionId });
+    if (!doc) return undefined;
+    const { _id, ...clean } = doc as any;
+    return clean as SpinRecord;
   }
 }
 

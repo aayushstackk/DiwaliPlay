@@ -237,8 +237,11 @@ export default function App() {
         // Start backend session if player entered a valid code
         if (activeCode) {
           if (activeCode === TRIAL_CODE) {
-            activeSessionIdRef.current = 'trial_session_8536';
-            setActiveSessionId('trial_session_8536');
+            if (!activeSessionIdRef.current) {
+              const trialId = `trial_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+              activeSessionIdRef.current = trialId;
+              setActiveSessionId(trialId);
+            }
           } else {
             gameApi
               .startSession(activeCode, 'kiosk_main_65')
@@ -459,11 +462,13 @@ export default function App() {
                 activeSessionIdRef.current = session.id;
                 setActiveSessionId(session.id);
               } else if (code === TRIAL_CODE) {
-                activeSessionIdRef.current = 'trial_session_8536';
-                setActiveSessionId('trial_session_8536');
+                const trialId = `trial_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+                activeSessionIdRef.current = trialId;
+                setActiveSessionId(trialId);
               } else {
-                activeSessionIdRef.current = null;
-                setActiveSessionId(null);
+                const guestId = `guest_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+                activeSessionIdRef.current = guestId;
+                setActiveSessionId(guestId);
               }
               await unlockAudio();
 

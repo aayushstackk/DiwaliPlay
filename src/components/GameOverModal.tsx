@@ -98,11 +98,28 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
   // ---------------------------------------------------------------------------
   // Embedded Spin & Win State (Left Side of Divided Section)
   // ---------------------------------------------------------------------------
+  const effectiveSessionId = useMemo(() => {
+    return (
+      sessionId ||
+      (typeof window !== 'undefined' ? (window as any).__lastDiwaliSessionId : null) ||
+      `session_${Math.round(scoreState.score)}_${scoreState.comboCount ?? scoreState.combosAwarded ?? 0}`
+    );
+  }, [sessionId, scoreState]);
+
+  const [hasSpun, setHasSpun] = useState<boolean>(() => {
+    if (typeof window !== 'undefined' && effectiveSessionId) {
+      try {
+        return !!sessionStorage.getItem(`diwali_spin_${effectiveSessionId}`);
+      } catch {}
+    }
+    return false;
+  });
+  const hasSpunRef = useRef<boolean>(hasSpun);
+
   const [wheelRewards, setWheelRewards] = useState<RewardItem[]>([]);
   const [isLoadingWheelRewards, setIsLoadingWheelRewards] = useState(true);
   const [wheelState, setWheelState] = useState<'READY' | 'SPINNING' | 'VOUCHER_ZOOM'>('READY');
   const [winningVoucher, setWinningVoucher] = useState<RewardItem | null>(null);
-  const [copiedVoucherCode, setCopiedVoucherCode] = useState(false);
   const [wheelErrorMessage, setWheelErrorMessage] = useState<string | null>(null);
 
   const wheelSvgRef = useRef<SVGSVGElement | null>(null);
@@ -334,6 +351,42 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
       });
   }, [rewardsEnabled]);
 
+  // Check if this game session has already used its single spin chance
+  useEffect(() => {
+    if (!effectiveSessionId) return;
+
+    const storageKey = `diwali_spin_${effectiveSessionId}`;
+    try {
+      const cached = sessionStorage.getItem(storageKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && parsed.name && parsed.couponCode) {
+          setWinningVoucher(parsed);
+          setWheelState('VOUCHER_ZOOM');
+          setHasSpun(true);
+          hasSpunRef.current = true;
+          return;
+        }
+      }
+    } catch {}
+
+    // Verify backend record for this game session
+    gameApi
+      .getSessionSpin(effectiveSessionId)
+      .then((res) => {
+        if (res.success && res.alreadySpun && res.reward) {
+          setWinningVoucher(res.reward);
+          setWheelState('VOUCHER_ZOOM');
+          setHasSpun(true);
+          hasSpunRef.current = true;
+          try {
+            sessionStorage.setItem(storageKey, JSON.stringify(res.reward));
+          } catch {}
+        }
+      })
+      .catch(() => {});
+  }, [effectiveSessionId]);
+
   // Animation frame cleanup
   useEffect(() => {
     return () => {
@@ -348,8 +401,10 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
   // Immediate Spin & Win Execution with Parallel Server Resolution
   // ---------------------------------------------------------------------------
   const handleSpinClick = () => {
-    if (isSpinningRef.current || wheelState === 'SPINNING' || wheelRewards.length === 0) return;
+    if (hasSpunRef.current || hasSpun || isSpinningRef.current || wheelState === 'SPINNING' || wheelRewards.length === 0) return;
     isSpinningRef.current = true;
+    hasSpunRef.current = true;
+    setHasSpun(true);
     setWheelState('SPINNING');
     setWinningVoucher(null);
     setWheelErrorMessage(null);
@@ -372,7 +427,7 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
       .spinWheel({
         playerName,
         mobileNumber: mobileNumber || undefined,
-        sessionId: sessionId || undefined
+        sessionId: effectiveSessionId || undefined
       })
       .then((res) => {
         if (res.success && res.reward) {
@@ -381,6 +436,22 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
             reward: res.reward,
             rewardIndex: res.rewardIndex
           };
+          if (effectiveSessionId) {
+            try {
+              sessionStorage.setItem(`diwali_spin_${effectiveSessionId}`, JSON.stringify(res.reward));
+            } catch {}
+          }
+        } else if (res.alreadySpun && res.reward) {
+          serverResult = {
+            success: true,
+            reward: res.reward,
+            rewardIndex: res.rewardIndex ?? 0
+          };
+          if (effectiveSessionId) {
+            try {
+              sessionStorage.setItem(`diwali_spin_${effectiveSessionId}`, JSON.stringify(res.reward));
+            } catch {}
+          }
         } else {
           serverResult = {
             success: false,
@@ -389,10 +460,18 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
         }
       })
       .catch((err: any) => {
-        serverResult = {
-          success: false,
-          errorMessage: err.message || 'Network error while spinning.'
-        };
+        const errorMsg = err?.message || '';
+        if (errorMsg.includes('already used') || errorMsg.includes('already spun')) {
+          serverResult = {
+            success: false,
+            errorMessage: 'This game session has already used its Spin & Win chance.'
+          };
+        } else {
+          serverResult = {
+            success: false,
+            errorMessage: err.message || 'Network error while spinning.'
+          };
+        }
       });
 
     // Immediate 0ms start
@@ -1160,11 +1239,11 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
                               <button
                                 type="button"
                                 onClick={handleSpinClick}
-                                disabled={wheelState === 'SPINNING' || wheelRewards.length === 0}
+                                disabled={hasSpun || wheelState === 'SPINNING' || wheelRewards.length === 0}
                                 className="pointer-events-auto w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-amber-500 hover:bg-amber-400 border-4 border-[#1A120B] shadow-md flex items-center justify-center cursor-pointer active:scale-95 transition-transform disabled:opacity-75 disabled:cursor-not-allowed"
                               >
                                 <span className="text-[11px] sm:text-xs font-black font-['Cinzel',serif] tracking-wider text-neutral-950 uppercase">
-                                  {wheelState === 'SPINNING' ? '...' : 'SPIN'}
+                                  {wheelState === 'SPINNING' ? '...' : hasSpun ? 'DONE' : 'SPIN'}
                                 </span>
                               </button>
                             </div>
@@ -1175,7 +1254,11 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
 
                     {/* Bottom Helper / Status */}
                     <div className="text-[9.5px] sm:text-[10px] text-amber-200/70 font-mono flex-shrink-0">
-                      {wheelState === 'SPINNING' ? 'Spinning...' : 'Tap center SPIN button to win'}
+                      {wheelState === 'SPINNING'
+                        ? 'Spinning...'
+                        : hasSpun
+                        ? 'Spin chance used for this game'
+                        : 'Tap center SPIN button to win'}
                     </div>
                   </div>
                 )}
@@ -1210,38 +1293,14 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
                       {winningVoucher.name}
                     </h4>
 
-                    {/* Coupon Code Box with One-Tap Copy */}
-                    <div className="w-full max-w-[260px] bg-[#140803] border border-amber-400/60 rounded-lg p-1.5 flex items-center justify-between gap-2 shadow-inner my-1">
-                      <div className="text-left min-w-0 pl-1">
-                        <span className="block text-[8px] font-mono font-bold text-amber-300/70 uppercase leading-none">
-                          COUPON CODE
-                        </span>
-                        <span className="text-xs sm:text-sm font-mono font-black text-amber-200 tracking-wider">
-                          {winningVoucher.couponCode}
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          navigator.clipboard.writeText(winningVoucher.couponCode);
-                          setCopiedVoucherCode(true);
-                          setTimeout(() => setCopiedVoucherCode(false), 2000);
-                        }}
-                        className="px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-200 text-xs font-mono font-bold flex items-center gap-1 cursor-pointer transition active:scale-95 flex-shrink-0"
-                        title="Copy code"
-                      >
-                        {copiedVoucherCode ? (
-                          <>
-                            <Check className="w-3 h-3 text-emerald-400" />
-                            <span className="text-[10px] text-emerald-300">Copied</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="w-3 h-3" />
-                            <span className="text-[10px]">Copy</span>
-                          </>
-                        )}
-                      </button>
+                    {/* Coupon Code Box */}
+                    <div className="w-full max-w-[260px] bg-[#140803] border border-amber-400/60 rounded-lg py-2 px-3 flex flex-col items-center justify-center shadow-inner my-1">
+                      <span className="block text-[8.5px] font-mono font-bold text-amber-300/70 uppercase tracking-widest leading-none mb-1">
+                        COUPON CODE
+                      </span>
+                      <span className="text-sm sm:text-base font-mono font-black text-amber-200 tracking-widest select-all">
+                        {winningVoucher.couponCode}
+                      </span>
                     </div>
 
                     {/* Brief Terms or Description */}
@@ -1249,19 +1308,12 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
                       {winningVoucher.termsAndConditions || winningVoucher.description || 'Present this code to claim your reward.'}
                     </p>
 
-                    {/* Status Pill & View Wheel Option */}
-                    <div className="flex items-center gap-2 pt-0.5 flex-shrink-0">
-                      <div className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-[9px] sm:text-[10px] font-mono font-bold text-emerald-300 uppercase tracking-wider flex items-center gap-1">
+                    {/* Voucher Unlocked Status */}
+                    <div className="flex items-center justify-center pt-0.5 flex-shrink-0">
+                      <div className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-[9px] sm:text-[10px] font-mono font-bold text-emerald-300 uppercase tracking-wider flex items-center gap-1">
                         <Check className="w-2.5 h-2.5" />
                         <span>VOUCHER UNLOCKED</span>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setWheelState('READY')}
-                        className="text-[9px] font-mono text-amber-300/70 hover:text-amber-200 underline cursor-pointer"
-                      >
-                        View Wheel
-                      </button>
                     </div>
                   </div>
                 )}

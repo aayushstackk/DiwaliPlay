@@ -557,9 +557,10 @@ export interface SpinWheelRequest {
 
 export interface SpinWheelResponse {
   success: boolean;
-  reward: RewardItem;
-  rewardIndex: number;
-  spinRecord: SpinRecord;
+  reward?: RewardItem;
+  rewardIndex?: number;
+  spinRecord?: SpinRecord;
+  alreadySpun?: boolean;
   message?: string;
 }
 
