@@ -97,30 +97,15 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
 
   // ---------------------------------------------------------------------------
   // Embedded Spin & Win State (Left Side of Divided Section)
+  // Initially ALWAYS 'READY' with wheel visible and voucher hidden
   // ---------------------------------------------------------------------------
-  const effectiveSessionId = useMemo(() => {
-    return (
-      sessionId ||
-      (typeof window !== 'undefined' ? (window as any).__lastDiwaliSessionId : null) ||
-      `session_${Math.round(scoreState.score)}_${scoreState.comboCount ?? scoreState.combosAwarded ?? 0}`
-    );
-  }, [sessionId, scoreState]);
-
-  const [hasSpun, setHasSpun] = useState<boolean>(() => {
-    if (typeof window !== 'undefined' && effectiveSessionId) {
-      try {
-        return !!sessionStorage.getItem(`diwali_spin_${effectiveSessionId}`);
-      } catch {}
-    }
-    return false;
-  });
-  const hasSpunRef = useRef<boolean>(hasSpun);
-
   const [wheelRewards, setWheelRewards] = useState<RewardItem[]>([]);
   const [isLoadingWheelRewards, setIsLoadingWheelRewards] = useState(true);
   const [wheelState, setWheelState] = useState<'READY' | 'SPINNING' | 'VOUCHER_ZOOM'>('READY');
   const [winningVoucher, setWinningVoucher] = useState<RewardItem | null>(null);
   const [wheelErrorMessage, setWheelErrorMessage] = useState<string | null>(null);
+  const [hasSpun, setHasSpun] = useState<boolean>(false);
+  const hasSpunRef = useRef<boolean>(false);
 
   const wheelSvgRef = useRef<SVGSVGElement | null>(null);
   const isSpinningRef = useRef<boolean>(false);
@@ -351,42 +336,6 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
       });
   }, [rewardsEnabled]);
 
-  // Check if this game session has already used its single spin chance
-  useEffect(() => {
-    if (!effectiveSessionId) return;
-
-    const storageKey = `diwali_spin_${effectiveSessionId}`;
-    try {
-      const cached = sessionStorage.getItem(storageKey);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (parsed && parsed.name && parsed.couponCode) {
-          setWinningVoucher(parsed);
-          setWheelState('VOUCHER_ZOOM');
-          setHasSpun(true);
-          hasSpunRef.current = true;
-          return;
-        }
-      }
-    } catch {}
-
-    // Verify backend record for this game session
-    gameApi
-      .getSessionSpin(effectiveSessionId)
-      .then((res) => {
-        if (res.success && res.alreadySpun && res.reward) {
-          setWinningVoucher(res.reward);
-          setWheelState('VOUCHER_ZOOM');
-          setHasSpun(true);
-          hasSpunRef.current = true;
-          try {
-            sessionStorage.setItem(storageKey, JSON.stringify(res.reward));
-          } catch {}
-        }
-      })
-      .catch(() => {});
-  }, [effectiveSessionId]);
-
   // Animation frame cleanup
   useEffect(() => {
     return () => {
@@ -427,7 +376,7 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
       .spinWheel({
         playerName,
         mobileNumber: mobileNumber || undefined,
-        sessionId: effectiveSessionId || undefined
+        sessionId: sessionId || undefined
       })
       .then((res) => {
         if (res.success && res.reward) {
@@ -436,22 +385,12 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
             reward: res.reward,
             rewardIndex: res.rewardIndex
           };
-          if (effectiveSessionId) {
-            try {
-              sessionStorage.setItem(`diwali_spin_${effectiveSessionId}`, JSON.stringify(res.reward));
-            } catch {}
-          }
         } else if (res.alreadySpun && res.reward) {
           serverResult = {
             success: true,
             reward: res.reward,
             rewardIndex: res.rewardIndex ?? 0
           };
-          if (effectiveSessionId) {
-            try {
-              sessionStorage.setItem(`diwali_spin_${effectiveSessionId}`, JSON.stringify(res.reward));
-            } catch {}
-          }
         } else {
           serverResult = {
             success: false,

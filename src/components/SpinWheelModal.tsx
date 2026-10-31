@@ -172,38 +172,6 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
       });
   }, [isOpen]);
 
-  // Check if session has already used its single spin
-  useEffect(() => {
-    if (!sessionId || !isOpen) return;
-    const cacheKey = `diwali_spin_${sessionId}`;
-    try {
-      const cached = sessionStorage.getItem(cacheKey);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (parsed?.name && parsed?.couponCode) {
-          setWinningReward(parsed);
-          setShowPrizeModal(true);
-          setHasSpun(true);
-          return;
-        }
-      }
-    } catch {}
-
-    gameApi
-      .getSessionSpin(sessionId)
-      .then((res) => {
-        if (res.success && res.alreadySpun && res.reward) {
-          setWinningReward(res.reward);
-          setShowPrizeModal(true);
-          setHasSpun(true);
-          try {
-            sessionStorage.setItem(cacheKey, JSON.stringify(res.reward));
-          } catch {}
-        }
-      })
-      .catch(() => {});
-  }, [sessionId, isOpen]);
-
   // Clean up animation on unmount
   useEffect(() => {
     return () => {
