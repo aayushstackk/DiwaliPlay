@@ -1275,13 +1275,13 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
                 {/* ----------------------------------------------------- */}
                 {/* TOP: Tap for Wish Card / Envelope                     */}
                 {/* ----------------------------------------------------- */}
-                <div className="w-full flex-1 min-h-0 bg-gradient-to-r from-amber-950/40 via-amber-900/25 to-yellow-950/40 border border-amber-500/40 rounded-xl sm:rounded-2xl p-2 sm:p-2.5 text-center relative box-border shadow-[0_0_20px_rgba(245,158,11,0.1)] flex flex-col justify-center items-center overflow-hidden">
+                <div className="w-full flex-1 min-h-0 bg-gradient-to-r from-amber-950/40 via-amber-900/25 to-yellow-950/40 border border-amber-500/40 rounded-xl sm:rounded-2xl p-1.5 sm:p-2 lg:p-2.5 text-center relative box-border shadow-[0_0_20px_rgba(245,158,11,0.1)] flex flex-col justify-center items-center overflow-hidden">
                   
                   {/* Golden corner accents */}
-                  <div className="absolute top-2 left-2 w-3 h-3 border-t border-l border-amber-400/60 pointer-events-none" />
-                  <div className="absolute top-2 right-2 w-3 h-3 border-t border-r border-amber-400/60 pointer-events-none" />
-                  <div className="absolute bottom-2 left-2 w-3 h-3 border-b border-l border-amber-400/60 pointer-events-none" />
-                  <div className="absolute bottom-2 right-2 w-3 h-3 border-b border-r border-amber-400/60 pointer-events-none" />
+                  <div className="absolute top-1.5 left-1.5 w-2.5 h-2.5 sm:top-2 sm:left-2 sm:w-3 sm:h-3 border-t border-l border-amber-400/60 pointer-events-none" />
+                  <div className="absolute top-1.5 right-1.5 w-2.5 h-2.5 sm:top-2 sm:right-2 sm:w-3 sm:h-3 border-t border-r border-amber-400/60 pointer-events-none" />
+                  <div className="absolute bottom-1.5 left-1.5 w-2.5 h-2.5 sm:bottom-2 sm:left-2 sm:w-3 sm:h-3 border-b border-l border-amber-400/60 pointer-events-none" />
+                  <div className="absolute bottom-1.5 right-1.5 w-2.5 h-2.5 sm:bottom-2 sm:right-2 sm:w-3 sm:h-3 border-b border-r border-amber-400/60 pointer-events-none" />
 
                   {/* Envelope State 1: CLOSED */}
                   {envelopeState === 'CLOSED' && (
@@ -1341,55 +1341,73 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
 
                   {/* Envelope State 3: OPENED DIWALI WISH CARD */}
                   {envelopeState === 'OPENED' && (
-                    <div className="flex flex-col items-center justify-between w-full h-full text-center animate-[fadeIn_0.4s_ease-out] overflow-hidden">
-                      <div className="inline-flex items-center gap-1.5 text-[9.5px] sm:text-[10.5px] font-bold text-amber-300 uppercase tracking-wider font-['Cinzel',serif]">
-                        <span>🪔</span>
+                    <div className="flex flex-col items-center justify-between w-full h-full text-center animate-[fadeIn_0.4s_ease-out]">
+                      {/* Top Header */}
+                      <div className="inline-flex items-center justify-center gap-1 sm:gap-1.5 text-[8.5px] sm:text-[9.5px] md:text-[10px] font-bold text-amber-300 uppercase tracking-wider font-['Cinzel',serif] shrink-0 leading-tight">
+                        <span className="text-[9px] sm:text-[10px]">🪔</span>
                         <span>YOUR SPECIAL WISH FROM {brandName.toUpperCase()}</span>
-                        <span>🪔</span>
+                        <span className="text-[9px] sm:text-[10px]">🪔</span>
                       </div>
 
-                      <div className="w-full bg-[#140D26]/90 border border-amber-500/40 rounded-lg p-1.5 sm:p-2 my-0.5 shadow-inner text-center flex flex-col justify-center flex-1 min-h-0">
-                        <h5 className="text-[11px] sm:text-xs font-black font-['Cinzel',serif] text-amber-200 uppercase tracking-wider leading-snug">
+                      {/* Main Wish Content Card */}
+                      <div className="w-full bg-[#140D26]/90 border border-amber-500/40 rounded-lg px-2 py-1 sm:px-2.5 sm:py-1.5 my-0.5 shadow-inner text-center flex flex-col justify-center items-center flex-1 min-h-0 overflow-y-auto">
+                        {/* Heading */}
+                        <h5 className="text-[9.5px] sm:text-[10.5px] md:text-[11px] font-black font-['Cinzel',serif] text-amber-200 uppercase tracking-wide leading-tight shrink-0 mb-0.5">
                           {personalizedWish.heading}
                         </h5>
 
-                        <div className="my-0.5 space-y-0.5">
+                        {/* Wish Message Lines */}
+                        <div className="w-full my-0.5 space-y-0.5 sm:space-y-1">
                           {personalizedWish.lines.map((line, idx) => (
                             <p
                               key={idx}
-                              className="text-[9.5px] sm:text-[10px] text-amber-100/90 leading-tight font-medium max-w-xl mx-auto font-['Plus_Jakarta_Sans',sans-serif]"
+                              className="text-[8px] sm:text-[8.5px] md:text-[9px] lg:text-[9.5px] text-amber-100/95 leading-snug font-medium max-w-xl mx-auto font-['Plus_Jakarta_Sans',sans-serif]"
                             >
                               {line}
                             </p>
                           ))}
                         </div>
 
-                        <div className="text-[8.5px] sm:text-[9.5px] font-['Cinzel',serif] text-amber-300/80 italic whitespace-pre-line mt-0.5">
-                          {personalizedWish.signoff}
+                        {/* Closing Text & Brand Signature */}
+                        <div className="mt-0.5 sm:mt-1 flex flex-col items-center justify-center text-center shrink-0">
+                          {personalizedWish.signoff.split('\n').map((part, pIdx, arr) => (
+                            <span
+                              key={pIdx}
+                              className={
+                                pIdx === arr.length - 1 && arr.length > 1
+                                  ? "text-[8px] sm:text-[8.5px] md:text-[9px] font-bold font-['Cinzel',serif] text-amber-200 tracking-wider uppercase leading-tight mt-0.5"
+                                  : "text-[7.5px] sm:text-[8px] md:text-[8.5px] font-medium font-['Cinzel',serif] text-amber-300/80 italic leading-tight"
+                              }
+                            >
+                              {part}
+                            </span>
+                          ))}
                         </div>
                       </div>
 
                       {/* Actions */}
-                      <div className="w-full flex items-center justify-between gap-1 text-[9.5px] sm:text-[10px] text-amber-300/80 px-1 flex-shrink-0">
+                      <div className="w-full flex items-center justify-between gap-1 text-[8.5px] sm:text-[9.5px] text-amber-300/80 px-1 pt-0.5 shrink-0">
                         <button
+                          type="button"
                           onClick={() => setEnvelopeState('CLOSED')}
-                          className="text-amber-400 hover:text-amber-200 underline font-mono cursor-pointer"
+                          className="text-amber-400 hover:text-amber-200 underline font-mono cursor-pointer transition-colors"
                         >
                           Re-read Envelope
                         </button>
 
                         <button
+                          type="button"
                           onClick={handleDownloadCard}
-                          className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 rounded text-amber-200 font-mono transition cursor-pointer"
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 sm:px-2 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 rounded text-amber-200 font-mono transition cursor-pointer"
                         >
                           {isDownloaded ? (
                             <>
-                              <Check className="w-3 h-3 text-emerald-400" />
+                              <Check className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-emerald-400" />
                               <span className="text-emerald-400 font-bold">Saved!</span>
                             </>
                           ) : (
                             <>
-                              <Download className="w-3 h-3 text-amber-300" />
+                              <Download className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-amber-300" />
                               <span>Save Card</span>
                             </>
                           )}
