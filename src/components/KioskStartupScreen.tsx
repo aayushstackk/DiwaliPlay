@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Delete, Check, Gift } from 'lucide-react';
+import { Delete, Check } from 'lucide-react';
 import { gameApi } from '../services/api';
 import { User, GameSession } from '../types/backend';
 import { QrCodeSvg } from './QrCodeSvg';
@@ -14,14 +14,12 @@ interface KioskStartupScreenProps {
   onCodeVerified: (user: User, code: string, session?: GameSession) => void;
   onPlayChime?: () => void;
   rewardsEnabled?: boolean;
-  onOpenSpinWheel?: () => void;
 }
 
 export const KioskStartupScreen: React.FC<KioskStartupScreenProps> = ({
   onCodeVerified,
   onPlayChime,
-  rewardsEnabled = true,
-  onOpenSpinWheel
+  rewardsEnabled = true
 }) => {
   const [digits, setDigits] = useState<string[]>([]);
   const [isVerifying, setIsVerifying] = useState(false);
@@ -119,20 +117,6 @@ export const KioskStartupScreen: React.FC<KioskStartupScreenProps> = ({
       {/* TOP HEADER: EXACTLY 3-LINE BRANDING BLOCK */}
       <header className="w-full max-w-5xl mx-auto text-center z-10 shrink-0 pt-1 relative">
         <BrandingBlock size="kiosk" />
-
-        {/* Spin & Win Floating Pill */}
-        {rewardsEnabled && onOpenSpinWheel && (
-          <div className="absolute right-0 top-1 hidden sm:flex items-center">
-            <button
-              type="button"
-              onClick={onOpenSpinWheel}
-              className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-neutral-950 font-bold text-xs uppercase tracking-wider shadow-[0_0_20px_rgba(245,158,11,0.5)] border border-amber-300 transition-transform active:scale-95 cursor-pointer"
-            >
-              <Gift className="w-4 h-4 text-neutral-950 animate-bounce" />
-              <span>Spin & Win</span>
-            </button>
-          </div>
-        )}
       </header>
 
       {/* MAIN VIEWPORT-FITTING HUB (Zero Scroll) */}

@@ -579,7 +579,6 @@ export default function App() {
             }}
             onPlayChime={() => playSound('CHAKRI')}
             rewardsEnabled={rewardsEnabled}
-            onOpenSpinWheel={() => setIsSpinWheelOpen(true)}
           />
         </div>
       )}
