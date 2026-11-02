@@ -404,6 +404,8 @@ export interface UpdateAdminAccountResponse {
 // ============================================================================
 export type AssetCategory = 'wallpapers' | 'brand_logos' | 'audio_tracks' | 'cracker_effects' | 'bomb_assets' | 'reward_images';
 
+export type StorageProviderType = 'local' | 'gcs' | 's3' | 'gridfs';
+
 export interface AssetRecord {
   id: string; // Stable unique ID e.g. "asset_abc123"
   category: AssetCategory;
@@ -419,7 +421,7 @@ export interface AssetRecord {
   displayName?: string;
   order?: number;
   url: string; // Serving URL e.g. "/api/assets/asset_abc123/content"
-  storageProvider: 'local' | 'gcs';
+  storageProvider: StorageProviderType;
 }
 
 export interface ListAssetsResponse {
@@ -428,7 +430,7 @@ export interface ListAssetsResponse {
   total: number;
   page: number;
   pageSize: number;
-  storageProvider: 'local' | 'gcs';
+  storageProvider: StorageProviderType;
   isProductionReady: boolean;
   setupHelp?: string;
 }

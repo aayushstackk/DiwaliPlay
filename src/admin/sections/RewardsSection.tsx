@@ -22,6 +22,7 @@ import {
   Power
 } from 'lucide-react';
 import { SpinWheelModal } from '../../components/SpinWheelModal';
+import { resolveAssetUrl } from '../../utils/assetUrl';
 
 type ActiveTab = 'rewards' | 'test_wheel' | 'spin_history';
 
@@ -610,7 +611,7 @@ export const RewardsSection: React.FC = () => {
                     >
                       {reward.imageUrl ? (
                         <img
-                          src={reward.imageUrl}
+                          src={resolveAssetUrl(reward.imageUrl)}
                           alt={reward.name}
                           className="w-full h-full object-contain"
                         />
@@ -889,7 +890,7 @@ export const RewardsSection: React.FC = () => {
                   >
                     {formImageUrl ? (
                       <img
-                        src={formImageUrl}
+                        src={resolveAssetUrl(formImageUrl)}
                         alt="Preview"
                         className="w-full h-full object-contain"
                       />

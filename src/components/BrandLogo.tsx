@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { BrandingDisplayMode } from '../types/backend';
+import { resolveAssetUrl } from '../utils/assetUrl';
 
 export interface BrandLogoProps {
   brandLogoUrl?: string | null;
@@ -79,7 +80,8 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
     </svg>
   );
 
-  const hasUploadedLogo = Boolean(brandLogoUrl && !imageError);
+  const resolvedLogoUrl = resolveAssetUrl(brandLogoUrl);
+  const hasUploadedLogo = Boolean(resolvedLogoUrl && !imageError);
 
   // --------------------------------------------------------------------------
   // Mode: Name Only - Show Line 3 text, hide logo
@@ -114,7 +116,7 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
       return (
         <div className={`flex items-center justify-center ${className}`}>
           <img
-            src={brandLogoUrl!}
+            src={resolvedLogoUrl}
             alt="Brand Logo"
             onError={() => setImageError(true)}
             style={customDimensionsStyle}
@@ -158,7 +160,7 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
         title={brandName || 'Brand Logo'}
       >
         <img
-          src={brandLogoUrl!}
+          src={resolvedLogoUrl}
           alt={brandName || 'Brand Logo'}
           onError={() => setImageError(true)}
           style={imgStyle}

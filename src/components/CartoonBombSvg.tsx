@@ -5,6 +5,7 @@
 
 import React from 'react';
 import { BombConfig } from '../types/backend';
+import { resolveAssetUrl } from '../utils/assetUrl';
 
 interface CartoonBombSvgProps {
   bomb: Partial<BombConfig>;
@@ -41,7 +42,7 @@ export const CartoonBombSvg: React.FC<CartoonBombSvgProps> = ({
   const isPenalty = points < 0;
   const baseColor = bomb.color || (isPenalty ? '#1E293B' : '#EF4444');
   const preset = bomb.imagePreset || (isPenalty ? 'black_penalty' : 'red_classic');
-  const customImageUrl = bomb.imageUrl;
+  const customImageUrl = resolveAssetUrl(bomb.imageUrl);
 
   // Generated gradient colors for 3D sphere volume
   const lightColor = adjustHex(baseColor, 35);

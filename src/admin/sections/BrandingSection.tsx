@@ -4,10 +4,11 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { SystemSettings, AdminRole, AssetRecord, BrandingDisplayMode } from '../../types/backend';
+import { SystemSettings, AdminRole, AssetRecord, BrandingDisplayMode, StorageProviderType } from '../../types/backend';
 import { adminApi } from '../../services/api';
 import { BrandLogo } from '../../components/BrandLogo';
 import { useAdminTheme } from '../AdminThemeContext';
+import { resolveAssetUrl } from '../../utils/assetUrl';
 import {
   Palette,
   Sparkles,
@@ -163,7 +164,7 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
   const [isSavingToggle, setIsSavingToggle] = useState(false);
   const [wallpaperSuccess, setWallpaperSuccess] = useState<string | null>(null);
   const [wallpaperError, setWallpaperError] = useState<string | null>(null);
-  const [storageProvider, setStorageProvider] = useState<'local' | 'gcs'>('local');
+  const [storageProvider, setStorageProvider] = useState<StorageProviderType>('local');
   const [isProductionReady, setIsProductionReady] = useState(false);
   const [setupHelp, setSetupHelp] = useState<string | undefined>(undefined);
   const [isSavingOpacity, setIsSavingOpacity] = useState(false);
@@ -1054,7 +1055,7 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                         >
                           <div className="h-10 w-full flex items-center justify-center overflow-hidden">
                             <img
-                              src={logo.url}
+                              src={resolveAssetUrl(logo.url)}
                               alt={logo.displayName || 'Logo'}
                               className="max-h-8 max-w-full object-contain"
                             />
@@ -1275,7 +1276,7 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                 }`}>
                   {currentWallpaperUrl ? (
                     <img
-                      src={currentWallpaperUrl}
+                      src={resolveAssetUrl(currentWallpaperUrl)}
                       alt="Current Kiosk Wallpaper"
                       style={{ opacity: wallpaperOpacity / 100 }}
                       className="w-full h-full object-cover transition-opacity duration-200"
@@ -1467,7 +1468,7 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                     >
                       <div className="aspect-video relative bg-slate-950 overflow-hidden">
                         <img
-                          src={asset.url}
+                          src={resolveAssetUrl(asset.url)}
                           alt={asset.displayName || asset.originalFilename}
                           className="w-full h-full object-cover"
                         />
@@ -1699,7 +1700,7 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                   isLight ? 'bg-[#F1E8D9] border-[#D8C7AE]' : 'bg-slate-900 border-slate-800'
                 }`}>
                   <img
-                    src={itemToDelete.asset.url}
+                    src={resolveAssetUrl(itemToDelete.asset.url)}
                     alt={itemToDelete.asset.displayName || 'Thumbnail'}
                     className="max-h-full max-w-full object-contain"
                   />

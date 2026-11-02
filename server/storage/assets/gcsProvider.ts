@@ -4,7 +4,7 @@
  */
 
 import { Storage, Bucket } from '@google-cloud/storage';
-import { AssetStorageProvider, StoredObjectResult, ReadObjectResult } from './types';
+import { AssetStorageProvider, StoredObjectResult, ReadObjectResult, StorageProviderType } from './types';
 
 export class GCSStorageProvider implements AssetStorageProvider {
   private storage: Storage | null = null;
@@ -15,7 +15,15 @@ export class GCSStorageProvider implements AssetStorageProvider {
     this.bucketName = bucketName || process.env.GCS_BUCKET_NAME || '';
     if (this.bucketName) {
       try {
-        this.storage = new Storage();
+        let credentials: any;
+        if (process.env.GCS_CREDENTIALS) {
+          try {
+            credentials = JSON.parse(process.env.GCS_CREDENTIALS);
+          } catch (e) {
+            console.warn('[GCS Storage] Failed to parse GCS_CREDENTIALS JSON:', e);
+          }
+        }
+        this.storage = new Storage(credentials ? { credentials } : undefined);
         this.bucket = this.storage.bucket(this.bucketName);
       } catch (err) {
         console.warn('[GCS Storage] Failed to initialize Google Cloud Storage client:', err);
@@ -23,7 +31,7 @@ export class GCSStorageProvider implements AssetStorageProvider {
     }
   }
 
-  public getType(): 'gcs' {
+  public getType(): StorageProviderType {
     return 'gcs';
   }
 

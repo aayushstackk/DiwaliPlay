@@ -26,6 +26,7 @@ import {
   calculateAchievement,
   getPersonalizedWish
 } from '../utils/achievements';
+import { resolveAssetUrl } from '../utils/assetUrl';
 
 interface GameOverModalProps {
   scoreState: GameScoreState;
@@ -1019,7 +1020,7 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
                   <div className="w-8 h-8 rounded-lg bg-white/95 p-1 border border-amber-400/60 flex items-center justify-center flex-shrink-0 overflow-hidden shadow-inner">
                     {earnedReward.imageUrl ? (
                       <img
-                        src={earnedReward.imageUrl}
+                        src={resolveAssetUrl(earnedReward.imageUrl)}
                         alt={earnedReward.name}
                         className="w-full h-full object-contain"
                       />
@@ -1171,7 +1172,7 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
                                       <circle cx="0" cy="0" r="26" fill="#FFFFFF" stroke="#E5E7EB" strokeWidth="1" />
                                       {reward.imageUrl ? (
                                         <image
-                                          href={reward.imageUrl}
+                                          href={resolveAssetUrl(reward.imageUrl)}
                                           x="-20"
                                           y="-20"
                                           width="40"
@@ -1240,7 +1241,7 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
                       <div className="w-full h-full rounded-[10px] bg-[#1C1226] p-1 flex items-center justify-center overflow-hidden">
                         {winningVoucher.imageUrl ? (
                           <img
-                            src={winningVoucher.imageUrl}
+                            src={resolveAssetUrl(winningVoucher.imageUrl)}
                             alt={winningVoucher.name}
                             className="w-full h-full object-contain"
                           />

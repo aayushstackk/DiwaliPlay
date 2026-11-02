@@ -4,15 +4,19 @@
  */
 
 import path from 'path';
+import crypto from 'crypto';
 import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import { db } from '../storage';
 import { authenticateAdmin, requireRole } from '../auth/middleware';
 import {
   getAssetStorageProvider,
+  getStorageProviderByType,
   validateUploadedFile,
   generateSafeObjectKey,
-  CATEGORY_RULES
+  CATEGORY_RULES,
+  ReadObjectResult,
+  StorageProviderType
 } from '../storage/assets';
 import { AssetCategory, AssetRecord } from '../../src/types/backend';
 
@@ -42,11 +46,76 @@ assetsRouter.get('/assets/:id/content', async (req: Request, res: Response) => {
       });
     }
 
-    const provider = getAssetStorageProvider();
-    const { data } = await provider.readObject(asset.objectKey);
+    // If asset has a direct public cloud URL (e.g. S3 / CDN prefix), redirect directly
+    if (asset.url && (asset.url.startsWith('http://') || asset.url.startsWith('https://'))) {
+      return res.redirect(302, asset.url);
+    }
+
+    // Resilient binary retrieval:
+    // 1. Try designated provider
+    let readResult: ReadObjectResult | null = null;
+    const designatedProvider = asset.storageProvider ? getStorageProviderByType(asset.storageProvider) : null;
+    if (designatedProvider) {
+      try {
+        readResult = await designatedProvider.readObject(asset.objectKey);
+      } catch {
+        // Fall through to fallback providers
+      }
+    }
+
+    // 2. Try currently active provider
+    if (!readResult) {
+      const activeProvider = getAssetStorageProvider();
+      if (activeProvider !== designatedProvider) {
+        try {
+          readResult = await activeProvider.readObject(asset.objectKey);
+        } catch {
+          // Fall through
+        }
+      }
+    }
+
+    // 3. Fallback across all configured storage providers
+    if (!readResult) {
+      const candidateProviders: StorageProviderType[] = ['gridfs', 's3', 'gcs', 'local'];
+      for (const provType of candidateProviders) {
+        if (provType !== asset.storageProvider) {
+          try {
+            const provider = getStorageProviderByType(provType);
+            if (provider.isConfigured()) {
+              readResult = await provider.readObject(asset.objectKey);
+              if (readResult) break;
+            }
+          } catch {
+            // Continue search
+          }
+        }
+      }
+    }
+
+    if (!readResult) {
+      console.warn(
+        `[Asset Delivery] Asset binary missing from storage: "${asset.id}" (key: "${asset.objectKey}", provider: "${asset.storageProvider}")`
+      );
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      return res.status(404).json({
+        success: false,
+        error: 'STORAGE_OBJECT_NOT_FOUND',
+        message: 'The requested media asset binary was not found in storage.'
+      });
+    }
+
+    const { data } = readResult;
+    const mimeType = asset.mimeType || readResult.mimeType || 'application/octet-stream';
+    const etag = `"${crypto.createHash('md5').update(data).digest('hex')}"`;
+
+    if (req.headers['if-none-match'] === etag) {
+      return res.status(304).end();
+    }
 
     // Strict security headers for content delivery
-    res.setHeader('Content-Type', asset.mimeType);
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('ETag', etag);
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
     res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=3600');
@@ -55,6 +124,7 @@ assetsRouter.get('/assets/:id/content', async (req: Request, res: Response) => {
     return res.status(200).send(data);
   } catch (err: any) {
     console.error(`[Asset Delivery] Error serving asset ${req.params.id}:`, err.message);
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     return res.status(404).json({
       success: false,
       error: 'READ_ERROR',
@@ -94,7 +164,7 @@ assetsRouter.get('/admin/assets', authenticateAdmin, async (req: Request, res: R
       isProductionReady: status.isProductionReady,
       setupHelp: status.isProductionReady
         ? undefined
-        : 'Production cloud bucket not detected. Files are stored locally. Configure GCS_BUCKET_NAME for durable storage on Cloud Run.'
+        : 'Persistent cloud storage not detected. Files are stored locally. Configure S3_BUCKET_NAME or MONGODB_URI for durable storage on Render.'
     });
   } catch (err: any) {
     console.error('[Admin Assets] List error:', err);
@@ -310,10 +380,15 @@ assetsRouter.delete(
         });
       }
 
-      // Delete binary from object storage
-      const provider = getAssetStorageProvider();
+      // Delete binary from object storage via designated provider or active fallback
       try {
-        await provider.deleteObject(asset.objectKey);
+        const specificProvider = asset.storageProvider ? getStorageProviderByType(asset.storageProvider) : null;
+        if (specificProvider && specificProvider.isConfigured()) {
+          await specificProvider.deleteObject(asset.objectKey);
+        } else {
+          const provider = getAssetStorageProvider();
+          await provider.deleteObject(asset.objectKey);
+        }
       } catch (storageErr) {
         console.warn(`[Asset Storage] Failed to delete object binary ${asset.objectKey}:`, storageErr);
       }

@@ -915,7 +915,10 @@ export class JsonFileStorageAdapter implements StorageAdapter {
 
   public async getAssetById(id: string): Promise<AssetRecord | undefined> {
     if (!this.data.assets) return undefined;
-    return this.data.assets[id];
+    if (this.data.assets[id]) return this.data.assets[id];
+    return Object.values(this.data.assets).find(
+      (a) => a.objectKey === id || a.originalFilename === id
+    );
   }
 
   public async getAssetByObjectKey(objectKey: string): Promise<AssetRecord | undefined> {

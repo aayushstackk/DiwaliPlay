@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { resolveAssetUrl } from '../utils/assetUrl';
 
 interface DiwaliWallpaperProps {
   wallpaperUrl?: string | null;
@@ -25,15 +26,17 @@ export const DiwaliWallpaper: React.FC<DiwaliWallpaperProps> = ({
   const normalizedOpacity =
     typeof opacity === 'number' ? Math.max(0, Math.min(100, opacity)) / 100 : 1;
 
+  const resolvedWallpaperUrl = resolveAssetUrl(wallpaperUrl);
+
   // If a valid custom wallpaper URL is provided, render it with object-cover
-  if (wallpaperUrl && !imageError) {
+  if (resolvedWallpaperUrl && !imageError) {
     return (
       <div
         className={`fixed inset-0 w-full h-full overflow-hidden pointer-events-none select-none -z-10 transition-opacity duration-300 ${className}`}
         style={{ opacity: normalizedOpacity }}
       >
         <img
-          src={wallpaperUrl}
+          src={resolvedWallpaperUrl}
           alt="Diwali Wallpaper"
           onError={() => setImageError(true)}
           className="absolute inset-0 w-full h-full object-cover object-center select-none"

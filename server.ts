@@ -29,7 +29,15 @@ async function startServer() {
   // 1. Initialize persistent storage foundation (MongoDB if MONGODB_URI configured, else JSON file adapter)
   await initStorage();
 
-  // 2. Initialize admin bootstrap check (if INITIAL_ADMIN_PASSWORD provided)
+  // 2. Safely migrate any local assets to persistent storage (GridFS / S3) if available
+  try {
+    const { migrateLocalAssetsToPersistentStorage } = await import('./server/storage/assets');
+    await migrateLocalAssetsToPersistentStorage();
+  } catch (err: any) {
+    console.warn('[Server Startup] Local asset migration notice:', err?.message || err);
+  }
+
+  // 3. Initialize admin bootstrap check (if INITIAL_ADMIN_PASSWORD provided)
   await bootstrapAdmin();
 
   const app = express();

@@ -3,7 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { AssetCategory } from '../../../src/types/backend';
+import { AssetCategory, StorageProviderType } from '../../../src/types/backend';
+
+export type { StorageProviderType };
 
 export interface StoredObjectResult {
   key: string;
@@ -17,9 +19,9 @@ export interface ReadObjectResult {
 
 export interface AssetStorageProvider {
   /**
-   * Returns provider identifier ('local' or 'gcs').
+   * Returns provider identifier ('local', 'gcs', 's3', 'gridfs').
    */
-  getType(): 'local' | 'gcs';
+  getType(): StorageProviderType;
 
   /**
    * Indicates whether this provider has all required production configuration.
@@ -30,7 +32,7 @@ export interface AssetStorageProvider {
    * Diagnostic summary or help text for this provider configuration.
    */
   getStatusDetails(): {
-    provider: 'local' | 'gcs';
+    provider: StorageProviderType;
     configured: boolean;
     locationInfo: string;
     isProductionReady: boolean;

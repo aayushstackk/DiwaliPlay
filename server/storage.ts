@@ -9,7 +9,8 @@ import {
   type StorageAdapter,
   JsonFileStorageAdapter,
   MongoStorageAdapter,
-  migrateJsonToMongo
+  migrateJsonToMongo,
+  setStorageInstanceForTest
 } from './storage/index';
 
 export {
@@ -18,7 +19,8 @@ export {
   type StorageAdapter,
   JsonFileStorageAdapter,
   MongoStorageAdapter,
-  migrateJsonToMongo
+  migrateJsonToMongo,
+  setStorageInstanceForTest
 };
 
 // Aliased for backward compatibility

@@ -12,6 +12,7 @@ import {
   RotateCw,
   AlertCircle
 } from 'lucide-react';
+import { resolveAssetUrl } from '../utils/assetUrl';
 
 interface SpinWheelModalProps {
   isOpen: boolean;
@@ -494,7 +495,7 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
                         <circle cx="0" cy="0" r="26" fill="#FFFFFF" stroke="#E5E7EB" strokeWidth="1" />
                         {reward.imageUrl ? (
                           <image
-                            href={reward.imageUrl}
+                            href={resolveAssetUrl(reward.imageUrl)}
                             x="-20"
                             y="-20"
                             width="40"
@@ -564,7 +565,7 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
             <div className="w-20 h-20 mx-auto rounded-2xl bg-white p-2 shadow-inner flex items-center justify-center overflow-hidden border border-amber-400/50">
               {winningReward.imageUrl ? (
                 <img
-                  src={winningReward.imageUrl}
+                  src={resolveAssetUrl(winningReward.imageUrl)}
                   alt={winningReward.name}
                   className="w-full h-full object-contain"
                 />

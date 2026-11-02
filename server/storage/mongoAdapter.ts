@@ -908,7 +908,9 @@ export class MongoStorageAdapter implements StorageAdapter {
   }
 
   public async getAssetById(id: string): Promise<AssetRecord | undefined> {
-    const doc: any = await this.assetsCol.findOne({ id });
+    const doc: any = await this.assetsCol.findOne({
+      $or: [{ id }, { objectKey: id }, { originalFilename: id }]
+    });
     if (!doc) return undefined;
     const { _id, ...clean } = doc;
     return clean as AssetRecord;

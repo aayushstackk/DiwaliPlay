@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { SystemSettings, AssetRecord } from '../../types/backend';
+import { SystemSettings, AssetRecord, StorageProviderType } from '../../types/backend';
 import { adminApi } from '../../services/api';
 import { useAdminTheme } from '../AdminThemeContext';
 import {
@@ -20,6 +20,7 @@ import {
   Server,
   Cloud
 } from 'lucide-react';
+import { resolveAssetUrl } from '../../utils/assetUrl';
 
 interface WallpapersSectionProps {
   settings: SystemSettings | null;
@@ -44,7 +45,7 @@ export const WallpapersSection: React.FC<WallpapersSectionProps> = ({
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
-  const [storageProvider, setStorageProvider] = useState<'local' | 'gcs'>('local');
+  const [storageProvider, setStorageProvider] = useState<StorageProviderType>('local');
   const [isProductionReady, setIsProductionReady] = useState(false);
   const [setupHelp, setSetupHelp] = useState<string | undefined>(undefined);
 
@@ -174,7 +175,14 @@ export const WallpapersSection: React.FC<WallpapersSectionProps> = ({
           <div>
             <div className="flex items-center gap-2 mb-1">
               <h3 className={`font-semibold text-sm ${primaryText}`}>
-                Storage Provider: {storageProvider === 'gcs' ? 'Google Cloud Storage' : 'Local Storage Adapter'}
+                Storage Provider:{' '}
+                {storageProvider === 's3'
+                  ? 'S3-Compatible Cloud Storage'
+                  : storageProvider === 'gcs'
+                  ? 'Google Cloud Storage'
+                  : storageProvider === 'gridfs'
+                  ? 'MongoDB GridFS (Durable Persistent)'
+                  : 'Local Storage Adapter'}
               </h3>
               <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
                 isLight
@@ -254,7 +262,7 @@ export const WallpapersSection: React.FC<WallpapersSectionProps> = ({
             }`}>
               {currentWallpaperUrl ? (
                 <img
-                  src={currentWallpaperUrl}
+                  src={resolveAssetUrl(currentWallpaperUrl)}
                   alt="Current Kiosk Wallpaper"
                   className="w-full h-full object-cover transition-opacity duration-300"
                 />
@@ -385,7 +393,7 @@ export const WallpapersSection: React.FC<WallpapersSectionProps> = ({
                 >
                   <div className="aspect-video relative bg-slate-950 overflow-hidden">
                     <img
-                      src={asset.url}
+                      src={resolveAssetUrl(asset.url)}
                       alt={asset.displayName || asset.originalFilename}
                       className="w-full h-full object-cover"
                     />

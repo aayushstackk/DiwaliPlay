@@ -98,6 +98,13 @@ export function getStorage(): StorageAdapter {
   return storageInstance;
 }
 
+/**
+ * Sets the active storage instance for testing.
+ */
+export function setStorageInstanceForTest(instance: StorageAdapter | null): void {
+  storageInstance = instance;
+}
+
 export type { StorageAdapter } from './types';
 export { JsonFileStorageAdapter } from './jsonAdapter';
 export { MongoStorageAdapter } from './mongoAdapter';
