@@ -14,7 +14,8 @@ import {
   AdminOverviewStats,
   GameSession,
   User,
-  SystemSettings
+  SystemSettings,
+  SpinRecord
 } from '../types/backend';
 import { OverviewSection } from './sections/OverviewSection';
 import { PlayersSection } from './sections/PlayersSection';
@@ -63,6 +64,7 @@ const AdminAppContent: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [sessions, setSessions] = useState<GameSession[]>([]);
   const [settings, setSettings] = useState<SystemSettings | null>(null);
+  const [spinResults, setSpinResults] = useState<SpinRecord[]>([]);
 
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [dataError, setDataError] = useState<string | null>(null);
@@ -106,7 +108,7 @@ const AdminAppContent: React.FC = () => {
     setDataError(null);
 
     try {
-      const [overviewRes, usersRes, sessionsRes, settingsRes] = await Promise.all([
+      const [overviewRes, usersRes, sessionsRes, settingsRes, spinResultsRes] = await Promise.all([
         adminApi.getOverview().catch((e) => {
           console.warn('[Admin] Overview fetch error:', e);
           return null;
@@ -122,6 +124,10 @@ const AdminAppContent: React.FC = () => {
         adminApi.getSettings().catch((e) => {
           console.warn('[Admin] Settings fetch error:', e);
           return null;
+        }),
+        adminApi.getSpinResults(5000).catch((e) => {
+          console.warn('[Admin] Spin results fetch error:', e);
+          return null;
         })
       ]);
 
@@ -136,6 +142,9 @@ const AdminAppContent: React.FC = () => {
       }
       if (settingsRes?.success && settingsRes.settings) {
         setSettings(settingsRes.settings);
+      }
+      if (spinResultsRes?.success && spinResultsRes.spinResults) {
+        setSpinResults(spinResultsRes.spinResults);
       }
     } catch (err: any) {
       console.error('[Admin] Data loading error:', err);
@@ -243,6 +252,8 @@ const AdminAppContent: React.FC = () => {
           {activeSection === 'players' && (
             <PlayersSection
               users={users}
+              sessions={sessions}
+              spinResults={spinResults}
               isLoading={isLoadingData}
               error={dataError}
               onRefresh={() => loadAllData(true)}
@@ -253,6 +264,7 @@ const AdminAppContent: React.FC = () => {
             <SessionsSection
               sessions={sessions}
               users={users}
+              spinResults={spinResults}
               isLoading={isLoadingData}
               error={dataError}
               onRefresh={() => loadAllData(true)}
@@ -293,6 +305,7 @@ const AdminAppContent: React.FC = () => {
               stats={stats}
               sessions={sessions}
               users={users}
+              spinResults={spinResults}
               isLoading={isLoadingData}
             />
           )}

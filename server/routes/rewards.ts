@@ -144,7 +144,7 @@ rewardsRouter.get('/rewards/session-spin/:sessionId', async (req: Request<{ sess
 rewardsRouter.post('/rewards/spin', async (req: Request<{}, {}, SpinWheelRequest>, res: Response) => {
   try {
     const sessionId = req.body.sessionId?.trim();
-    const userId = req.body.userId?.trim();
+    let userId = req.body.userId?.trim();
 
     // Securely identify Master OTP testing session on backend
     const isMaster = await isMasterOtpSession(sessionId, userId);
@@ -200,8 +200,45 @@ rewardsRouter.post('/rewards/spin', async (req: Request<{}, {}, SpinWheelRequest
     // Backend chooses winning reward
     const { reward: winningReward, rewardIndex } = pickWeightedWinningReward(rewards);
 
-    const playerName = req.body.playerName?.trim() || (isMaster ? 'Master Tester' : 'Player');
-    const mobileNumber = req.body.mobileNumber?.trim() || '';
+    let playerName = req.body.playerName?.trim() || (isMaster ? 'Master Tester' : 'Player');
+    let mobileNumber = req.body.mobileNumber?.trim() || '';
+
+    // If sessionId is present, resolve userId and update the session with the earned reward
+    if (sessionId) {
+      try {
+        const session = await db.getSessionById(sessionId);
+        if (session) {
+          if (!userId && session.userId) {
+            userId = session.userId;
+          }
+          await db.updateSessionReward(sessionId, {
+            id: winningReward.id,
+            name: winningReward.name,
+            description: winningReward.description || '',
+            imageUrl: winningReward.imageUrl || '',
+            couponCode: winningReward.couponCode,
+            termsAndConditions: winningReward.termsAndConditions
+          });
+        }
+      } catch (err) {
+        console.warn('[Rewards API] Note updating session with won reward:', err);
+      }
+    }
+
+    // If userId is present, enrich playerName and mobileNumber from the player record
+    if (userId && (!playerName || playerName === 'Player' || !mobileNumber)) {
+      try {
+        const user = await db.findUserById(userId);
+        if (user) {
+          if ((!req.body.playerName?.trim() || playerName === 'Player') && user.name) {
+            playerName = user.name;
+          }
+          if (!mobileNumber && user.mobileNumber) {
+            mobileNumber = user.mobileNumber;
+          }
+        }
+      } catch {}
+    }
 
     // Permanently record spin result in database history
     const spinRecord = await db.recordSpinResult({
@@ -607,9 +644,10 @@ rewardsRouter.delete('/admin/score-rewards/:id', authenticateAdmin, async (req: 
 /**
  * Admin: Get spin results history
  */
-rewardsRouter.get('/admin/spin-results', authenticateAdmin, async (_req: Request, res: Response) => {
+rewardsRouter.get('/admin/spin-results', authenticateAdmin, async (req: Request, res: Response) => {
   try {
-    const results = await db.getSpinResults(100);
+    const limit = Math.min(10000, Number(req.query.limit) || 1000);
+    const results = await db.getSpinResults(limit);
     return res.json({ success: true, spinResults: results });
   } catch (err: any) {
     console.error('[Spin Results API] Error listing spin history:', err);

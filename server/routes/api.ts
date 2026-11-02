@@ -891,8 +891,40 @@ apiRouter.delete('/admin/users', authenticateAdmin, async (req: Request, res: Re
 
 apiRouter.get('/admin/sessions', authenticateAdmin, async (_req: Request, res: Response) => {
   try {
-    const sessions = await db.getAllSessions();
-    return res.json({ success: true, sessions, count: sessions.length });
+    const [sessions, spinResults] = await Promise.all([
+      db.getAllSessions(),
+      db.getSpinResults(5000).catch(() => [])
+    ]);
+
+    // Build lookup maps for fast matching
+    const spinBySessionId = new Map<string, any>();
+    const spinByUserId = new Map<string, any>();
+    (spinResults || []).forEach((sr: any) => {
+      if (sr.sessionId) spinBySessionId.set(sr.sessionId, sr);
+      if (sr.userId && !spinByUserId.has(sr.userId)) spinByUserId.set(sr.userId, sr);
+    });
+
+    const enrichedSessions = sessions.map((s) => {
+      if (!s.earnedReward?.name) {
+        const spin = spinBySessionId.get(s.id) || (s.userId ? spinByUserId.get(s.userId) : undefined);
+        if (spin && spin.rewardName) {
+          return {
+            ...s,
+            earnedReward: {
+              id: spin.rewardId || 'reward',
+              name: spin.rewardName,
+              description: '',
+              imageUrl: spin.rewardImageUrl || '',
+              couponCode: spin.couponCode || '',
+              termsAndConditions: spin.termsAndConditions
+            }
+          };
+        }
+      }
+      return s;
+    });
+
+    return res.json({ success: true, sessions: enrichedSessions, count: enrichedSessions.length });
   } catch (err: any) {
     return res.status(500).json({ success: false, message: err.message });
   }

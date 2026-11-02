@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { GameSession, User } from '../../types/backend';
+import { GameSession, User, SpinRecord } from '../../types/backend';
 import { adminApi } from '../../services/api';
 import {
   Search,
@@ -15,13 +15,15 @@ import {
   Trash2,
   AlertTriangle,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Gift
 } from 'lucide-react';
 import { useAdminTheme } from '../AdminThemeContext';
 
 interface SessionsSectionProps {
   sessions: GameSession[];
   users: User[];
+  spinResults?: SpinRecord[];
   isLoading: boolean;
   error: string | null;
   onRefresh?: () => void;
@@ -30,6 +32,7 @@ interface SessionsSectionProps {
 export const SessionsSection: React.FC<SessionsSectionProps> = ({
   sessions,
   users,
+  spinResults = [],
   isLoading,
   error,
   onRefresh
@@ -94,6 +97,58 @@ export const SessionsSection: React.FC<SessionsSectionProps> = ({
     });
     return map;
   }, [users]);
+
+  // Pre-index spin rewards and statuses per session
+  const sessionSpinMap = useMemo(() => {
+    const map = new Map<string, {
+      spinStatus: 'Spin Completed' | 'Not Spun';
+      voucherName: string;
+      couponCode?: string;
+      spinDateTime?: string | null;
+    }>();
+
+    // Map all spin results by sessionId
+    const spinBySessionId = new Map<string, SpinRecord>();
+    (spinResults || []).forEach((sr) => {
+      if (sr.sessionId) {
+        spinBySessionId.set(sr.sessionId, sr);
+      }
+    });
+
+    sessions.forEach((s) => {
+      // 1. Direct match by sessionId in spinResults
+      const spinRecord = spinBySessionId.get(s.id);
+      if (spinRecord) {
+        map.set(s.id, {
+          spinStatus: 'Spin Completed',
+          voucherName: spinRecord.rewardName || 'No Reward',
+          couponCode: spinRecord.couponCode,
+          spinDateTime: spinRecord.timestamp
+        });
+        return;
+      }
+
+      // 2. Check session.earnedReward if present
+      if (s.earnedReward?.name) {
+        map.set(s.id, {
+          spinStatus: 'Spin Completed',
+          voucherName: s.earnedReward.name,
+          couponCode: s.earnedReward.couponCode,
+          spinDateTime: s.endTime || s.startTime
+        });
+        return;
+      }
+
+      // 3. Not spun
+      map.set(s.id, {
+        spinStatus: 'Not Spun',
+        voucherName: 'Not Spun',
+        spinDateTime: null
+      });
+    });
+
+    return map;
+  }, [sessions, spinResults]);
 
   // Filter and sort sessions
   const filteredSessions = useMemo(() => {
@@ -333,6 +388,7 @@ export const SessionsSection: React.FC<SessionsSectionProps> = ({
                   <th className="py-3.5 px-4 font-bold">Start Time</th>
                   <th className="py-3.5 px-4 font-bold">End Time</th>
                   <th className="py-3.5 px-4 font-bold text-right">Score</th>
+                  <th className="py-3.5 px-4 font-bold">Won Voucher</th>
                   <th className="py-3.5 px-4 font-bold text-right">Crackers</th>
                   <th className="py-3.5 px-4 font-bold text-right">Combos</th>
                   <th className="py-3.5 px-4 font-bold text-right">Punches</th>
@@ -389,6 +445,65 @@ export const SessionsSection: React.FC<SessionsSectionProps> = ({
                         isLight ? 'text-[#76513D]' : 'text-cyan-200'
                       }`}>
                         {session.score}
+                      </td>
+
+                      {/* Won Voucher Column */}
+                      <td className="py-3 px-4">
+                        {(() => {
+                          const spinInfo = sessionSpinMap.get(session.id) || {
+                            spinStatus: 'Not Spun',
+                            voucherName: 'Not Spun',
+                            spinDateTime: null
+                          };
+
+                          if (spinInfo.spinStatus === 'Spin Completed') {
+                            return (
+                              <div className="flex flex-col gap-1 min-w-[130px]">
+                                {/* Won Voucher Badge */}
+                                <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold border shadow-sm w-fit ${
+                                  isLight
+                                    ? 'bg-[#B36D4E]/15 text-[#76513D] border-[#B36D4E]/30'
+                                    : 'bg-amber-500/15 text-amber-200 border-amber-500/30'
+                                }`}>
+                                  <Gift className="w-3 h-3 text-amber-500 shrink-0" />
+                                  <span>{spinInfo.voucherName}</span>
+                                </span>
+
+                                {/* Spin Status & Date/Time */}
+                                <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                                  <span className={`inline-flex items-center gap-1 font-semibold ${
+                                    isLight ? 'text-[#3B5031]' : 'text-emerald-400'
+                                  }`}>
+                                    <CheckCircle2 className="w-3 h-3 shrink-0" />
+                                    <span>Spin Completed</span>
+                                  </span>
+                                  {spinInfo.spinDateTime && (
+                                    <span className={`font-mono ${labelColor}`}>
+                                      • {formatTimestamp(spinInfo.spinDateTime)}
+                                    </span>
+                                  )}
+                                </div>
+                                {spinInfo.couponCode && (
+                                  <div className={`text-[9.5px] font-mono tracking-wider ${labelColor}`}>
+                                    Code: <strong className="text-amber-400/90 font-mono">{spinInfo.couponCode}</strong>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div className="flex flex-col gap-0.5">
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border w-fit ${
+                                isLight
+                                  ? 'bg-[#F3E9DA]/50 text-[#806B58] border-[#D8C7AE]/60'
+                                  : 'bg-slate-900/60 text-slate-500 border-slate-800'
+                              }`}>
+                                Not Spun
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </td>
 
                       <td className={`py-3 px-4 text-right font-mono ${primaryText}`}>

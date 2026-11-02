@@ -654,6 +654,18 @@ export class JsonFileStorageAdapter implements StorageAdapter {
     return { session, user: user || this.data.users[session.userId] };
   }
 
+  public async updateSessionReward(
+    sessionId: string,
+    earnedReward: NonNullable<GameSession['earnedReward']>
+  ): Promise<GameSession | undefined> {
+    const session = this.data.sessions[sessionId];
+    if (!session) return undefined;
+
+    session.earnedReward = earnedReward;
+    this.persist();
+    return session;
+  }
+
   public async abandonSession(sessionId: string, reason?: string): Promise<GameSession | undefined> {
     const session = this.data.sessions[sessionId];
     if (!session) return undefined;
@@ -1283,14 +1295,14 @@ export class JsonFileStorageAdapter implements StorageAdapter {
       this.data.spinResults = [];
     }
     this.data.spinResults.unshift(newRecord);
-    if (this.data.spinResults.length > 500) {
-      this.data.spinResults = this.data.spinResults.slice(0, 500);
+    if (this.data.spinResults.length > 10000) {
+      this.data.spinResults = this.data.spinResults.slice(0, 10000);
     }
     this.persist();
     return newRecord;
   }
 
-  public async getSpinResults(limit = 100): Promise<SpinRecord[]> {
+  public async getSpinResults(limit = 5000): Promise<SpinRecord[]> {
     if (!Array.isArray(this.data.spinResults)) {
       this.data.spinResults = [];
     }

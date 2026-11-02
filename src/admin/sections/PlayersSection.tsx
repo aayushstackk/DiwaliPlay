@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import { User } from '../../types/backend';
+import { User, GameSession, SpinRecord } from '../../types/backend';
 import { adminApi } from '../../services/api';
 import {
   Search,
@@ -18,12 +18,15 @@ import {
   CheckCircle2,
   AlertCircle,
   X,
-  Users
+  Users,
+  Gift
 } from 'lucide-react';
 import { useAdminTheme } from '../AdminThemeContext';
 
 interface PlayersSectionProps {
   users: User[];
+  sessions?: GameSession[];
+  spinResults?: SpinRecord[];
   isLoading: boolean;
   error: string | null;
   onRefresh?: () => void;
@@ -31,6 +34,8 @@ interface PlayersSectionProps {
 
 export const PlayersSection: React.FC<PlayersSectionProps> = ({
   users,
+  sessions = [],
+  spinResults = [],
   isLoading,
   error,
   onRefresh
@@ -41,6 +46,84 @@ export const PlayersSection: React.FC<PlayersSectionProps> = ({
   const [revealedMobiles, setRevealedMobiles] = useState<Record<string, boolean>>({});
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 12;
+
+  // Pre-index won vouchers per player for consistent, accurate display
+  const playerVoucherMap = useMemo(() => {
+    const map = new Map<string, { status: 'WON' | 'NOT_SPUN' | 'NO_REWARD'; rewardName?: string; couponCode?: string; timestamp?: string }>();
+
+    // Map all user sessions
+    const userSessionIdsMap = new Map<string, Set<string>>();
+    const sessionEarnedRewardMap = new Map<string, { name: string; couponCode: string; time?: string }>();
+
+    (sessions || []).forEach((s) => {
+      if (s.userId) {
+        if (!userSessionIdsMap.has(s.userId)) {
+          userSessionIdsMap.set(s.userId, new Set());
+        }
+        userSessionIdsMap.get(s.userId)!.add(s.id);
+      }
+      if (s.earnedReward?.name) {
+        sessionEarnedRewardMap.set(s.id, {
+          name: s.earnedReward.name,
+          couponCode: s.earnedReward.couponCode,
+          time: s.endTime || s.startTime
+        });
+      }
+    });
+
+    users.forEach((u) => {
+      const userSessions = userSessionIdsMap.get(u.id);
+
+      // Find matching spin results by userId, sessionId, or mobile number
+      const matchingSpins = (spinResults || []).filter((sr) => {
+        if (sr.userId && sr.userId === u.id) return true;
+        if (sr.sessionId && userSessions && userSessions.has(sr.sessionId)) return true;
+        if (sr.mobileNumber && u.mobileNumber && sr.mobileNumber === u.mobileNumber) return true;
+        return false;
+      });
+
+      if (matchingSpins.length > 0) {
+        matchingSpins.sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
+        const latestSpin = matchingSpins[0];
+        if (latestSpin.rewardName && latestSpin.rewardName.trim() && latestSpin.rewardName.toLowerCase() !== 'no reward') {
+          map.set(u.id, {
+            status: 'WON',
+            rewardName: latestSpin.rewardName,
+            couponCode: latestSpin.couponCode,
+            timestamp: latestSpin.timestamp
+          });
+          return;
+        } else {
+          map.set(u.id, {
+            status: 'NO_REWARD',
+            timestamp: latestSpin.timestamp
+          });
+          return;
+        }
+      }
+
+      // Check if any completed session for this player holds an earnedReward
+      if (userSessions) {
+        for (const sid of userSessions) {
+          const reward = sessionEarnedRewardMap.get(sid);
+          if (reward && reward.name && reward.name.trim() && reward.name.toLowerCase() !== 'no reward') {
+            map.set(u.id, {
+              status: 'WON',
+              rewardName: reward.name,
+              couponCode: reward.couponCode,
+              timestamp: reward.time
+            });
+            return;
+          }
+        }
+      }
+
+      // Player has not spun
+      map.set(u.id, { status: 'NOT_SPUN' });
+    });
+
+    return map;
+  }, [users, sessions, spinResults]);
 
   // Deletion States
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
@@ -288,6 +371,7 @@ export const PlayersSection: React.FC<PlayersSectionProps> = ({
                 }`}>
                   <th className="py-3.5 px-4 font-bold">Player Name</th>
                   <th className="py-3.5 px-4 font-bold">Mobile Number</th>
+                  <th className="py-3.5 px-4 font-bold">Won Voucher</th>
                   <th className="py-3.5 px-4 font-bold">Registration Date</th>
                   <th className="py-3.5 px-4 font-bold">Game Feedback</th>
                   <th className="py-3.5 px-4 font-bold text-right">Game Count</th>
@@ -328,6 +412,52 @@ export const PlayersSection: React.FC<PlayersSectionProps> = ({
                             )}
                           </button>
                         </div>
+                      </td>
+
+                      {/* Won Voucher Column */}
+                      <td className="py-3 px-4">
+                        {(() => {
+                          const v = playerVoucherMap.get(user.id) || { status: 'NOT_SPUN' };
+                          if (v.status === 'WON') {
+                            return (
+                              <div className="flex flex-col gap-0.5">
+                                <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold border shadow-sm w-fit ${
+                                  isLight
+                                    ? 'bg-[#B36D4E]/15 text-[#76513D] border-[#B36D4E]/30'
+                                    : 'bg-amber-500/15 text-amber-200 border-amber-500/30'
+                                }`}>
+                                  <Gift className="w-3 h-3 text-amber-500 shrink-0" />
+                                  <span>{v.rewardName}</span>
+                                </span>
+                                {v.couponCode && (
+                                  <span className={`text-[10px] font-mono px-1 truncate max-w-[130px] ${labelColor}`} title={`Coupon: ${v.couponCode}`}>
+                                    {v.couponCode}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          }
+                          if (v.status === 'NO_REWARD') {
+                            return (
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-medium border w-fit ${
+                                isLight
+                                  ? 'bg-[#E8DCCB]/60 text-[#806B58] border-[#D8C7AE]'
+                                  : 'bg-slate-800 text-slate-400 border-slate-700'
+                              }`}>
+                                No Reward
+                              </span>
+                            );
+                          }
+                          return (
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-medium border w-fit ${
+                              isLight
+                                ? 'bg-[#F3E9DA]/50 text-[#806B58] border-[#D8C7AE]/60'
+                                : 'bg-slate-900/60 text-slate-500 border-slate-800'
+                            }`}>
+                              Not Spun
+                            </span>
+                          );
+                        })()}
                       </td>
 
                       <td className={`py-3 px-4 ${labelColor}`}>

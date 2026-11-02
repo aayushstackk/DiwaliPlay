@@ -114,6 +114,10 @@ export interface StorageAdapter {
     sessionId: string,
     feedback: GameFeedback
   ): Promise<{ session: GameSession; user: User } | undefined>;
+  updateSessionReward(
+    sessionId: string,
+    earnedReward: NonNullable<GameSession['earnedReward']>
+  ): Promise<GameSession | undefined>;
   abandonSession(sessionId: string, reason?: string): Promise<GameSession | undefined>;
   getAllSessions(): Promise<GameSession[]>;
   deleteSession(sessionId: string): Promise<boolean>;

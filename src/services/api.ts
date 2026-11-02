@@ -601,7 +601,8 @@ async login(req: AdminLoginRequest): Promise<AdminLoginResponse> {
     });
   },
 
-  async getSpinResults(): Promise<{ success: boolean; spinResults: SpinRecord[] }> {
-    return request<{ success: boolean; spinResults: SpinRecord[] }>('/admin/spin-results');
+  async getSpinResults(limit?: number): Promise<{ success: boolean; spinResults: SpinRecord[] }> {
+    const query = limit ? `?limit=${limit}` : '';
+    return request<{ success: boolean; spinResults: SpinRecord[] }>(`/admin/spin-results${query}`);
   }
 };

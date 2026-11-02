@@ -624,6 +624,18 @@ export class MongoStorageAdapter implements StorageAdapter {
     };
   }
 
+  public async updateSessionReward(
+    sessionId: string,
+    earnedReward: NonNullable<GameSession['earnedReward']>
+  ): Promise<GameSession | undefined> {
+    if (!sessionId) return undefined;
+    await this.sessionsCol.updateOne(
+      { id: sessionId },
+      { $set: { earnedReward } }
+    );
+    return this.getSessionById(sessionId);
+  }
+
   public async abandonSession(sessionId: string, reason?: string): Promise<GameSession | undefined> {
     const now = new Date().toISOString();
     await this.sessionsCol.updateOne(
@@ -1375,7 +1387,7 @@ export class MongoStorageAdapter implements StorageAdapter {
     return newRecord;
   }
 
-  public async getSpinResults(limit = 100): Promise<SpinRecord[]> {
+  public async getSpinResults(limit = 5000): Promise<SpinRecord[]> {
     const docs = await this.spinResultsCol.find().sort({ timestamp: -1 }).limit(limit).toArray();
     return docs.map((d) => {
       const { _id, ...clean } = d as any;
