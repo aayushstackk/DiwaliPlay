@@ -250,22 +250,14 @@ export default function App() {
 
         if (progress >= 1) {
           clearInterval(interval);
+          bothHandsHoldStartRef.current = null;
+          setHoldProgress(1);
           setPhase('READY');
-          if (readyTransitionTimeoutRef.current) {
-            clearTimeout(readyTransitionTimeoutRef.current);
-          }
-          readyTransitionTimeoutRef.current = setTimeout(() => {
-            startCountdownSequence();
-          }, 350);
         }
       }, 50);
 
       return () => {
         clearInterval(interval);
-        if (readyTransitionTimeoutRef.current) {
-          clearTimeout(readyTransitionTimeoutRef.current);
-          readyTransitionTimeoutRef.current = null;
-        }
       };
     } else {
       bothHandsHoldStartRef.current = null;
@@ -280,6 +272,7 @@ export default function App() {
       countdownTimerRef.current = null;
     }
     setCountdownValue(3);
+    setHoldProgress(0);
     setPhase('COUNTDOWN');
     playCountdownStep(3);
 
@@ -331,6 +324,23 @@ export default function App() {
 
     countdownTimerRef.current = stepInterval as unknown as NodeJS.Timeout;
   }, [activeCode, playCountdownStep, resetGameScore, setIsCrackerModeActive]);
+
+  // Transition from READY -> COUNTDOWN after 350ms celebration flash
+  useEffect(() => {
+    if (phase !== 'READY') return;
+
+    const timer = setTimeout(() => {
+      startCountdownSequence();
+    }, 350);
+    readyTransitionTimeoutRef.current = timer;
+
+    return () => {
+      clearTimeout(timer);
+      if (readyTransitionTimeoutRef.current === timer) {
+        readyTransitionTimeoutRef.current = null;
+      }
+    };
+  }, [phase, startCountdownSequence]);
 
   // High-Precision 35-Second Game Timer based on performance.now()
   useEffect(() => {
