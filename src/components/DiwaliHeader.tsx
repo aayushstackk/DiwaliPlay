@@ -89,7 +89,7 @@ export const DiwaliHeader: React.FC<DiwaliHeaderProps> = ({
             )}
           </div>
           <p className="text-[11px] text-amber-200/50 hidden sm:block">
-            35-second dual-hand cracker bursting fun play
+            {branding.gameDurationSeconds || 35}-second dual-hand cracker bursting fun play
           </p>
         </div>
       </div>

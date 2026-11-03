@@ -30,6 +30,7 @@ export interface BrandingState {
   gameplayMode: GameplayInteractionMode;
   targetScoreEnabled: boolean;
   targetScore: number;
+  gameDurationSeconds: number;
   audioSettings: GameAudioSettings;
   achievementTiers?: AchievementTier[];
   wallpaperPlaylist: WallpaperPlaylistItem[];
@@ -53,6 +54,7 @@ interface CachedData {
   gameplayMode: GameplayInteractionMode;
   targetScoreEnabled: boolean;
   targetScore: number;
+  gameDurationSeconds: number;
   audioSettings: GameAudioSettings;
   achievementTiers?: AchievementTier[];
   wallpaperPlaylist: WallpaperPlaylistItem[];
@@ -77,6 +79,7 @@ const cachedBranding: CachedData = {
   gameplayMode: 'camera',
   targetScoreEnabled: false,
   targetScore: 5000,
+  gameDurationSeconds: 35,
   audioSettings: DEFAULT_AUDIO_SETTINGS,
   wallpaperPlaylist: [],
   currentWallpaperUrl: '',
@@ -161,6 +164,9 @@ export function useBranding(): BrandingState {
         const newGameplayMode = (s.gameplayMode === 'touch' ? 'touch' : 'camera') as GameplayInteractionMode;
         const newTargetScoreEnabled = Boolean(s.targetScoreEnabled);
         const newTargetScore = typeof s.targetScore === 'number' && s.targetScore > 0 ? s.targetScore : 5000;
+        const newGameDuration = typeof s.gameDurationSeconds === 'number' && s.gameDurationSeconds > 0
+          ? s.gameDurationSeconds
+          : 35;
         const newPlaylist = res.wallpaperPlaylist || [];
 
         const activeChanged = newWallpaperUrl !== cachedBranding.wallpaperUrl;
@@ -179,6 +185,7 @@ export function useBranding(): BrandingState {
         cachedBranding.gameplayMode = newGameplayMode;
         cachedBranding.targetScoreEnabled = newTargetScoreEnabled;
         cachedBranding.targetScore = newTargetScore;
+        cachedBranding.gameDurationSeconds = newGameDuration;
         if (s.audioSettings) {
           cachedBranding.audioSettings = s.audioSettings;
         }
@@ -237,6 +244,7 @@ export function useBranding(): BrandingState {
       gameplayMode: cachedBranding.gameplayMode || 'camera',
       targetScoreEnabled: cachedBranding.targetScoreEnabled,
       targetScore: cachedBranding.targetScore,
+      gameDurationSeconds: cachedBranding.gameDurationSeconds || 35,
       audioSettings: cachedBranding.audioSettings,
       achievementTiers: cachedBranding.achievementTiers,
       wallpaperPlaylist: cachedBranding.wallpaperPlaylist,

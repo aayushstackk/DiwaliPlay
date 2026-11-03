@@ -55,7 +55,7 @@ export const TermsContent: React.FC = () => {
           <h3>3. Gameplay Scores, Metrics & Celebration Photo</h3>
         </div>
         <p className="text-neutral-300 text-xs">
-          Upon completing the 35-second motion challenge, your score, cracker count, top movement speed, combo multiplier, and session duration are recorded in the event leaderboard system. A single celebration photo frame is captured at the moment of game completion to generate your personalized celebration souvenir card.
+          Upon completing the motion challenge, your score, cracker count, top movement speed, combo multiplier, and session duration are recorded in the event leaderboard system. A single celebration photo frame is captured at the moment of game completion to generate your personalized celebration souvenir card.
         </p>
       </section>
 

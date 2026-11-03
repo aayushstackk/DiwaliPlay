@@ -27,6 +27,12 @@ export default function App() {
   const isCameraMode = !isTouchMode;
   const isWallpaperEnabled = branding.wallpaperEnabled !== false;
 
+  // Dynamic configurable round duration from system settings (default: 35s)
+  const gameDuration =
+    typeof branding.gameDurationSeconds === 'number' && branding.gameDurationSeconds > 0
+      ? branding.gameDurationSeconds
+      : GAME_DURATION_SECONDS;
+
   const {
     videoRef,
     canvasRef,
@@ -66,7 +72,7 @@ export default function App() {
   const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
   const [holdProgress, setHoldProgress] = useState(0); // 0 to 1
   const [countdownValue, setCountdownValue] = useState<number | 'GO!' | null>(null);
-  const [remainingSeconds, setRemainingSeconds] = useState<number>(GAME_DURATION_SECONDS);
+  const [remainingSeconds, setRemainingSeconds] = useState<number>(gameDuration);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [activeCode, setActiveCode] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -80,12 +86,22 @@ export default function App() {
   const isSessionCompletedRef = useRef<boolean>(false);
   const wasTargetAchievedRef = useRef<boolean>(false);
 
-  // Time references for 1-second hands ready detection and precise 35s timer
+  // Time references for hands ready detection and dynamic gameplay timer
   const bothHandsHoldStartRef = useRef<number | null>(null);
   const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
   const readyTransitionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const gameStartTimeRef = useRef<number | null>(null);
+  const currentRoundDurationRef = useRef<number>(gameDuration);
+  const lastReportedSecondRef = useRef<number>(-1);
   const timerRafRef = useRef<number | null>(null);
+
+  // Synchronize initial remainingSeconds with dynamic game duration when not playing
+  useEffect(() => {
+    if (phase !== 'PLAYING') {
+      setRemainingSeconds(gameDuration);
+      lastReportedSecondRef.current = Math.ceil(gameDuration);
+    }
+  }, [gameDuration, phase]);
 
   // Capture a still frame of the player from the active webcam feed for the souvenir card
   const captureWebcamSnapshot = (): string | null => {
@@ -292,7 +308,9 @@ export default function App() {
         resetGameScore();
         wasTargetAchievedRef.current = false;
         setIsCrackerModeActive(true);
-        setRemainingSeconds(GAME_DURATION_SECONDS);
+        currentRoundDurationRef.current = gameDuration;
+        setRemainingSeconds(gameDuration);
+        lastReportedSecondRef.current = Math.ceil(gameDuration);
         gameStartTimeRef.current = performance.now();
         isSessionCompletedRef.current = false;
         setPhase('PLAYING');
@@ -323,7 +341,7 @@ export default function App() {
     }, 850);
 
     countdownTimerRef.current = stepInterval as unknown as NodeJS.Timeout;
-  }, [activeCode, playCountdownStep, resetGameScore, setIsCrackerModeActive]);
+  }, [activeCode, gameDuration, playCountdownStep, resetGameScore, setIsCrackerModeActive]);
 
   // Transition from READY -> COUNTDOWN after 350ms celebration flash
   useEffect(() => {
@@ -342,7 +360,7 @@ export default function App() {
     };
   }, [phase, startCountdownSequence]);
 
-  // High-Precision 35-Second Game Timer based on performance.now()
+  // High-Precision Dynamic Game Timer based on performance.now()
   useEffect(() => {
     if (phase !== 'PLAYING') return;
 
@@ -350,8 +368,16 @@ export default function App() {
     const tick = () => {
       if (!gameStartTimeRef.current) return;
       const elapsed = (performance.now() - gameStartTimeRef.current) / 1000;
-      const left = Math.max(0, GAME_DURATION_SECONDS - elapsed);
-      setRemainingSeconds(left);
+      const roundDuration = currentRoundDurationRef.current || gameDuration;
+      const left = Math.max(0, roundDuration - elapsed);
+
+      // Throttled state update: only update React state when the integer second changes or at completion
+      // This prevents 60 FPS re-renders of the App component while maintaining millisecond physics accuracy
+      const currentCeil = Math.ceil(left);
+      if (currentCeil !== lastReportedSecondRef.current || left <= 0) {
+        lastReportedSecondRef.current = currentCeil;
+        setRemainingSeconds(left);
+      }
 
       if (left <= 0) {
         if (isSessionCompletedRef.current) return;
@@ -375,7 +401,7 @@ export default function App() {
     return () => {
       if (rafId) cancelAnimationFrame(rafId);
     };
-  }, [phase, setIsCrackerModeActive, setIsGameplayActive]);
+  }, [phase, gameDuration, setIsCrackerModeActive, setIsGameplayActive]);
 
   // Handler when photo capture countdown finishes, user snaps, or skips
   const handlePhotoCaptured = useCallback(
@@ -450,7 +476,7 @@ export default function App() {
     wasTargetAchievedRef.current = false;
     setHoldProgress(0);
     setCountdownValue(null);
-    setRemainingSeconds(GAME_DURATION_SECONDS);
+    setRemainingSeconds(gameDuration);
     setCapturedPhoto(null);
     setEarnedReward(null);
     setIsSpinWheelOpen(false);
@@ -483,7 +509,7 @@ export default function App() {
     }
 
     branding.advanceWallpaper();
-  }, [stopCamera, stopBgm, resetStats, resetGameScore, setIsCrackerModeActive, setIsGameplayActive, branding]);
+  }, [stopCamera, stopBgm, resetStats, resetGameScore, setIsCrackerModeActive, setIsGameplayActive, branding, gameDuration]);
 
   // Play Again Handler: Triggered by "PLAY AGAIN" button in GameOverModal
   // Properly resets game state, generates fresh session ID, cleanly restarts round
@@ -508,7 +534,7 @@ export default function App() {
     wasTargetAchievedRef.current = false;
     setHoldProgress(0);
     setCountdownValue(null);
-    setRemainingSeconds(GAME_DURATION_SECONDS);
+    setRemainingSeconds(gameDuration);
     setCapturedPhoto(null);
     setEarnedReward(null);
     setIsSpinWheelOpen(false);
@@ -588,6 +614,7 @@ export default function App() {
     setIsCrackerModeActive,
     setIsGameplayActive,
     branding,
+    gameDuration,
   ]);
 
   const activeCodeRef = useRef(activeCode);
