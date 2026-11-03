@@ -351,6 +351,77 @@ export class CrackerEngine {
     }
   }
 
+  /**
+   * Dedicated high-octane festive Diwali bomb explosion.
+   * Produces radiant concentric shockwaves, colorful sizzling sparks matching the bomb's hue,
+   * and gentle floating warm embers that fade out naturally over ~700-850ms without abrupt cutoffs.
+   */
+  public createBombBurst(x: number, y: number, bombColor = '#F59E0B', isPenalty = false) {
+    this.totalBursts++;
+    this.lastStyle = 'RADIAL_BOMB';
+
+    // Instant screen luminescence punch that fades quickly
+    this.flashIntensity = Math.min(this.flashIntensity + 0.18, 0.4);
+
+    // 1. Concentric expanding shockwave blast rings
+    const ringColor = isPenalty ? '#EF4444' : bombColor;
+    this.spawnRing(x, y, 95, ringColor, 5.2);
+    this.spawnRing(x, y, 135, '#FFFFFF', 4.0);
+
+    // 2. Determine spark color palette aligned with the bomb
+    const sparkCount = isPenalty ? 32 : 36;
+    const accentColors = isPenalty
+      ? ['#EF4444', '#DC2626', '#991B1B', '#F87171', '#FEF2F2']
+      : [bombColor, '#FFFFFF', '#FEF08A', '#FDE047', '#F59E0B'];
+
+    // 3. Radial sizzling sparks with natural decay (~700-850ms)
+    for (let i = 0; i < sparkCount; i++) {
+      const angle = (i / sparkCount) * Math.PI * 2 + randomRange(-0.15, 0.15);
+      const vel = randomRange(3.5, 9.8);
+      const color = randomFrom(accentColors);
+
+      this.spawnParticle(
+        x + randomRange(-4, 4),
+        y + randomRange(-4, 4),
+        Math.cos(angle) * vel,
+        Math.sin(angle) * vel,
+        color,
+        color,
+        randomRange(1.8, 3.2),
+        randomRange(0.016, 0.024), // ~50-65 frames (700-900ms lifespan)
+        0.11, // realistic gravity arcing
+        0.955, // organic air resistance deceleration
+        true // festive sparkling flicker
+      );
+    }
+
+    // 4. Soft convective warm embers / smoke motes that drift upwards
+    const emberCount = 10;
+    const emberColors = isPenalty
+      ? ['#FCA5A5', '#F87171', '#4B5563']
+      : ['#FED7AA', '#FDE047', '#E2E8F0', '#FFFFFF'];
+
+    for (let i = 0; i < emberCount; i++) {
+      const angle = randomRange(-Math.PI * 0.85, -Math.PI * 0.15); // upward fan
+      const vel = randomRange(1.2, 3.5);
+      const color = randomFrom(emberColors);
+
+      this.spawnParticle(
+        x + randomRange(-10, 10),
+        y + randomRange(-6, 6),
+        Math.cos(angle) * vel,
+        Math.sin(angle) * vel,
+        color,
+        color,
+        randomRange(2.8, 4.4), // larger, softer ember motes
+        randomRange(0.014, 0.022), // smooth ~750ms lifecycle
+        -0.02, // slight upward heat buoyancy
+        0.965,
+        false // smooth smoke, no jitter
+      );
+    }
+  }
+
   // 4. Punch Blast / Fast Fist Overdrive Explosion
   public createPunchBlast(x: number, y: number, intensity = 1.2) {
     const count = Math.round(randomRange(36, 60) * intensity);

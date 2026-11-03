@@ -25,6 +25,7 @@ export default function App() {
   const branding = useBranding();
   const isTouchMode = branding.gameplayMode === 'touch';
   const isCameraMode = !isTouchMode;
+  const isWallpaperEnabled = branding.wallpaperEnabled !== false;
 
   const {
     videoRef,
@@ -36,6 +37,7 @@ export default function App() {
     stopCamera,
     leftHand,
     rightHand,
+    getLiveTrackedHands,
     crackerStats,
     gameScore,
     comboNotice,
@@ -81,6 +83,7 @@ export default function App() {
   // Time references for 1-second hands ready detection and precise 35s timer
   const bothHandsHoldStartRef = useRef<number | null>(null);
   const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const readyTransitionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const gameStartTimeRef = useRef<number | null>(null);
   const timerRafRef = useRef<number | null>(null);
 
@@ -167,6 +170,8 @@ export default function App() {
         const savedPhase = sessionStorage.getItem('diwali_game_phase');
         if (savedPhase === 'GAME_OVER') {
           setPhase('GAME_OVER');
+        } else {
+          setPhase('IDLE');
         }
       }
     }
@@ -246,13 +251,22 @@ export default function App() {
         if (progress >= 1) {
           clearInterval(interval);
           setPhase('READY');
-          setTimeout(() => {
+          if (readyTransitionTimeoutRef.current) {
+            clearTimeout(readyTransitionTimeoutRef.current);
+          }
+          readyTransitionTimeoutRef.current = setTimeout(() => {
             startCountdownSequence();
           }, 350);
         }
       }, 50);
 
-      return () => clearInterval(interval);
+      return () => {
+        clearInterval(interval);
+        if (readyTransitionTimeoutRef.current) {
+          clearTimeout(readyTransitionTimeoutRef.current);
+          readyTransitionTimeoutRef.current = null;
+        }
+      };
     } else {
       bothHandsHoldStartRef.current = null;
       setHoldProgress(0);
@@ -260,7 +274,11 @@ export default function App() {
   }, [bothHandsInTarget, phase, activeCode, currentUser]);
 
   // Countdown sequence: 3 -> 2 -> 1 -> GO! -> PLAYING (35s round)
-  const startCountdownSequence = () => {
+  const startCountdownSequence = useCallback(() => {
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
     setCountdownValue(3);
     setPhase('COUNTDOWN');
     playCountdownStep(3);
@@ -276,6 +294,7 @@ export default function App() {
         playCountdownStep('GO');
       } else {
         clearInterval(stepInterval);
+        countdownTimerRef.current = null;
         setCountdownValue(null);
         resetGameScore();
         wasTargetAchievedRef.current = false;
@@ -311,7 +330,7 @@ export default function App() {
     }, 850);
 
     countdownTimerRef.current = stepInterval as unknown as NodeJS.Timeout;
-  };
+  }, [activeCode, playCountdownStep, resetGameScore, setIsCrackerModeActive]);
 
   // High-Precision 35-Second Game Timer based on performance.now()
   useEffect(() => {
@@ -399,10 +418,9 @@ export default function App() {
     playSfx('photo_shutter');
   }, [playSfx]);
 
-  // Restart / Return to Home Handler: Cleans state completely for the next player
-  const handleResetToHome = useCallback(() => {
-    setEarnedReward(null);
-    setIsSpinWheelOpen(false);
+  // Exit to Home Handler: Triggered by Cross (✕) button, Change Code, or Camera Error Cancel
+  // Stops all streams/tracking, cancels active timers & loops, cleans state, and returns directly to Home Page
+  const handleExitToHome = useCallback(() => {
     if (countdownTimerRef.current) {
       clearInterval(countdownTimerRef.current);
       countdownTimerRef.current = null;
@@ -411,6 +429,11 @@ export default function App() {
       cancelAnimationFrame(timerRafRef.current);
       timerRafRef.current = null;
     }
+    if (readyTransitionTimeoutRef.current) {
+      clearTimeout(readyTransitionTimeoutRef.current);
+      readyTransitionTimeoutRef.current = null;
+    }
+
     gameStartTimeRef.current = null;
     bothHandsHoldStartRef.current = null;
     isSessionCompletedRef.current = false;
@@ -419,43 +442,189 @@ export default function App() {
     setCountdownValue(null);
     setRemainingSeconds(GAME_DURATION_SECONDS);
     setCapturedPhoto(null);
+    setEarnedReward(null);
+    setIsSpinWheelOpen(false);
     resetStats();
     resetGameScore();
     setIsCrackerModeActive(false);
+    setIsGameplayActive(false);
     stopBgm();
 
-    // Stop webcam stream completely
+    // Stop webcam and hand tracking completely
     stopCamera();
 
-    // Handle Master OTP vs Normal player reset
-    const isMaster = activeCode === TRIAL_CODE || (typeof window !== 'undefined' && sessionStorage.getItem('diwali_master_otp') === 'true');
-    if (isMaster) {
-      // Keep Master OTP testing session alive across game rounds
-      const newTrialId = `trial_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-      activeSessionIdRef.current = newTrialId;
-      setActiveSessionId(newTrialId);
-      setActiveCode(TRIAL_CODE);
-      if (typeof window !== 'undefined') {
-        sessionStorage.setItem('diwali_master_session_id', newTrialId);
-        sessionStorage.removeItem('diwali_game_phase');
-      }
-    } else {
-      activeSessionIdRef.current = null;
-      setActiveCode(null);
-      setCurrentUser(null);
-      setActiveSessionId(null);
-      setPlayerName('');
-      if (typeof window !== 'undefined') {
-        sessionStorage.removeItem('diwali_master_otp');
-        sessionStorage.removeItem('diwali_master_session_id');
-        sessionStorage.removeItem('diwali_master_user');
-        sessionStorage.removeItem('diwali_game_phase');
+    // Cleanly clear active code and user to navigate directly to Home Screen (KioskStartupScreen)
+    activeSessionIdRef.current = null;
+    setActiveSessionId(null);
+    setActiveCode(null);
+    setCurrentUser(null);
+    setPlayerName('');
+    setPhase('IDLE');
+
+    // Clean up temporary session storage items
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('diwali_game_phase');
+      sessionStorage.removeItem('diwali_master_session_id');
+      sessionStorage.removeItem('diwali_master_user');
+      sessionStorage.removeItem('diwali_master_otp');
+      if (window.history?.state?.diwaliPlaySession) {
+        window.history.replaceState(null, '');
       }
     }
 
-    setPhase('IDLE');
     branding.advanceWallpaper();
-  }, [activeCode, stopCamera, stopBgm, resetStats, resetGameScore, setIsCrackerModeActive, branding]);
+  }, [stopCamera, stopBgm, resetStats, resetGameScore, setIsCrackerModeActive, setIsGameplayActive, branding]);
+
+  // Play Again Handler: Triggered by "PLAY AGAIN" button in GameOverModal
+  // Properly resets game state, generates fresh session ID, cleanly restarts round
+  // Preserves Trial Master Mode authorization without requiring an application restart
+  const handlePlayAgain = useCallback(async () => {
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+    if (timerRafRef.current) {
+      cancelAnimationFrame(timerRafRef.current);
+      timerRafRef.current = null;
+    }
+    if (readyTransitionTimeoutRef.current) {
+      clearTimeout(readyTransitionTimeoutRef.current);
+      readyTransitionTimeoutRef.current = null;
+    }
+
+    gameStartTimeRef.current = null;
+    bothHandsHoldStartRef.current = null;
+    isSessionCompletedRef.current = false;
+    wasTargetAchievedRef.current = false;
+    setHoldProgress(0);
+    setCountdownValue(null);
+    setRemainingSeconds(GAME_DURATION_SECONDS);
+    setCapturedPhoto(null);
+    setEarnedReward(null);
+    setIsSpinWheelOpen(false);
+    resetStats();
+    resetGameScore();
+    setIsCrackerModeActive(false);
+    setIsGameplayActive(false);
+    stopBgm();
+
+    // Check if Trial Master mode
+    const isMaster =
+      activeCode === TRIAL_CODE ||
+      (typeof window !== 'undefined' && sessionStorage.getItem('diwali_master_otp') === 'true');
+
+    if (!isMaster) {
+      handleExitToHome();
+      return;
+    }
+
+    // Preserve Trial Master session with fresh session ID
+    const newTrialId = `trial_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    activeSessionIdRef.current = newTrialId;
+    setActiveSessionId(newTrialId);
+    setActiveCode(TRIAL_CODE);
+
+    if (!currentUser) {
+      const defaultMasterUser: User = {
+        id: 'trial_user_8536',
+        name: playerName || 'Master Tester',
+        mobileNumber: '0000000000',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        hasPlayed: false,
+        playCount: 0,
+      };
+      setCurrentUser(defaultMasterUser);
+    }
+
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('diwali_master_otp', 'true');
+      sessionStorage.setItem('diwali_master_session_id', newTrialId);
+      sessionStorage.removeItem('diwali_game_phase');
+    }
+
+    branding.advanceWallpaper();
+
+    // Mode-specific clean restart
+    if (isTouchMode) {
+      if (!isWallpaperEnabled && !videoRef.current?.srcObject) {
+        try {
+          await startCamera();
+        } catch (err) {
+          console.warn('Touch Mode camera restart note:', err);
+        }
+      }
+      startCountdownSequence();
+    } else {
+      setPhase('IDLE');
+      try {
+        await startCamera();
+      } catch (err) {
+        console.warn('Camera Mode restart note:', err);
+      }
+    }
+  }, [
+    activeCode,
+    currentUser,
+    playerName,
+    isTouchMode,
+    isWallpaperEnabled,
+    handleExitToHome,
+    startCamera,
+    startCountdownSequence,
+    stopBgm,
+    resetStats,
+    resetGameScore,
+    setIsCrackerModeActive,
+    setIsGameplayActive,
+    branding,
+  ]);
+
+  const activeCodeRef = useRef(activeCode);
+  activeCodeRef.current = activeCode;
+  const currentUserRef = useRef(currentUser);
+  currentUserRef.current = currentUser;
+  const handleExitToHomeRef = useRef(handleExitToHome);
+  handleExitToHomeRef.current = handleExitToHome;
+
+  // Browser history / hardware back button handling: clean exit to Home Screen
+  useEffect(() => {
+    const handlePopState = () => {
+      if (activeCodeRef.current || currentUserRef.current) {
+        handleExitToHomeRef.current();
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, []);
+
+  const stopCameraRef = useRef(stopCamera);
+  stopCameraRef.current = stopCamera;
+  const stopBgmRef = useRef(stopBgm);
+  stopBgmRef.current = stopBgm;
+
+  // Overall component unmount cleanup: cancel any lingering loops & stop media ONLY when App unmounts
+  useEffect(() => {
+    return () => {
+      if (countdownTimerRef.current) {
+        clearInterval(countdownTimerRef.current);
+        countdownTimerRef.current = null;
+      }
+      if (timerRafRef.current) {
+        cancelAnimationFrame(timerRafRef.current);
+        timerRafRef.current = null;
+      }
+      if (readyTransitionTimeoutRef.current) {
+        clearTimeout(readyTransitionTimeoutRef.current);
+        readyTransitionTimeoutRef.current = null;
+      }
+      stopCameraRef.current();
+      stopBgmRef.current();
+    };
+  }, []);
 
   // Live condition: Target Achieved popup is visible whenever currentScore >= targetScore
   const showTargetAchievedPopup =
@@ -494,7 +663,6 @@ export default function App() {
 
   const isKioskStartup = !activeCode || !currentUser;
   const brandDisplayName = branding.brandName ? branding.brandName.toUpperCase() : 'ITSSPOTLIGHT';
-  const isWallpaperEnabled = branding.wallpaperEnabled !== false;
   const isCameraPreviewVisible =
     !isKioskStartup &&
     (
@@ -521,6 +689,17 @@ export default function App() {
       }
     }
   }, [isKioskStartup, isTouchMode, isWallpaperEnabled, phase, startCamera]);
+
+  // Ensure camera stream is active in Camera Interactive Mode whenever game session is ongoing
+  useEffect(() => {
+    if (!isKioskStartup && isCameraMode && phase !== 'GAME_OVER' && phase !== 'PHOTO_COUNTDOWN') {
+      if (!videoRef.current?.srcObject) {
+        startCamera().catch((err) => {
+          console.warn('Camera mode auto-start notice:', err);
+        });
+      }
+    }
+  }, [isKioskStartup, isCameraMode, phase, startCamera]);
 
   return (
     <div className="fixed inset-0 w-screen h-screen overflow-hidden bg-[#0A0713] text-neutral-100 flex flex-col font-['Plus_Jakarta_Sans',sans-serif] select-none">
@@ -555,6 +734,9 @@ export default function App() {
                   sessionStorage.removeItem('diwali_master_otp');
                   sessionStorage.removeItem('diwali_master_session_id');
                   sessionStorage.removeItem('diwali_master_user');
+                }
+                if (window.history?.pushState) {
+                  window.history.pushState({ diwaliPlaySession: true }, '');
                 }
               }
 
@@ -627,6 +809,7 @@ export default function App() {
           isActive={phase === 'PLAYING'}
           leftHand={leftHand}
           rightHand={rightHand}
+          getLiveTrackedHands={getLiveTrackedHands}
           bombConfigs={bombConfigs}
           settings={bombSettings}
           isTouchMode={isTouchMode}
@@ -753,7 +936,7 @@ export default function App() {
           {phase === 'IDLE' && (
             <div className="pointer-events-auto flex items-center gap-2">
               <button
-                onClick={handleResetToHome}
+                onClick={handleExitToHome}
                 title="Change Player / Code"
                 className="px-3 py-1.5 rounded-xl bg-neutral-950/70 hover:bg-neutral-900 border border-neutral-700/60 text-neutral-300 hover:text-white text-xs font-mono transition-all flex items-center gap-1.5 cursor-pointer backdrop-blur-md shadow-lg"
               >
@@ -809,7 +992,7 @@ export default function App() {
               <span>Grant & Start Camera</span>
             </button>
             <button
-              onClick={handleResetToHome}
+              onClick={handleExitToHome}
               className="flex items-center gap-2 px-4 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs rounded-lg transition-all cursor-pointer"
             >
               <span>Cancel</span>
@@ -881,8 +1064,8 @@ export default function App() {
           playerName={playerName}
           brandName={branding.brandName}
           capturedPhoto={capturedPhoto}
-          onPlayAgain={handleResetToHome}
-          onClose={handleResetToHome}
+          onPlayAgain={handlePlayAgain}
+          onClose={handleExitToHome}
           onUpdatePlayerName={(name) => setPlayerName(name)}
           onPlayChime={() => playSound('FLOWER_POT')}
           sessionId={activeSessionIdRef.current || activeSessionId}

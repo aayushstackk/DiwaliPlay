@@ -124,6 +124,7 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const pendingCameraPromiseRef = useRef<Promise<MediaStream | null> | null>(null);
 
   const [isModelLoading, setIsModelLoading] = useState(isEnabled);
   const [modelLoadingProgress, setModelLoadingProgress] = useState('Initializing MediaPipe vision pipeline...');
@@ -166,10 +167,7 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
   const handLandmarkerRef = useRef<HandLandmarker | null>(null);
   const animationFrameIdRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const isStartingCameraRef = useRef(false);
   const isInferringRef = useRef(false);
-  const lastVideoTimeRef = useRef(-1);
-  const lastInferenceTimeRef = useRef(0);
 
   // Cracker Particle Engine Instance (Object-pooled, zero GC overhead)
   // On Android, 350 particles provide abundant festive visuals while halving CPU/GPU particle load
@@ -390,79 +388,83 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
     };
   }, []);
 
-  // Start Webcam Stream (640x480 at up to 60fps for speed and responsiveness on Desktop; 30fps on Android Kiosk)
+  // Start Webcam Stream (640x480 at up to 60fps for speed and responsiveness)
   const startCamera = useCallback(async () => {
-    setCameraError(null);
-    if (isStartingCameraRef.current) {
-      return streamRef.current;
+    if (pendingCameraPromiseRef.current) {
+      return pendingCameraPromiseRef.current;
     }
-    isStartingCameraRef.current = true;
 
-    try {
-      if (streamRef.current) {
-        const activeTracks = streamRef.current.getTracks();
-        if (activeTracks.length > 0 && activeTracks.some((t) => t.readyState === 'live')) {
-          if (videoRef.current && videoRef.current.srcObject !== streamRef.current) {
-            videoRef.current.srcObject = streamRef.current;
-            await videoRef.current.play().catch(() => {});
+    const task = (async () => {
+      setCameraError(null);
+      try {
+        if (streamRef.current) {
+          const activeTracks = streamRef.current.getTracks();
+          if (activeTracks.length > 0 && activeTracks.some((t) => t.readyState === 'live')) {
+            if (videoRef.current && videoRef.current.srcObject !== streamRef.current) {
+              videoRef.current.srcObject = streamRef.current;
+              await videoRef.current.play().catch(() => {});
+            }
+            setIsCameraActive(true);
+            return streamRef.current;
           }
-          setIsCameraActive(true);
-          return streamRef.current;
+          activeTracks.forEach((track) => track.stop());
         }
-        activeTracks.forEach((track) => track.stop());
-      }
 
-      // Android-specific camera settings:
-      // - Prefer 640x480 capture resolution on Android
-      // - Request 30 FPS where supported
-      // - Use facingMode: { ideal: 'user' } so it gracefully supports rear/external kiosk cameras
-      // Desktop camera settings:
-      // - Keep desktop camera settings completely unchanged (ideal 640x480 at up to 60fps)
-      const videoConstraints: MediaTrackConstraints = isAndroid
-        ? {
-            width: { ideal: 640, max: 640 },
-            height: { ideal: 480, max: 480 },
-            frameRate: { ideal: 30, max: 30 },
-            facingMode: { ideal: 'user' },
-          }
-        : {
-            width: { ideal: 640 },
-            height: { ideal: 480 },
-            frameRate: { ideal: 60, min: 30 },
-            facingMode: 'user',
-          };
+        const videoConstraints: MediaTrackConstraints = isAndroid
+          ? {
+              width: { ideal: 640, max: 640 },
+              height: { ideal: 480, max: 480 },
+              frameRate: { ideal: 30, max: 30 },
+              facingMode: { ideal: 'user' },
+            }
+          : {
+              width: { ideal: 640 },
+              height: { ideal: 480 },
+              frameRate: { ideal: 60, min: 30 },
+              facingMode: 'user',
+            };
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: videoConstraints,
-        audio: false,
-      });
-
-      streamRef.current = stream;
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play().catch((playErr) => {
-          console.warn('Webcam initial play note:', playErr);
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: videoConstraints,
+          audio: false,
         });
-        setIsCameraActive(true);
+
+        // If stopCamera was called while getUserMedia was resolving, stop tracks immediately
+        if (pendingCameraPromiseRef.current === null) {
+          stream.getTracks().forEach((track) => track.stop());
+          return null;
+        }
+
+        streamRef.current = stream;
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play().catch((playErr) => {
+            console.warn('Webcam initial play note:', playErr);
+          });
+          setIsCameraActive(true);
+        }
+        return stream;
+      } catch (err: unknown) {
+        console.error('Webcam access error:', err);
+        const isDenied =
+          err instanceof DOMException &&
+          (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError');
+        setCameraError(
+          isDenied
+            ? 'Camera permission denied. Please click the camera icon in Chrome’s address bar to grant permission.'
+            : 'Unable to access laptop webcam. Please ensure camera is connected and not used by another app.'
+        );
+        setIsCameraActive(false);
+        return null;
+      } finally {
+        pendingCameraPromiseRef.current = null;
       }
-      return stream;
-    } catch (err: unknown) {
-      console.error('Webcam access error:', err);
-      const isDenied =
-        err instanceof DOMException &&
-        (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError');
-      setCameraError(
-        isDenied
-          ? 'Camera permission denied. Please click the camera icon in Chrome’s address bar to grant permission.'
-          : 'Unable to access laptop webcam. Please ensure camera is connected and not used by another app.'
-      );
-      setIsCameraActive(false);
-      return null;
-    } finally {
-      isStartingCameraRef.current = false;
-    }
-  }, [isAndroid]);
+    })();
+
+    pendingCameraPromiseRef.current = task;
+    return task;
+  }, []);
 
   // Ensure video element gets stream if attached or re-attached
   useEffect(() => {
@@ -474,6 +476,7 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
 
   // Stop Webcam Stream completely
   const stopCamera = useCallback(() => {
+    pendingCameraPromiseRef.current = null;
     try {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((track) => track.stop());
@@ -486,39 +489,500 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
       setCameraError(null);
     } catch (err) {
       console.warn('Error stopping camera:', err);
-    } finally {
-      isStartingCameraRef.current = false;
     }
   }, []);
 
   // Main High-Performance Detection, Audio & Cracker Particle Loop
   useEffect(() => {
-    const processFrame = () => {
+    let lastVideoTime = -1;
+    let lastInferenceTime = -1;
+    let rvfcHandle: number | null = null;
+    let isCancelled = false;
+    let rvfcActive = false;
+
+    const runInference = (currentTime: number) => {
       const video = videoRef.current;
       const canvas = canvasRef.current;
       const landmarker = handLandmarkerRef.current;
       const crackerEngine = crackerEngineRef.current;
       const soundEngine = soundEngineRef.current;
 
+      const canTrackHands =
+        isEnabled &&
+        Boolean(landmarker) &&
+        Boolean(video && video.readyState >= 2 && !video.paused);
+
+      if (!canTrackHands || !video || !landmarker || !canvas) {
+        return;
+      }
+
+      if (video.currentTime === lastVideoTime || isInferringRef.current) {
+        return;
+      }
+
+      lastVideoTime = video.currentTime;
+      isInferringRef.current = true;
+      fpsCountersRef.current.camFrameCount++;
+
+      // Monotonically increasing timestamp protection for MediaPipe Tasks Vision
+      if (currentTime <= lastInferenceTime) {
+        currentTime = lastInferenceTime + 1;
+      }
+      lastInferenceTime = currentTime;
+
+      try {
+        const results = landmarker.detectForVideo(video, currentTime);
+        fpsCountersRef.current.procFrameCount++;
+
+        const detectedLandmarks = results.landmarks || [];
+        const handednessList = results.handedness || [];
+
+        let totalConfidence = 0;
+        for (const handCategories of handednessList) {
+          if (handCategories && handCategories[0]) {
+            totalConfidence += handCategories[0].score;
+          }
+        }
+        const avgConfidence =
+          handednessList.length > 0 ? totalConfidence / handednessList.length : 0;
+
+        // Spatial & Temporal Hand Association
+        let rawLeft: LandmarkPoint[] | null = null;
+        let rawRight: LandmarkPoint[] | null = null;
+
+        if (detectedLandmarks.length === 1) {
+          const marks = detectedLandmarks[0] as LandmarkPoint[];
+          const palm = getPalmCenterScreen(marks);
+          const prevL = historyRef.current.left;
+          const prevR = historyRef.current.right;
+
+          const distL = prevL.prevPx > 0 ? Math.abs(palm.x * canvas.width - prevL.prevPx) : 9999;
+          const distR = prevR.prevPx > 0 ? Math.abs(palm.x * canvas.width - prevR.prevPx) : 9999;
+
+          if (distL < distR && distL < canvas.width * 0.4) {
+            rawLeft = marks;
+          } else if (distR < distL && distR < canvas.width * 0.4) {
+            rawRight = marks;
+          } else {
+            if (palm.x < 0.5) rawLeft = marks;
+            else rawRight = marks;
+          }
+        } else if (detectedLandmarks.length >= 2) {
+          const handA = detectedLandmarks[0] as LandmarkPoint[];
+          const handB = detectedLandmarks[1] as LandmarkPoint[];
+          const palmA = getPalmCenterScreen(handA);
+          const palmB = getPalmCenterScreen(handB);
+
+          if (palmA.x < palmB.x) {
+            rawLeft = handA;
+            rawRight = handB;
+          } else {
+            rawLeft = handB;
+            rawRight = handA;
+          }
+        }
+
+        // -------------------------------------------------------------
+        // LEFT HAND PROCESSING WITH DEAD RECKONING
+        // -------------------------------------------------------------
+        const histL = historyRef.current.left;
+        let activeLeftMarks: LandmarkPoint[] | null = null;
+        let isLeftPredicted = false;
+        let isLeftDetected = false;
+
+        const dtL = histL.prevTime > 0 ? (currentTime - histL.prevTime) / 1000 : 0.016;
+
+        if (rawLeft) {
+          histL.consecutiveFrames++;
+          histL.lostFrames = 0;
+          histL.lastRealLandmarks = rawLeft;
+          activeLeftMarks = rawLeft;
+          isLeftPredicted = false;
+          isLeftDetected = true;
+        } else if (histL.lastRealLandmarks.length > 0 && histL.lostFrames < MAX_PREDICTION_GRACE_FRAMES) {
+          histL.lostFrames++;
+          isLeftPredicted = true;
+          isLeftDetected = true;
+          activeLeftMarks = extrapolateLandmarks(
+            histL.lastRealLandmarks,
+            histL.vx,
+            histL.vy,
+            dtL,
+            canvas.width,
+            canvas.height,
+            0.82
+          );
+          histL.lastRealLandmarks = activeLeftMarks;
+        } else {
+          if (histL.consecutiveFrames > 0 && histL.lostFrames >= MAX_PREDICTION_GRACE_FRAMES) {
+            histL.trackingLosses++;
+          }
+          histL.consecutiveFrames = 0;
+          histL.lostFrames++;
+          isLeftDetected = false;
+          activeLeftMarks = null;
+        }
+
+        let updatedLeft: TrackedHand;
+        if (activeLeftMarks && isLeftDetected) {
+          const palm = getPalmCenterScreen(activeLeftMarks);
+          const px = Math.round(palm.x * canvas.width);
+          const py = Math.round(palm.y * canvas.height);
+
+          if (dtL > 0.003 && histL.prevPx > 0) {
+            const dX = px - histL.prevPx;
+            const dY = py - histL.prevPy;
+            const instantSpeed = Math.hypot(dX, dY) / dtL;
+            histL.distanceMoved += Math.hypot(dX, dY);
+
+            histL.vx = dX / dtL;
+            histL.vy = dY / dtL;
+
+            const alpha = instantSpeed > 250 ? 0.65 : 0.35;
+            const newSpeed = alpha * instantSpeed + (1 - alpha) * histL.smoothedSpeed;
+            histL.acceleration = (newSpeed - histL.prevSpeed) / dtL;
+            histL.prevSpeed = histL.smoothedSpeed;
+            histL.smoothedSpeed = newSpeed;
+
+            if (newSpeed > historyRef.current.maxSpeed) {
+              historyRef.current.maxSpeed = Math.round(newSpeed);
+            }
+          }
+          histL.prevPx = px;
+          histL.prevPy = py;
+          histL.prevTime = currentTime;
+
+          // Maintain smooth trailing light ribbon
+          histL.trail.push({ x: px, y: py, time: currentTime, speed: histL.smoothedSpeed });
+          histL.trail = histL.trail.filter((pt) => currentTime - pt.time < 350).slice(-20);
+
+          const gesture = recognizeHandGesture(activeLeftMarks);
+          const direction = calculateMovementDirection(histL.vx, histL.vy);
+          const inArea = isPointInsideRect(palm, LEFT_TARGET_AREA);
+
+          updatedLeft = {
+            side: 'left',
+            detected: true,
+            screenCenter: palm,
+            pixelX: px,
+            pixelY: py,
+            percentX: Math.round(palm.x * 100),
+            percentY: Math.round(palm.y * 100),
+            movementSpeed: Math.round(histL.smoothedSpeed),
+            movementCategory: categorizeSpeed(histL.smoothedSpeed),
+            landmarks: activeLeftMarks,
+            inTargetArea: inArea,
+            consecutiveDetectedFrames: histL.consecutiveFrames,
+            lastSeenTimestamp: currentTime,
+            gesture,
+            direction,
+            velocityX: Math.round(histL.vx),
+            velocityY: Math.round(histL.vy),
+            acceleration: Math.round(histL.acceleration),
+            distanceMoved: Math.round(histL.distanceMoved),
+            isPredicted: isLeftPredicted,
+          };
+          histL.activeMarks = activeLeftMarks;
+          histL.isDetected = true;
+          histL.isPredicted = isLeftPredicted;
+          histL.gesture = gesture;
+        } else {
+          histL.smoothedSpeed = 0;
+          histL.vx = 0;
+          histL.vy = 0;
+          if (histL.trail.length > 0) {
+            histL.trail.shift();
+          }
+          histL.activeMarks = null;
+          histL.isDetected = false;
+          histL.isPredicted = false;
+          histL.gesture = 'UNKNOWN';
+          updatedLeft = {
+            ...latestDataRef.current.left,
+            detected: false,
+            inTargetArea: false,
+            movementSpeed: 0,
+            movementCategory: 'Idle',
+            landmarks: [],
+            gesture: 'UNKNOWN',
+            direction: 'STATIONARY',
+            isPredicted: false,
+          };
+        }
+
+        // -------------------------------------------------------------
+        // RIGHT HAND PROCESSING WITH DEAD RECKONING
+        // -------------------------------------------------------------
+        const histR = historyRef.current.right;
+        let activeRightMarks: LandmarkPoint[] | null = null;
+        let isRightPredicted = false;
+        let isRightDetected = false;
+
+        const dtR = histR.prevTime > 0 ? (currentTime - histR.prevTime) / 1000 : 0.016;
+
+        if (rawRight) {
+          histR.consecutiveFrames++;
+          histR.lostFrames = 0;
+          histR.lastRealLandmarks = rawRight;
+          activeRightMarks = rawRight;
+          isRightPredicted = false;
+          isRightDetected = true;
+        } else if (histR.lastRealLandmarks.length > 0 && histR.lostFrames < MAX_PREDICTION_GRACE_FRAMES) {
+          histR.lostFrames++;
+          isRightPredicted = true;
+          isRightDetected = true;
+          activeRightMarks = extrapolateLandmarks(
+            histR.lastRealLandmarks,
+            histR.vx,
+            histR.vy,
+            dtR,
+            canvas.width,
+            canvas.height,
+            0.82
+          );
+          histR.lastRealLandmarks = activeRightMarks;
+        } else {
+          if (histR.consecutiveFrames > 0 && histR.lostFrames >= MAX_PREDICTION_GRACE_FRAMES) {
+            histR.trackingLosses++;
+          }
+          histR.consecutiveFrames = 0;
+          histR.lostFrames++;
+          isRightDetected = false;
+          activeRightMarks = null;
+        }
+
+        let updatedRight: TrackedHand;
+        if (activeRightMarks && isRightDetected) {
+          const palm = getPalmCenterScreen(activeRightMarks);
+          const px = Math.round(palm.x * canvas.width);
+          const py = Math.round(palm.y * canvas.height);
+
+          if (dtR > 0.003 && histR.prevPx > 0) {
+            const dX = px - histR.prevPx;
+            const dY = py - histR.prevPy;
+            const instantSpeed = Math.hypot(dX, dY) / dtR;
+            histR.distanceMoved += Math.hypot(dX, dY);
+
+            histR.vx = dX / dtR;
+            histR.vy = dY / dtR;
+
+            const alpha = instantSpeed > 250 ? 0.65 : 0.35;
+            const newSpeed = alpha * instantSpeed + (1 - alpha) * histR.smoothedSpeed;
+            histR.acceleration = (newSpeed - histR.prevSpeed) / dtR;
+            histR.prevSpeed = histR.smoothedSpeed;
+            histR.smoothedSpeed = newSpeed;
+
+            if (newSpeed > historyRef.current.maxSpeed) {
+              historyRef.current.maxSpeed = Math.round(newSpeed);
+            }
+          }
+          histR.prevPx = px;
+          histR.prevPy = py;
+          histR.prevTime = currentTime;
+
+          // Maintain smooth trailing light ribbon
+          histR.trail.push({ x: px, y: py, time: currentTime, speed: histR.smoothedSpeed });
+          histR.trail = histR.trail.filter((pt) => currentTime - pt.time < 350).slice(-20);
+
+          const gesture = recognizeHandGesture(activeRightMarks);
+          const direction = calculateMovementDirection(histR.vx, histR.vy);
+          const inArea = isPointInsideRect(palm, RIGHT_TARGET_AREA);
+
+          updatedRight = {
+            side: 'right',
+            detected: true,
+            screenCenter: palm,
+            pixelX: px,
+            pixelY: py,
+            percentX: Math.round(palm.x * 100),
+            percentY: Math.round(palm.y * 100),
+            movementSpeed: Math.round(histR.smoothedSpeed),
+            movementCategory: categorizeSpeed(histR.smoothedSpeed),
+            landmarks: activeRightMarks,
+            inTargetArea: inArea,
+            consecutiveDetectedFrames: histR.consecutiveFrames,
+            lastSeenTimestamp: currentTime,
+            gesture,
+            direction,
+            velocityX: Math.round(histR.vx),
+            velocityY: Math.round(histR.vy),
+            acceleration: Math.round(histR.acceleration),
+            distanceMoved: Math.round(histR.distanceMoved),
+            isPredicted: isRightPredicted,
+          };
+          histR.activeMarks = activeRightMarks;
+          histR.isDetected = true;
+          histR.isPredicted = isRightPredicted;
+          histR.gesture = gesture;
+        } else {
+          histR.smoothedSpeed = 0;
+          histR.vx = 0;
+          histR.vy = 0;
+          if (histR.trail.length > 0) {
+            histR.trail.shift();
+          }
+          histR.activeMarks = null;
+          histR.isDetected = false;
+          histR.isPredicted = false;
+          histR.gesture = 'UNKNOWN';
+          updatedRight = {
+            ...latestDataRef.current.right,
+            detected: false,
+            inTargetArea: false,
+            movementSpeed: 0,
+            movementCategory: 'Idle',
+            landmarks: [],
+            gesture: 'UNKNOWN',
+            direction: 'STATIONARY',
+            isPredicted: false,
+          };
+        }
+
+        // -------------------------------------------------------------
+        // DIWALI CRACKER PARTICLE & SOUND CO-SIMULATION
+        // -------------------------------------------------------------
+        const isComboActive =
+          updatedLeft.detected &&
+          updatedRight.detected &&
+          updatedLeft.movementSpeed > 260 &&
+          updatedRight.movementSpeed > 260;
+
+        if (isCrackerModeActive) {
+          const timers = spawnTimersRef.current;
+          const gs = gameScoreRef.current;
+
+          // Hand movement alone MUST NOT trigger any sound or award points.
+          // Record physical movement telemetry (speed & combo detection)
+          gs.maxSpeed = Math.max(
+            gs.maxSpeed,
+            updatedLeft.movementSpeed,
+            updatedRight.movementSpeed
+          );
+
+          if (isComboActive) {
+            gs.multiplier = 2;
+            const dt = (currentTime - timers.lastFrameTime) / 1000;
+            gs.comboDurationSec += Math.min(Math.max(dt, 0), 0.1);
+          } else {
+            gs.multiplier = 1;
+          }
+
+          timers.lastFrameTime = currentTime;
+        }
+
+        // Continuous festive sparkles following hand movements
+        if (updatedLeft.detected) {
+          crackerEngine.addMotionSparkles(
+            updatedLeft.pixelX,
+            updatedLeft.pixelY,
+            'left',
+            updatedLeft.movementSpeed
+          );
+        }
+        if (updatedRight.detected) {
+          crackerEngine.addMotionSparkles(
+            updatedRight.pixelX,
+            updatedRight.pixelY,
+            'right',
+            updatedRight.movementSpeed
+          );
+        }
+
+        // Compute FPS every 500ms
+        const fpsCounters = fpsCountersRef.current;
+        const elapsedMeasure = currentTime - fpsCounters.lastMeasureTime;
+        if (elapsedMeasure >= 500) {
+          fpsCounters.measuredCamFps = Math.round((fpsCounters.camFrameCount / elapsedMeasure) * 1000);
+          fpsCounters.measuredProcFps = Math.round((fpsCounters.procFrameCount / elapsedMeasure) * 1000);
+          fpsCounters.camFrameCount = 0;
+          fpsCounters.procFrameCount = 0;
+          fpsCounters.lastMeasureTime = currentTime;
+        }
+
+        // Update ref container for throttled React rendering
+        latestDataRef.current = {
+          left: updatedLeft,
+          right: updatedRight,
+          metrics: {
+            cameraFps: fpsCounters.measuredCamFps,
+            processingFps: fpsCounters.measuredProcFps,
+            trackingConfidence: Math.round(avgConfidence * 100),
+            leftSpeed: updatedLeft.movementSpeed,
+            rightSpeed: updatedRight.movementSpeed,
+            leftDetected: updatedLeft.detected,
+            rightDetected: updatedRight.detected,
+            leftGesture: updatedLeft.gesture,
+            rightGesture: updatedRight.gesture,
+            trackingLossCount: histL.trackingLosses + histR.trackingLosses,
+            leftTrackingLosses: histL.trackingLosses,
+            rightTrackingLosses: histR.trackingLosses,
+            maxSpeedRecorded: historyRef.current.maxSpeed,
+            crackersBurst: crackerEngine.totalBursts,
+            isCombo: isComboActive,
+            audioReady: soundEngine.isUnlocked,
+            lastSound: soundEngine.lastSoundName,
+            activeSounds: soundEngine.activeVoices,
+            masterVolume: Math.round(soundEngine.masterVolume * 100),
+            effectVolume: Math.round(soundEngine.effectVolume * 100),
+            musicVolume: Math.round(soundEngine.musicVolume * 100),
+            isMuted: soundEngine.isMuted,
+          },
+          crackerStats: {
+            crackersBurst: crackerEngine.totalBursts,
+            isCombo: isComboActive,
+            comboMultiplier: isComboActive ? 2 : 1,
+            activeParticles: crackerEngine.activeCount,
+            lastCrackerStyle: crackerEngine.lastStyle,
+          },
+          soundStats: {
+            isUnlocked: soundEngine.isUnlocked,
+            isMuted: soundEngine.isMuted,
+            masterVolume: soundEngine.masterVolume,
+            effectVolume: soundEngine.effectVolume,
+            musicVolume: soundEngine.musicVolume,
+            activeVoices: soundEngine.activeVoices,
+            lastSoundName: soundEngine.lastSoundName,
+          },
+          gameScore: { ...gameScoreRef.current },
+        };
+      } catch (inferenceErr) {
+        console.warn('Inference frame dropped:', inferenceErr);
+      } finally {
+        isInferringRef.current = false;
+      }
+    };
+
+    const setupRVFC = () => {
+      const video = videoRef.current;
+      if (video && 'requestVideoFrameCallback' in video && !rvfcActive) {
+        rvfcActive = true;
+        const rvfcLoop = () => {
+          if (isCancelled) return;
+          runInference(performance.now());
+          const v = videoRef.current;
+          if (v && 'requestVideoFrameCallback' in v && !isCancelled) {
+            rvfcHandle = (v as any).requestVideoFrameCallback(rvfcLoop);
+          } else {
+            rvfcActive = false;
+          }
+        };
+        rvfcHandle = (video as any).requestVideoFrameCallback(rvfcLoop);
+      }
+    };
+
+    const processFrame = () => {
+      if (isCancelled) return;
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      const crackerEngine = crackerEngineRef.current;
+
       if (!canvas) {
         animationFrameIdRef.current = requestAnimationFrame(processFrame);
         return;
       }
 
-      let targetWidth = window.innerWidth || 1920;
-      let targetHeight = window.innerHeight || 1080;
-
-      // On Android, clamp the backing canvas buffer to at most 1920x1080 to prevent excessive 4K texture allocation on Samsung Kiosks
-      if (isAndroid) {
-        const maxW = 1920;
-        const maxH = 1080;
-        if (targetWidth > maxW || targetHeight > maxH) {
-          const scale = Math.min(maxW / targetWidth, maxH / targetHeight);
-          targetWidth = Math.round(targetWidth * scale);
-          targetHeight = Math.round(targetHeight * scale);
-        }
-      }
-
+      const targetWidth = window.innerWidth || 1920;
+      const targetHeight = window.innerHeight || 1080;
       if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
         canvas.width = targetWidth;
         canvas.height = targetHeight;
@@ -532,449 +996,12 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
 
       const currentTime = performance.now();
 
-      // Separate inference frequency from canvas rendering frequency:
-      // On Android: Run inference at ~20 FPS (50ms interval) to avoid CPU starvation, dropped frames and kiosk overheating.
-      // On Desktop: Keep desktop behavior unchanged (0ms interval / on every new camera frame).
-      const minInferenceInterval = isAndroid ? 50 : 0;
-      const timeSinceInference = currentTime - lastInferenceTimeRef.current;
-
-      // Only perform hand tracking inference if hand tracking is enabled, landmarker is loaded, and video is active & ready
-      const shouldInfer =
-        isEnabled &&
-        video !== null &&
-        landmarker !== null &&
-        video.readyState >= 2 &&
-        !video.paused &&
-        !isInferringRef.current &&
-        timeSinceInference >= minInferenceInterval &&
-        video.currentTime !== lastVideoTimeRef.current;
-
-      if (shouldInfer && video && landmarker) {
-        lastVideoTimeRef.current = video.currentTime;
-        lastInferenceTimeRef.current = currentTime;
-        isInferringRef.current = true;
-        fpsCountersRef.current.camFrameCount++;
-
-        try {
-          const results = landmarker.detectForVideo(video, currentTime);
-          fpsCountersRef.current.procFrameCount++;
-
-          const detectedLandmarks = results.landmarks || [];
-          const handednessList = results.handedness || [];
-
-          let totalConfidence = 0;
-          for (const handCategories of handednessList) {
-            if (handCategories && handCategories[0]) {
-              totalConfidence += handCategories[0].score;
-            }
-          }
-          const avgConfidence =
-            handednessList.length > 0 ? totalConfidence / handednessList.length : 0;
-
-          // Spatial & Temporal Hand Association
-          let rawLeft: LandmarkPoint[] | null = null;
-          let rawRight: LandmarkPoint[] | null = null;
-
-          if (detectedLandmarks.length === 1) {
-            const marks = detectedLandmarks[0] as LandmarkPoint[];
-            const palm = getPalmCenterScreen(marks);
-            const prevL = historyRef.current.left;
-            const prevR = historyRef.current.right;
-
-            const distL = prevL.prevPx > 0 ? Math.abs(palm.x * canvas.width - prevL.prevPx) : 9999;
-            const distR = prevR.prevPx > 0 ? Math.abs(palm.x * canvas.width - prevR.prevPx) : 9999;
-
-            if (distL < distR && distL < canvas.width * 0.4) {
-              rawLeft = marks;
-            } else if (distR < distL && distR < canvas.width * 0.4) {
-              rawRight = marks;
-            } else {
-              if (palm.x < 0.5) rawLeft = marks;
-              else rawRight = marks;
-            }
-          } else if (detectedLandmarks.length >= 2) {
-            const handA = detectedLandmarks[0] as LandmarkPoint[];
-            const handB = detectedLandmarks[1] as LandmarkPoint[];
-            const palmA = getPalmCenterScreen(handA);
-            const palmB = getPalmCenterScreen(handB);
-
-            if (palmA.x < palmB.x) {
-              rawLeft = handA;
-              rawRight = handB;
-            } else {
-              rawLeft = handB;
-              rawRight = handA;
-            }
-          }
-
-          // -------------------------------------------------------------
-          // LEFT HAND PROCESSING WITH DEAD RECKONING
-          // -------------------------------------------------------------
-          const histL = historyRef.current.left;
-          let activeLeftMarks: LandmarkPoint[] | null = null;
-          let isLeftPredicted = false;
-          let isLeftDetected = false;
-
-          const dtL = histL.prevTime > 0 ? (currentTime - histL.prevTime) / 1000 : 0.016;
-
-          if (rawLeft) {
-            histL.consecutiveFrames++;
-            histL.lostFrames = 0;
-            histL.lastRealLandmarks = rawLeft;
-            activeLeftMarks = rawLeft;
-            isLeftPredicted = false;
-            isLeftDetected = true;
-          } else if (histL.lastRealLandmarks.length > 0 && histL.lostFrames < MAX_PREDICTION_GRACE_FRAMES) {
-            histL.lostFrames++;
-            isLeftPredicted = true;
-            isLeftDetected = true;
-            activeLeftMarks = extrapolateLandmarks(
-              histL.lastRealLandmarks,
-              histL.vx,
-              histL.vy,
-              dtL,
-              canvas.width,
-              canvas.height,
-              0.82
-            );
-            histL.lastRealLandmarks = activeLeftMarks;
-          } else {
-            if (histL.consecutiveFrames > 0 && histL.lostFrames >= MAX_PREDICTION_GRACE_FRAMES) {
-              histL.trackingLosses++;
-            }
-            histL.consecutiveFrames = 0;
-            histL.lostFrames++;
-            isLeftDetected = false;
-            activeLeftMarks = null;
-          }
-
-          let updatedLeft: TrackedHand;
-          if (activeLeftMarks && isLeftDetected) {
-            const palm = getPalmCenterScreen(activeLeftMarks);
-            const px = Math.round(palm.x * canvas.width);
-            const py = Math.round(palm.y * canvas.height);
-
-            if (dtL > 0.003 && histL.prevPx > 0) {
-              const dX = px - histL.prevPx;
-              const dY = py - histL.prevPy;
-              const instantSpeed = Math.hypot(dX, dY) / dtL;
-              histL.distanceMoved += Math.hypot(dX, dY);
-
-              histL.vx = dX / dtL;
-              histL.vy = dY / dtL;
-
-              const alpha = instantSpeed > 250 ? 0.65 : 0.35;
-              const newSpeed = alpha * instantSpeed + (1 - alpha) * histL.smoothedSpeed;
-              histL.acceleration = (newSpeed - histL.prevSpeed) / dtL;
-              histL.prevSpeed = histL.smoothedSpeed;
-              histL.smoothedSpeed = newSpeed;
-
-              if (newSpeed > historyRef.current.maxSpeed) {
-                historyRef.current.maxSpeed = Math.round(newSpeed);
-              }
-            }
-            histL.prevPx = px;
-            histL.prevPy = py;
-            histL.prevTime = currentTime;
-
-            // Maintain smooth trailing light ribbon
-            histL.trail.push({ x: px, y: py, time: currentTime, speed: histL.smoothedSpeed });
-            histL.trail = histL.trail.filter((pt) => currentTime - pt.time < 350).slice(-20);
-
-            const gesture = recognizeHandGesture(activeLeftMarks);
-            const direction = calculateMovementDirection(histL.vx, histL.vy);
-            const inArea = isPointInsideRect(palm, LEFT_TARGET_AREA);
-
-            updatedLeft = {
-              side: 'left',
-              detected: true,
-              screenCenter: palm,
-              pixelX: px,
-              pixelY: py,
-              percentX: Math.round(palm.x * 100),
-              percentY: Math.round(palm.y * 100),
-              movementSpeed: Math.round(histL.smoothedSpeed),
-              movementCategory: categorizeSpeed(histL.smoothedSpeed),
-              landmarks: activeLeftMarks,
-              inTargetArea: inArea,
-              consecutiveDetectedFrames: histL.consecutiveFrames,
-              lastSeenTimestamp: currentTime,
-              gesture,
-              direction,
-              velocityX: Math.round(histL.vx),
-              velocityY: Math.round(histL.vy),
-              acceleration: Math.round(histL.acceleration),
-              distanceMoved: Math.round(histL.distanceMoved),
-              isPredicted: isLeftPredicted,
-            };
-            histL.activeMarks = activeLeftMarks;
-            histL.isDetected = true;
-            histL.isPredicted = isLeftPredicted;
-            histL.gesture = gesture;
-          } else {
-            histL.smoothedSpeed = 0;
-            histL.vx = 0;
-            histL.vy = 0;
-            if (histL.trail.length > 0) {
-              histL.trail.shift();
-            }
-            histL.activeMarks = null;
-            histL.isDetected = false;
-            histL.isPredicted = false;
-            histL.gesture = 'UNKNOWN';
-            updatedLeft = {
-              ...latestDataRef.current.left,
-              detected: false,
-              inTargetArea: false,
-              movementSpeed: 0,
-              movementCategory: 'Idle',
-              landmarks: [],
-              gesture: 'UNKNOWN',
-              direction: 'STATIONARY',
-              isPredicted: false,
-            };
-          }
-
-          // -------------------------------------------------------------
-          // RIGHT HAND PROCESSING WITH DEAD RECKONING
-          // -------------------------------------------------------------
-          const histR = historyRef.current.right;
-          let activeRightMarks: LandmarkPoint[] | null = null;
-          let isRightPredicted = false;
-          let isRightDetected = false;
-
-          const dtR = histR.prevTime > 0 ? (currentTime - histR.prevTime) / 1000 : 0.016;
-
-          if (rawRight) {
-            histR.consecutiveFrames++;
-            histR.lostFrames = 0;
-            histR.lastRealLandmarks = rawRight;
-            activeRightMarks = rawRight;
-            isRightPredicted = false;
-            isRightDetected = true;
-          } else if (histR.lastRealLandmarks.length > 0 && histR.lostFrames < MAX_PREDICTION_GRACE_FRAMES) {
-            histR.lostFrames++;
-            isRightPredicted = true;
-            isRightDetected = true;
-            activeRightMarks = extrapolateLandmarks(
-              histR.lastRealLandmarks,
-              histR.vx,
-              histR.vy,
-              dtR,
-              canvas.width,
-              canvas.height,
-              0.82
-            );
-            histR.lastRealLandmarks = activeRightMarks;
-          } else {
-            if (histR.consecutiveFrames > 0 && histR.lostFrames >= MAX_PREDICTION_GRACE_FRAMES) {
-              histR.trackingLosses++;
-            }
-            histR.consecutiveFrames = 0;
-            histR.lostFrames++;
-            isRightDetected = false;
-            activeRightMarks = null;
-          }
-
-          let updatedRight: TrackedHand;
-          if (activeRightMarks && isRightDetected) {
-            const palm = getPalmCenterScreen(activeRightMarks);
-            const px = Math.round(palm.x * canvas.width);
-            const py = Math.round(palm.y * canvas.height);
-
-            if (dtR > 0.003 && histR.prevPx > 0) {
-              const dX = px - histR.prevPx;
-              const dY = py - histR.prevPy;
-              const instantSpeed = Math.hypot(dX, dY) / dtR;
-              histR.distanceMoved += Math.hypot(dX, dY);
-
-              histR.vx = dX / dtR;
-              histR.vy = dY / dtR;
-
-              const alpha = instantSpeed > 250 ? 0.65 : 0.35;
-              const newSpeed = alpha * instantSpeed + (1 - alpha) * histR.smoothedSpeed;
-              histR.acceleration = (newSpeed - histR.prevSpeed) / dtR;
-              histR.prevSpeed = histR.smoothedSpeed;
-              histR.smoothedSpeed = newSpeed;
-
-              if (newSpeed > historyRef.current.maxSpeed) {
-                historyRef.current.maxSpeed = Math.round(newSpeed);
-              }
-            }
-            histR.prevPx = px;
-            histR.prevPy = py;
-            histR.prevTime = currentTime;
-
-            // Maintain smooth trailing light ribbon
-            histR.trail.push({ x: px, y: py, time: currentTime, speed: histR.smoothedSpeed });
-            histR.trail = histR.trail.filter((pt) => currentTime - pt.time < 350).slice(-20);
-
-            const gesture = recognizeHandGesture(activeRightMarks);
-            const direction = calculateMovementDirection(histR.vx, histR.vy);
-            const inArea = isPointInsideRect(palm, RIGHT_TARGET_AREA);
-
-            updatedRight = {
-              side: 'right',
-              detected: true,
-              screenCenter: palm,
-              pixelX: px,
-              pixelY: py,
-              percentX: Math.round(palm.x * 100),
-              percentY: Math.round(palm.y * 100),
-              movementSpeed: Math.round(histR.smoothedSpeed),
-              movementCategory: categorizeSpeed(histR.smoothedSpeed),
-              landmarks: activeRightMarks,
-              inTargetArea: inArea,
-              consecutiveDetectedFrames: histR.consecutiveFrames,
-              lastSeenTimestamp: currentTime,
-              gesture,
-              direction,
-              velocityX: Math.round(histR.vx),
-              velocityY: Math.round(histR.vy),
-              acceleration: Math.round(histR.acceleration),
-              distanceMoved: Math.round(histR.distanceMoved),
-              isPredicted: isRightPredicted,
-            };
-            histR.activeMarks = activeRightMarks;
-            histR.isDetected = true;
-            histR.isPredicted = isRightPredicted;
-            histR.gesture = gesture;
-          } else {
-            histR.smoothedSpeed = 0;
-            histR.vx = 0;
-            histR.vy = 0;
-            if (histR.trail.length > 0) {
-              histR.trail.shift();
-            }
-            histR.activeMarks = null;
-            histR.isDetected = false;
-            histR.isPredicted = false;
-            histR.gesture = 'UNKNOWN';
-            updatedRight = {
-              ...latestDataRef.current.right,
-              detected: false,
-              inTargetArea: false,
-              movementSpeed: 0,
-              movementCategory: 'Idle',
-              landmarks: [],
-              gesture: 'UNKNOWN',
-              direction: 'STATIONARY',
-              isPredicted: false,
-            };
-          }
-
-          // -------------------------------------------------------------
-          // DIWALI CRACKER PARTICLE & SOUND CO-SIMULATION
-          // -------------------------------------------------------------
-          const isComboActive =
-            updatedLeft.detected &&
-            updatedRight.detected &&
-            updatedLeft.movementSpeed > 260 &&
-            updatedRight.movementSpeed > 260;
-
-          if (isCrackerModeActive) {
-            const timers = spawnTimersRef.current;
-            const gs = gameScoreRef.current;
-
-            // Hand movement alone MUST NOT trigger any sound or award points.
-            // Record physical movement telemetry (speed & combo detection)
-            gs.maxSpeed = Math.max(
-              gs.maxSpeed,
-              updatedLeft.movementSpeed,
-              updatedRight.movementSpeed
-            );
-
-            if (isComboActive) {
-              gs.multiplier = 2;
-              const dt = (currentTime - timers.lastFrameTime) / 1000;
-              gs.comboDurationSec += Math.min(Math.max(dt, 0), 0.1);
-            } else {
-              gs.multiplier = 1;
-            }
-
-            timers.lastFrameTime = currentTime;
-          }
-
-          // Continuous festive sparkles following hand movements
-          if (updatedLeft.detected) {
-            crackerEngine.addMotionSparkles(
-              updatedLeft.pixelX,
-              updatedLeft.pixelY,
-              'left',
-              updatedLeft.movementSpeed
-            );
-          }
-          if (updatedRight.detected) {
-            crackerEngine.addMotionSparkles(
-              updatedRight.pixelX,
-              updatedRight.pixelY,
-              'right',
-              updatedRight.movementSpeed
-            );
-          }
-
-          // Compute FPS every 500ms
-          const fpsCounters = fpsCountersRef.current;
-          const elapsedMeasure = currentTime - fpsCounters.lastMeasureTime;
-          if (elapsedMeasure >= 500) {
-            fpsCounters.measuredCamFps = Math.round((fpsCounters.camFrameCount / elapsedMeasure) * 1000);
-            fpsCounters.measuredProcFps = Math.round((fpsCounters.procFrameCount / elapsedMeasure) * 1000);
-            fpsCounters.camFrameCount = 0;
-            fpsCounters.procFrameCount = 0;
-            fpsCounters.lastMeasureTime = currentTime;
-          }
-
-          // Update ref container for throttled React rendering
-          latestDataRef.current = {
-            left: updatedLeft,
-            right: updatedRight,
-            metrics: {
-              cameraFps: fpsCounters.measuredCamFps,
-              processingFps: fpsCounters.measuredProcFps,
-              trackingConfidence: Math.round(avgConfidence * 100),
-              leftSpeed: updatedLeft.movementSpeed,
-              rightSpeed: updatedRight.movementSpeed,
-              leftDetected: updatedLeft.detected,
-              rightDetected: updatedRight.detected,
-              leftGesture: updatedLeft.gesture,
-              rightGesture: updatedRight.gesture,
-              trackingLossCount: histL.trackingLosses + histR.trackingLosses,
-              leftTrackingLosses: histL.trackingLosses,
-              rightTrackingLosses: histR.trackingLosses,
-              maxSpeedRecorded: historyRef.current.maxSpeed,
-              crackersBurst: crackerEngine.totalBursts,
-              isCombo: isComboActive,
-              audioReady: soundEngine.isUnlocked,
-              lastSound: soundEngine.lastSoundName,
-              activeSounds: soundEngine.activeVoices,
-              masterVolume: Math.round(soundEngine.masterVolume * 100),
-              effectVolume: Math.round(soundEngine.effectVolume * 100),
-              musicVolume: Math.round(soundEngine.musicVolume * 100),
-              isMuted: soundEngine.isMuted,
-            },
-            crackerStats: {
-              crackersBurst: crackerEngine.totalBursts,
-              isCombo: isComboActive,
-              comboMultiplier: isComboActive ? 2 : 1,
-              activeParticles: crackerEngine.activeCount,
-              lastCrackerStyle: crackerEngine.lastStyle,
-            },
-            soundStats: {
-              isUnlocked: soundEngine.isUnlocked,
-              isMuted: soundEngine.isMuted,
-              masterVolume: soundEngine.masterVolume,
-              effectVolume: soundEngine.effectVolume,
-              musicVolume: soundEngine.musicVolume,
-              activeVoices: soundEngine.activeVoices,
-              lastSoundName: soundEngine.lastSoundName,
-            },
-            gameScore: { ...gameScoreRef.current },
-          };
-        } catch (inferenceErr) {
-          console.warn('Inference frame dropped:', inferenceErr);
-        } finally {
-          isInferringRef.current = false;
-        }
+      // Ensure RVFC is running if supported, otherwise fallback to per-frame inference
+      if (!rvfcActive) {
+        setupRVFC();
+      }
+      if (!rvfcActive) {
+        runInference(currentTime);
       }
 
       // -------------------------------------------------------------
@@ -1065,8 +1092,12 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
     animationFrameIdRef.current = requestAnimationFrame(processFrame);
 
     return () => {
+      isCancelled = true;
       if (animationFrameIdRef.current) {
         cancelAnimationFrame(animationFrameIdRef.current);
+      }
+      if (rvfcHandle !== null && videoRef.current && 'cancelVideoFrameCallback' in videoRef.current) {
+        (videoRef.current as any).cancelVideoFrameCallback(rvfcHandle);
       }
     };
   }, [isCrackerModeActive]);
@@ -1227,9 +1258,9 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
     []
   );
 
-  const triggerBombBurstParticles = useCallback((x: number, y: number, _color?: string) => {
+  const triggerBombBurstParticles = useCallback((x: number, y: number, color?: string) => {
     if (crackerEngineRef.current) {
-      crackerEngineRef.current.triggerCracker(x, y, 420, 'OPEN_PALM', false);
+      crackerEngineRef.current.createBombBurst(x, y, color);
     }
   }, []);
 
@@ -1237,6 +1268,37 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
     if (soundEngineRef.current) {
       soundEngineRef.current.playBombBurstSound(bomb);
     }
+  }, []);
+
+  const getLiveTrackedHands = useCallback(() => {
+    return {
+      left: latestDataRef.current.left,
+      right: latestDataRef.current.right,
+    };
+  }, []);
+
+  const clearComboNotice = useCallback(() => {
+    setComboNotice(null);
+  }, []);
+
+  const playCountdownStep = useCallback((step: 3 | 2 | 1 | 'GO') => {
+    soundEngineRef.current.playCountdownStep(step);
+  }, []);
+
+  const playSfx = useCallback((key: SfxKey, options?: { pitch?: number; vol?: number; pan?: number }) => {
+    soundEngineRef.current.playSfx(key, options);
+  }, []);
+
+  const startBgm = useCallback(() => {
+    soundEngineRef.current.startBgm();
+  }, []);
+
+  const stopBgm = useCallback(() => {
+    soundEngineRef.current.stopBgm();
+  }, []);
+
+  const applyAudioSettings = useCallback((settings: GameAudioSettings) => {
+    soundEngineRef.current.applyAudioSettings(settings);
   }, []);
 
   return {
@@ -1250,22 +1312,23 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
     stopCamera,
     leftHand,
     rightHand,
+    getLiveTrackedHands,
     metrics,
     crackerStats,
     soundStats,
     gameScore,
     comboNotice,
-    clearComboNotice: () => setComboNotice(null),
+    clearComboNotice,
     resetGameScore,
     recordBombTouch,
     triggerBombBurstParticles,
     playBombBurstSound,
     playCountdownBeep,
-    playCountdownStep: (step: 3 | 2 | 1 | 'GO') => soundEngineRef.current.playCountdownStep(step),
-    playSfx: (key: SfxKey, options?: { pitch?: number; vol?: number; pan?: number }) => soundEngineRef.current.playSfx(key, options),
-    startBgm: () => soundEngineRef.current.startBgm(),
-    stopBgm: () => soundEngineRef.current.stopBgm(),
-    applyAudioSettings: (settings: GameAudioSettings) => soundEngineRef.current.applyAudioSettings(settings),
+    playCountdownStep,
+    playSfx,
+    startBgm,
+    stopBgm,
+    applyAudioSettings,
     soundEngine: soundEngineRef.current,
     playGameOverFanfare,
     isCrackerModeActive,

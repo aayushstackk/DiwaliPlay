@@ -11,7 +11,6 @@ import {
   HandGesture,
   GameMappingPreview,
 } from '../types/motion';
-import { isAndroidDevice } from './device';
 
 /**
  * Standard MediaPipe anatomical hand skeleton connections
@@ -209,16 +208,15 @@ export function renderHandSkeleton(
   if (!landmarks || landmarks.length < 21) return;
 
   const isLeft = side === 'left';
-  const isAndroid = isAndroidDevice();
   // Festive neon colors: Vivid Amber Gold for Left, Luminous Coral-Rose for Right
   const boneColor = isLeft ? '#F59E0B' : '#F43F5E';
   const coreColor = isLeft ? '#FFFDE7' : '#FFF0F5';
   const jointFill = isLeft ? '#FEF08A' : '#FECDD3';
   const jointStroke = isLeft ? '#D97706' : '#BE123C';
 
-  // Dynamic glow based on movement speed (bypassed on Android to avoid expensive software Gaussian blur)
+  // Dynamic glow based on movement speed
   const speedGlowFactor = Math.min(movementSpeed / 400, 1);
-  const glowBlur = isAndroid ? 0 : (isPredicted ? 10 : 15 + speedGlowFactor * 8);
+  const glowBlur = isPredicted ? 10 : 15 + speedGlowFactor * 8;
 
   // 1. CONSTRUCT COMPLETE BONE SKELETON PATH (BATCHED)
   ctx.save();
@@ -256,19 +254,15 @@ export function renderHandSkeleton(
   // PASS 1: VIBRANT NEON HALO
   ctx.lineWidth = 5.5;
   ctx.strokeStyle = isPredicted ? (isLeft ? '#FBBF24' : '#FB7185') : boneColor;
-  if (!isAndroid) {
-    ctx.shadowColor = boneColor;
-    ctx.shadowBlur = glowBlur;
-  }
+  ctx.shadowColor = boneColor;
+  ctx.shadowBlur = glowBlur;
   ctx.stroke();
 
   // PASS 2: CRISP LUMINESCENT CORE FILAMENT
   ctx.lineWidth = 2.0;
   ctx.strokeStyle = coreColor;
-  if (!isAndroid) {
-    ctx.shadowColor = '#FFFFFF';
-    ctx.shadowBlur = 4;
-  }
+  ctx.shadowColor = '#FFFFFF';
+  ctx.shadowBlur = 4;
   ctx.stroke();
   ctx.restore();
 
@@ -286,10 +280,8 @@ export function renderHandSkeleton(
       ctx.beginPath();
       ctx.arc(x, y, 6.5, 0, Math.PI * 2);
       ctx.fillStyle = boneColor;
-      if (!isAndroid) {
-        ctx.shadowColor = boneColor;
-        ctx.shadowBlur = 10;
-      }
+      ctx.shadowColor = boneColor;
+      ctx.shadowBlur = 10;
       ctx.fill();
 
       // Bright white spark center
@@ -302,10 +294,8 @@ export function renderHandSkeleton(
       ctx.beginPath();
       ctx.arc(x, y, 5.5, 0, Math.PI * 2);
       ctx.fillStyle = jointFill;
-      if (!isAndroid) {
-        ctx.shadowColor = boneColor;
-        ctx.shadowBlur = 8;
-      }
+      ctx.shadowColor = boneColor;
+      ctx.shadowBlur = 8;
       ctx.fill();
 
       ctx.beginPath();
@@ -318,10 +308,8 @@ export function renderHandSkeleton(
       ctx.beginPath();
       ctx.arc(x, y, 3.8, 0, Math.PI * 2);
       ctx.fillStyle = jointFill;
-      if (!isAndroid) {
-        ctx.shadowColor = boneColor;
-        ctx.shadowBlur = 6;
-      }
+      ctx.shadowColor = boneColor;
+      ctx.shadowBlur = 6;
       ctx.fill();
 
       ctx.beginPath();
@@ -361,10 +349,8 @@ export function renderHandSkeleton(
   ctx.beginPath();
   ctx.arc(px, py, 4.2, 0, Math.PI * 2);
   ctx.fillStyle = '#FFFFFF';
-  if (!isAndroid) {
-    ctx.shadowColor = boneColor;
-    ctx.shadowBlur = 12;
-  }
+  ctx.shadowColor = boneColor;
+  ctx.shadowBlur = 12;
   ctx.fill();
   ctx.restore();
 }
@@ -388,17 +374,14 @@ export function renderHandTrail(
   if (!trail || trail.length < 2) return;
 
   const isLeft = side === 'left';
-  const isAndroid = isAndroidDevice();
   const len = trail.length;
   ctx.save();
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
   const glowColor = isLeft ? '#F59E0B' : '#F43F5E';
-  if (!isAndroid) {
-    ctx.shadowColor = glowColor;
-    ctx.shadowBlur = 8;
-  }
+  ctx.shadowColor = glowColor;
+  ctx.shadowBlur = 8;
 
   for (let i = 0; i < len - 1; i++) {
     const pt1 = trail[i];
@@ -470,6 +453,19 @@ export function resetHandFlameState(): void {
   flameTrackers.right.alpha = 0;
   flameParticles.left = [];
   flameParticles.right = [];
+}
+
+/**
+ * Returns the instantaneous visual center and activity of the hand flame.
+ * Allows collision detection in BombGameOverlay to align 1:1 with the visual fire position.
+ */
+export function getHandFlamePosition(side: 'left' | 'right'): { x: number; y: number; active: boolean } {
+  const tracker = flameTrackers[side];
+  return {
+    x: tracker.x,
+    y: tracker.y,
+    active: tracker.initialized && tracker.alpha > 0.1 && (performance.now() - tracker.lastSeenTime < 250)
+  };
 }
 
 /**
@@ -568,7 +564,6 @@ export function renderHandFlame(
   vx = 0,
   vy = 0
 ) {
-  const isAndroid = isAndroidDevice();
   const now = performance.now();
   const tracker = flameTrackers[side];
 
@@ -687,10 +682,6 @@ export function renderHandFlame(
   grad1.addColorStop(1, '#F97316');    // Vibrant flame tip
 
   ctx.fillStyle = grad1;
-  if (!isAndroid) {
-    ctx.shadowColor = '#EA580C';
-    ctx.shadowBlur = 18;
-  }
   ctx.fill();
 
   // --------------------------------------------------------------------------
@@ -733,10 +724,6 @@ export function renderHandFlame(
   grad2.addColorStop(1, '#FDE047');
 
   ctx.fillStyle = grad2;
-  if (!isAndroid) {
-    ctx.shadowColor = '#F97316';
-    ctx.shadowBlur = 14;
-  }
   ctx.fill();
 
   // --------------------------------------------------------------------------
@@ -779,10 +766,6 @@ export function renderHandFlame(
   grad3.addColorStop(1, '#FFFFFF');
 
   ctx.fillStyle = grad3;
-  if (!isAndroid) {
-    ctx.shadowColor = '#FACC15';
-    ctx.shadowBlur = 10;
-  }
   ctx.fill();
 
   // --------------------------------------------------------------------------
@@ -813,10 +796,6 @@ export function renderHandFlame(
   coreGrad.addColorStop(1, '#FFFFFF');
 
   ctx.fillStyle = coreGrad;
-  if (!isAndroid) {
-    ctx.shadowColor = '#FFFFFF';
-    ctx.shadowBlur = 10;
-  }
   ctx.fill();
 
   // --------------------------------------------------------------------------
@@ -832,10 +811,6 @@ export function renderHandFlame(
   ctx.beginPath();
   ctx.arc(0, 0, 3.5, 0, Math.PI * 2);
   ctx.fillStyle = '#FFFFFF';
-  if (!isAndroid) {
-    ctx.shadowColor = '#FFFFFF';
-    ctx.shadowBlur = 8;
-  }
   ctx.fill();
 
   // --------------------------------------------------------------------------
@@ -859,17 +834,11 @@ export function renderHandFlame(
     ctx.beginPath();
     ctx.arc(p.x, p.y, p.size * (0.35 + p.life * 0.65), 0, Math.PI * 2);
     ctx.fillStyle = `hsla(${currentHue}, 100%, 65%, ${currentAlpha})`;
-    if (!isAndroid) {
-      ctx.shadowColor = `hsl(${currentHue}, 100%, 50%)`;
-      ctx.shadowBlur = 6;
-    }
     ctx.fill();
   }
 
   // Spawn new sparks to maintain a lively convective cloud of 12-16 embers
-  const maxEmbers = isAndroid ? 8 : 16;
-  const spawnRate = isAndroid ? 0.45 : 0.7;
-  if (pList.length < maxEmbers && Math.random() < spawnRate) {
+  if (pList.length < 16 && Math.random() < 0.7) {
     pList.push({
       id: ++particleIdCounter,
       x: swayCenter * 0.5 + (Math.random() - 0.5) * (flameW * 0.7),

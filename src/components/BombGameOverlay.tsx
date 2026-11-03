@@ -8,12 +8,13 @@ import { BombConfig, BombGameSettings } from '../types/backend';
 import { TrackedHand } from '../types/motion';
 import { CartoonBombSvg } from './CartoonBombSvg';
 import { DEFAULT_BOMB_CONFIGS, DEFAULT_BOMB_SETTINGS } from '../utils/bombDefaults';
-import { isAndroidDevice } from '../utils/device';
+import { getHandFlamePosition } from '../utils/motionMath';
 
 export interface BombGameOverlayProps {
   isActive: boolean;
   leftHand: TrackedHand;
   rightHand: TrackedHand;
+  getLiveTrackedHands?: () => { left: TrackedHand; right: TrackedHand };
   bombConfigs: BombConfig[];
   settings: BombGameSettings;
   isTouchMode?: boolean;
@@ -48,6 +49,7 @@ interface LaunchedBombEntity {
   burstTime: number;
   burstScale: number;
   trail: BombAscentSpark[]; // short trail of sparks/glow during high-speed ascent
+  lastTrailTime?: number; // throttles spark creation to reduce DOM churn
 }
 
 interface FloatingScorePopup {
@@ -171,6 +173,7 @@ export const BombGameOverlay: React.FC<BombGameOverlayProps> = ({
   isActive,
   leftHand,
   rightHand,
+  getLiveTrackedHands,
   bombConfigs,
   settings,
   isTouchMode = false,
@@ -178,7 +181,6 @@ export const BombGameOverlay: React.FC<BombGameOverlayProps> = ({
   onPlayBurstSound,
   onTriggerParticles,
 }) => {
-  const isAndroid = isAndroidDevice();
   const [activeBombs, setActiveBombs] = useState<LaunchedBombEntity[]>([]);
   const [scorePopups, setScorePopups] = useState<FloatingScorePopup[]>([]);
   const mortarsRef = useRef<LaunchMortarDef[]>(INITIAL_MORTARS.map((m) => ({ ...m })));
@@ -188,6 +190,7 @@ export const BombGameOverlay: React.FC<BombGameOverlayProps> = ({
   const pendingBurstsRef = useRef<PendingBombLaunch[]>([]);
   const leftHandRef = useRef<TrackedHand>(leftHand);
   const rightHandRef = useRef<TrackedHand>(rightHand);
+  const getLiveTrackedHandsRef = useRef(getLiveTrackedHands);
   const bombConfigsRef = useRef<BombConfig[]>(bombConfigs);
   const settingsRef = useRef<BombGameSettings>(settings);
   const onBombTouchRef = useRef(onBombTouch);
@@ -199,6 +202,7 @@ export const BombGameOverlay: React.FC<BombGameOverlayProps> = ({
   useEffect(() => {
     leftHandRef.current = leftHand;
     rightHandRef.current = rightHand;
+    getLiveTrackedHandsRef.current = getLiveTrackedHands;
     bombConfigsRef.current = bombConfigs;
     settingsRef.current = settings;
     onBombTouchRef.current = onBombTouch;
@@ -310,6 +314,7 @@ export const BombGameOverlay: React.FC<BombGameOverlayProps> = ({
         burstTime: 0,
         burstScale: 1.0,
         trail: [],
+        lastTrailTime: 0,
       };
 
       activeBombsRef.current.push(newBomb);
@@ -563,23 +568,33 @@ export const BombGameOverlay: React.FC<BombGameOverlayProps> = ({
       // Only active in Camera Mode. In Touch Mode, hand tracking collisions must remain strictly disabled.
       const touchPoints: Array<{ x: number; y: number; radius: number }> = [];
       if (!isTouchModeRef.current) {
-        const lHand = leftHandRef.current;
-        const rHand = rightHandRef.current;
+        const live = getLiveTrackedHandsRef.current ? getLiveTrackedHandsRef.current() : null;
+        const lHand = live ? live.left : leftHandRef.current;
+        const rHand = live ? live.right : rightHandRef.current;
 
-        if (lHand && lHand.detected && lHand.pixelX > 0 && lHand.pixelY > 0) {
-          touchPoints.push({ x: lHand.pixelX, y: lHand.pixelY, radius: 36 });
-          if (lHand.landmarks && lHand.landmarks[8]) {
-            const lm = lHand.landmarks[8];
-            touchPoints.push({ x: (1 - lm.x) * screenW, y: lm.y * screenH, radius: 28 });
-          }
+        const leftFlame = getHandFlamePosition('left');
+        const rightFlame = getHandFlamePosition('right');
+
+        // Left hand collision points: prioritize live interpolated flame position
+        if (leftFlame.active) {
+          touchPoints.push({ x: leftFlame.x, y: leftFlame.y, radius: 46 });
+        } else if (lHand && lHand.detected && lHand.pixelX > 0 && lHand.pixelY > 0) {
+          touchPoints.push({ x: lHand.pixelX, y: lHand.pixelY, radius: 40 });
+        }
+        if (lHand && lHand.detected && lHand.landmarks && lHand.landmarks[8]) {
+          const lm = lHand.landmarks[8];
+          touchPoints.push({ x: (1 - lm.x) * screenW, y: lm.y * screenH, radius: 32 });
         }
 
-        if (rHand && rHand.detected && rHand.pixelX > 0 && rHand.pixelY > 0) {
-          touchPoints.push({ x: rHand.pixelX, y: rHand.pixelY, radius: 36 });
-          if (rHand.landmarks && rHand.landmarks[8]) {
-            const lm = rHand.landmarks[8];
-            touchPoints.push({ x: (1 - lm.x) * screenW, y: lm.y * screenH, radius: 28 });
-          }
+        // Right hand collision points: prioritize live interpolated flame position
+        if (rightFlame.active) {
+          touchPoints.push({ x: rightFlame.x, y: rightFlame.y, radius: 46 });
+        } else if (rHand && rHand.detected && rHand.pixelX > 0 && rHand.pixelY > 0) {
+          touchPoints.push({ x: rHand.pixelX, y: rHand.pixelY, radius: 40 });
+        }
+        if (rHand && rHand.detected && rHand.landmarks && rHand.landmarks[8]) {
+          const lm = rHand.landmarks[8];
+          touchPoints.push({ x: (1 - lm.x) * screenW, y: lm.y * screenH, radius: 32 });
         }
       }
 
@@ -588,8 +603,14 @@ export const BombGameOverlay: React.FC<BombGameOverlayProps> = ({
 
       for (const bomb of activeBombsRef.current) {
         if (bomb.isBursting) {
-          // Keep bursting bomb for 280ms while expanding/fading, then drop
-          if (frameNow - bomb.burstTime < 280) {
+          const burstElapsed = frameNow - bomb.burstTime;
+          // Keep bursting bomb for 700ms with smooth explosion lifecycle and dissipation
+          if (burstElapsed < 700) {
+            // Decelerate residual velocity naturally during explosion
+            bomb.vx *= 0.94;
+            bomb.vy *= 0.94;
+            bomb.x += bomb.vx * dt;
+            bomb.y += bomb.vy * dt;
             nextBombs.push(bomb);
           }
           continue;
@@ -609,22 +630,19 @@ export const BombGameOverlay: React.FC<BombGameOverlayProps> = ({
         const elapsedSinceLaunch = frameNow - bomb.launchTime;
         bomb.scale = Math.min(1.0, 0.65 + (elapsedSinceLaunch / 140) * 0.35);
 
-        // Sparks & glow trail during high-speed ascent (vy < 0)
-        if (bomb.vy < 0) {
-          const shouldAdd = !isAndroid || Math.random() < 0.5;
-          if (shouldAdd) {
-            bomb.trail.push({
-              id: `spk_${frameNow}_${Math.random().toString(36).substring(2, 6)}`,
-              x: bomb.x + (Math.random() - 0.5) * 8,
-              y: bomb.y + bomb.radius * 0.7,
-              time: frameNow,
-              size: 8 + Math.random() * 6,
-            });
-          }
+        // Sparks & glow trail during high-speed ascent (vy < 0) throttled to max 1 spark per ~35ms
+        if (bomb.vy < 0 && (!bomb.lastTrailTime || frameNow - bomb.lastTrailTime >= 35)) {
+          bomb.lastTrailTime = frameNow;
+          bomb.trail.push({
+            id: `spk_${frameNow}_${Math.random().toString(36).substring(2, 6)}`,
+            x: bomb.x + (Math.random() - 0.5) * 8,
+            y: bomb.y + bomb.radius * 0.7,
+            time: frameNow,
+            size: 8 + Math.random() * 6,
+          });
         }
-        // Filter out sparks older than 160ms (100ms on Android to keep pool small)
-        const maxSparkAge = isAndroid ? 100 : 160;
-        bomb.trail = bomb.trail.filter((pt) => frameNow - pt.time < maxSparkAge);
+        // Filter out sparks older than 160ms
+        bomb.trail = bomb.trail.filter((pt) => frameNow - pt.time < 160);
 
         // Soft dampening bounce on left and right screen borders
         if (bomb.x < bomb.radius + 15) {
@@ -796,14 +814,15 @@ export const BombGameOverlay: React.FC<BombGameOverlayProps> = ({
           return (
             <div
               key={pt.id}
-              className={`absolute rounded-full pointer-events-none ${isAndroid ? '' : 'blur-[1px]'}`}
+              className="absolute rounded-full pointer-events-none blur-[1px] will-change-transform"
               style={{
-                left: `${pt.x - size / 2}px`,
-                top: `${pt.y - size / 2}px`,
+                top: 0,
+                left: 0,
+                transform: `translate3d(${Math.round(pt.x - size / 2)}px, ${Math.round(pt.y - size / 2)}px, 0)`,
                 width: `${size}px`,
                 height: `${size}px`,
                 backgroundColor: '#FDE047',
-                boxShadow: isAndroid ? undefined : `0 0 10px ${bomb.config.color || '#F59E0B'}`,
+                boxShadow: `0 0 10px ${bomb.config.color || '#F59E0B'}`,
                 opacity,
               }}
             />
@@ -817,6 +836,33 @@ export const BombGameOverlay: React.FC<BombGameOverlayProps> = ({
       {activeBombs.map((bomb) => {
         const size = (bomb.radius || 52) * 2;
         const isAscending = bomb.vy < -150 && !bomb.isBursting;
+        const burstElapsed = bomb.isBursting ? now - bomb.burstTime : 0;
+        const burstProgress = bomb.isBursting ? Math.min(1.0, Math.max(0, burstElapsed / 700)) : 0;
+
+        // Container scale: during explosion, smooth explosive punch expansion
+        const burstExpansion = bomb.isBursting
+          ? 1.0 + Math.sin(Math.min(1.0, burstProgress * 1.8) * (Math.PI / 2)) * 0.4
+          : 1.0;
+        const renderScale = bomb.scale * burstExpansion;
+
+        // Detonation Flash Core (0 to ~220ms)
+        const flashOpacity = bomb.isBursting ? Math.max(0, 1 - burstProgress * 3.5) : 0;
+
+        // Expanding Outer Shockwave Ring (0 to ~600ms)
+        const shockwaveProgress = bomb.isBursting ? Math.min(1.0, burstProgress * 1.45) : 0;
+        const shockwaveScale = 0.8 + shockwaveProgress * 1.85;
+        const shockwaveOpacity = bomb.isBursting ? Math.max(0, (1 - shockwaveProgress) * 0.95) : 0;
+
+        // Radiant Fireball Bloom (0 to ~500ms)
+        const fireProgress = bomb.isBursting ? Math.min(1.0, burstProgress * 1.6) : 0;
+        const fireScale = 1.0 + Math.sin(fireProgress * Math.PI) * 0.85;
+        const fireOpacity = bomb.isBursting ? Math.max(0, (1 - fireProgress) * 0.85) : 0;
+
+        // Dissipating Smoke Puff Cloud (90ms to ~700ms)
+        const smokeProgress = bomb.isBursting ? Math.max(0, (burstElapsed - 90) / 610) : 0;
+        const smokeScale = 0.9 + smokeProgress * 1.35;
+        const smokeOpacity = bomb.isBursting && smokeProgress > 0 ? Math.max(0, (1 - smokeProgress) * 0.45) : 0;
+        const smokeLiftY = smokeProgress * 18;
 
         return (
           <div
@@ -830,34 +876,32 @@ export const BombGameOverlay: React.FC<BombGameOverlayProps> = ({
             className={`absolute will-change-transform select-none touch-none ${
               isTouchMode && !bomb.isBursting
                 ? 'pointer-events-auto cursor-pointer active:scale-95'
-                : ''
-            } ${
-              bomb.isBursting
-                ? 'scale-150 opacity-0 transition-all duration-300 pointer-events-none'
-                : ''
+                : 'pointer-events-none'
             }`}
             style={{
-              left: `${bomb.x - bomb.radius}px`,
-              top: `${bomb.y - bomb.radius}px`,
+              top: 0,
+              left: 0,
               width: `${size}px`,
               height: `${size}px`,
-              transform: `scale(${bomb.scale})`,
+              transform: `translate3d(${Math.round(bomb.x - bomb.radius)}px, ${Math.round(bomb.y - bomb.radius)}px, 0) scale(${renderScale})`,
               transformOrigin: '50% 50%',
             }}
           >
-            {/* Ambient colorful glow ring */}
-            <div
-              className={`absolute inset-0 rounded-full opacity-45 pointer-events-none ${isAndroid ? '' : 'blur-md'}`}
-              style={{ backgroundColor: bomb.config.color }}
-            />
+            {/* Ambient colorful glow ring when in flight */}
+            {!bomb.isBursting && (
+              <div
+                className="absolute inset-0 rounded-full blur-md opacity-45 pointer-events-none"
+                style={{ backgroundColor: bomb.config.color }}
+              />
+            )}
 
             {/* High-speed rocket propulsion exhaust during upward ascent */}
             {isAscending && (
               <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 pointer-events-none flex flex-col items-center">
                 <div
-                  className={`w-4 h-6 rounded-full bg-gradient-to-t from-transparent via-amber-400 to-yellow-200 animate-pulse ${isAndroid ? '' : 'blur-[1px]'}`}
+                  className="w-4 h-6 rounded-full bg-gradient-to-t from-transparent via-amber-400 to-yellow-200 blur-[1px] animate-pulse"
                   style={{
-                    boxShadow: isAndroid ? undefined : `0 4px 12px ${bomb.config.color || '#F59E0B'}`,
+                    boxShadow: `0 4px 12px ${bomb.config.color || '#F59E0B'}`,
                   }}
                 />
               </div>
@@ -872,11 +916,56 @@ export const BombGameOverlay: React.FC<BombGameOverlayProps> = ({
               rotation={bomb.rot}
             />
 
-            {/* Instant contact shockwave expansion ring on hit */}
-            {bomb.isBursting && (
+            {/* ========================================================== */}
+            {/* EXPLOSION LIFECYCLE: FLASH, SHOCKWAVE, FIREBALL & SMOKE    */}
+            {/* ========================================================== */}
+
+            {/* 1. Instant Detonation Brilliant White Core Flash */}
+            {bomb.isBursting && flashOpacity > 0 && (
               <div
-                className="absolute inset-0 rounded-full border-4 animate-ping pointer-events-none"
-                style={{ borderColor: bomb.config.color }}
+                className="absolute inset-0 rounded-full bg-white blur-[2px] pointer-events-none"
+                style={{
+                  transform: `scale(${1.0 + (1 - flashOpacity) * 0.6})`,
+                  opacity: flashOpacity * 0.95,
+                  boxShadow: `0 0 24px ${bomb.config.color || '#FDE047'}, 0 0 40px #FFFFFF`,
+                }}
+              />
+            )}
+
+            {/* 2. Expanding Radiant Shockwave Ring */}
+            {bomb.isBursting && shockwaveOpacity > 0 && (
+              <div
+                className="absolute inset-0 rounded-full border-2 sm:border-3 pointer-events-none will-change-transform"
+                style={{
+                  borderColor: bomb.config.color || '#F59E0B',
+                  boxShadow: `0 0 16px ${bomb.config.color || '#F59E0B'}`,
+                  transform: `scale(${shockwaveScale})`,
+                  opacity: shockwaveOpacity,
+                }}
+              />
+            )}
+
+            {/* 3. Core Fireball Radial Glow */}
+            {bomb.isBursting && fireOpacity > 0 && (
+              <div
+                className="absolute inset-0 rounded-full pointer-events-none blur-md will-change-transform"
+                style={{
+                  background: `radial-gradient(circle, #FFFFFF 0%, ${bomb.config.color || '#F59E0B'} 50%, rgba(234, 88, 12, 0.4) 75%, transparent 100%)`,
+                  transform: `scale(${fireScale})`,
+                  opacity: fireOpacity,
+                }}
+              />
+            )}
+
+            {/* 4. Dissipating Smoke Puff Cloud */}
+            {bomb.isBursting && smokeOpacity > 0 && (
+              <div
+                className="absolute inset-0 rounded-full pointer-events-none blur-sm will-change-transform"
+                style={{
+                  background: 'radial-gradient(circle, rgba(254, 243, 199, 0.4) 0%, rgba(214, 211, 209, 0.25) 55%, transparent 80%)',
+                  transform: `scale(${smokeScale}) translateY(-${smokeLiftY}px)`,
+                  opacity: smokeOpacity,
+                }}
               />
             )}
           </div>
@@ -889,10 +978,11 @@ export const BombGameOverlay: React.FC<BombGameOverlayProps> = ({
       {scorePopups.map((popup) => (
         <div
           key={popup.id}
-          className="absolute font-black tracking-wider text-xl sm:text-2xl drop-shadow-[0_4px_14px_rgba(0,0,0,0.85)] pointer-events-none animate-float-fade select-none"
+          className="absolute font-black tracking-wider text-xl sm:text-2xl drop-shadow-[0_4px_14px_rgba(0,0,0,0.85)] pointer-events-none animate-float-fade select-none will-change-transform"
           style={{
-            left: `${popup.x}px`,
-            top: `${popup.y - 20}px`,
+            top: 0,
+            left: 0,
+            transform: `translate3d(${Math.round(popup.x)}px, ${Math.round(popup.y - 20)}px, 0)`,
             color: popup.isPenalty ? '#EF4444' : '#FDE047',
             textShadow: popup.isPenalty
               ? '0 0 16px rgba(239, 68, 68, 0.95), 0 2px 4px rgba(0,0,0,0.9)'

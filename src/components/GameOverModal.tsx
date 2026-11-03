@@ -189,10 +189,35 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+    isSpinningRef.current = false;
     if (onCloseRef.current) {
       onCloseRef.current();
     } else if (onPlayAgainRef.current) {
       onPlayAgainRef.current();
+    }
+  }, []);
+
+  // Dedicated Play Again handler that restarts the game session cleanly
+  const handlePlayAgainClick = useCallback(() => {
+    if (hasHandledExitRef.current) return;
+    hasHandledExitRef.current = true;
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+    isSpinningRef.current = false;
+    if (onPlayAgainRef.current) {
+      onPlayAgainRef.current();
+    } else if (onCloseRef.current) {
+      onCloseRef.current();
     }
   }, []);
 
@@ -1472,7 +1497,7 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
                 {/* ----------------------------------------------------- */}
                 <button
                   type="button"
-                  onClick={triggerExit}
+                  onClick={handlePlayAgainClick}
                   className="w-full h-10 sm:h-11 lg:h-12 px-4 bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-neutral-950 font-black text-xs sm:text-sm lg:text-base uppercase tracking-widest rounded-xl transition-all shadow-[0_0_25px_rgba(245,158,11,0.4)] hover:shadow-[0_0_35px_rgba(245,158,11,0.6)] flex items-center justify-center gap-2 cursor-pointer active:scale-[0.98] border border-amber-300/40 flex-shrink-0"
                 >
                   <RotateCcw className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5]" />

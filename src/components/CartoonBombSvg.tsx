@@ -85,7 +85,7 @@ export const CartoonBombSvg: React.FC<CartoonBombSvgProps> = ({
   return (
     <div
       className={`relative inline-flex items-center justify-center select-none ${
-        isBursting ? 'scale-135 opacity-0 transition-all duration-300' : ''
+        isBursting ? 'scale-125 opacity-0 transition-all duration-400 ease-out pointer-events-none' : ''
       } ${className}`}
       style={{
         width: size,
@@ -487,7 +487,7 @@ export const CartoonBombSvg: React.FC<CartoonBombSvgProps> = ({
       {/* ================================================================ */}
       {/* 3D EMBOSSED PILL POINT BADGE                                     */}
       {/* ================================================================ */}
-      {showBadge && (
+      {showBadge && !isBursting && (
         <div
           className="absolute -bottom-2 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full font-black tracking-wider shadow-xl flex items-center justify-center border whitespace-nowrap pointer-events-none select-none"
           style={{
