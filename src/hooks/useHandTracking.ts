@@ -33,6 +33,7 @@ import { CrackerEngine } from '../utils/crackerEngine';
 import { SoundEngine, CrackerSoundType } from '../utils/soundEngine';
 import { SfxKey, GameAudioSettings } from '../types/backend';
 import { INITIAL_SCORE_STATE, calculateBurstPoints } from '../utils/scoreSystem';
+import { isAndroidDevice } from '../utils/device';
 
 const DEFAULT_HAND = (side: 'left' | 'right'): TrackedHand => ({
   side,
@@ -159,14 +160,20 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
   const [rightHand, setRightHand] = useState<TrackedHand>(DEFAULT_HAND('right'));
   const [metrics, setMetrics] = useState<PerformanceMetrics>(DEFAULT_METRICS);
 
+  const isAndroid = isAndroidDevice();
+
   // MediaPipe & Rendering loop refs
   const handLandmarkerRef = useRef<HandLandmarker | null>(null);
   const animationFrameIdRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const isStartingCameraRef = useRef(false);
   const isInferringRef = useRef(false);
+  const lastVideoTimeRef = useRef(-1);
+  const lastInferenceTimeRef = useRef(0);
 
   // Cracker Particle Engine Instance (Object-pooled, zero GC overhead)
-  const crackerEngineRef = useRef<CrackerEngine>(new CrackerEngine(700));
+  // On Android, 350 particles provide abundant festive visuals while halving CPU/GPU particle load
+  const crackerEngineRef = useRef<CrackerEngine>(new CrackerEngine(isAndroid ? 350 : 700));
 
   // Cracker spawn timer trackers
   const spawnTimersRef = useRef({
@@ -383,9 +390,14 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
     };
   }, []);
 
-  // Start Webcam Stream (640x480 at up to 60fps for speed and responsiveness)
+  // Start Webcam Stream (640x480 at up to 60fps for speed and responsiveness on Desktop; 30fps on Android Kiosk)
   const startCamera = useCallback(async () => {
     setCameraError(null);
+    if (isStartingCameraRef.current) {
+      return streamRef.current;
+    }
+    isStartingCameraRef.current = true;
+
     try {
       if (streamRef.current) {
         const activeTracks = streamRef.current.getTracks();
@@ -400,13 +412,28 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
         activeTracks.forEach((track) => track.stop());
       }
 
+      // Android-specific camera settings:
+      // - Prefer 640x480 capture resolution on Android
+      // - Request 30 FPS where supported
+      // - Use facingMode: { ideal: 'user' } so it gracefully supports rear/external kiosk cameras
+      // Desktop camera settings:
+      // - Keep desktop camera settings completely unchanged (ideal 640x480 at up to 60fps)
+      const videoConstraints: MediaTrackConstraints = isAndroid
+        ? {
+            width: { ideal: 640, max: 640 },
+            height: { ideal: 480, max: 480 },
+            frameRate: { ideal: 30, max: 30 },
+            facingMode: { ideal: 'user' },
+          }
+        : {
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+            frameRate: { ideal: 60, min: 30 },
+            facingMode: 'user',
+          };
+
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 640 },
-          height: { ideal: 480 },
-          frameRate: { ideal: 60, min: 30 },
-          facingMode: 'user',
-        },
+        video: videoConstraints,
         audio: false,
       });
 
@@ -432,8 +459,10 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
       );
       setIsCameraActive(false);
       return null;
+    } finally {
+      isStartingCameraRef.current = false;
     }
-  }, []);
+  }, [isAndroid]);
 
   // Ensure video element gets stream if attached or re-attached
   useEffect(() => {
@@ -457,13 +486,13 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
       setCameraError(null);
     } catch (err) {
       console.warn('Error stopping camera:', err);
+    } finally {
+      isStartingCameraRef.current = false;
     }
   }, []);
 
   // Main High-Performance Detection, Audio & Cracker Particle Loop
   useEffect(() => {
-    let lastVideoTime = -1;
-
     const processFrame = () => {
       const video = videoRef.current;
       const canvas = canvasRef.current;
@@ -476,8 +505,20 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
         return;
       }
 
-      const targetWidth = window.innerWidth || 1920;
-      const targetHeight = window.innerHeight || 1080;
+      let targetWidth = window.innerWidth || 1920;
+      let targetHeight = window.innerHeight || 1080;
+
+      // On Android, clamp the backing canvas buffer to at most 1920x1080 to prevent excessive 4K texture allocation on Samsung Kiosks
+      if (isAndroid) {
+        const maxW = 1920;
+        const maxH = 1080;
+        if (targetWidth > maxW || targetHeight > maxH) {
+          const scale = Math.min(maxW / targetWidth, maxH / targetHeight);
+          targetWidth = Math.round(targetWidth * scale);
+          targetHeight = Math.round(targetHeight * scale);
+        }
+      }
+
       if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
         canvas.width = targetWidth;
         canvas.height = targetHeight;
@@ -491,14 +532,26 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
 
       const currentTime = performance.now();
 
-      // Only perform hand tracking inference if hand tracking is enabled, landmarker is loaded, and video is active & ready
-      const canTrackHands =
-        isEnabled &&
-        Boolean(landmarker) &&
-        Boolean(video && video.readyState >= 2 && !video.paused);
+      // Separate inference frequency from canvas rendering frequency:
+      // On Android: Run inference at ~20 FPS (50ms interval) to avoid CPU starvation, dropped frames and kiosk overheating.
+      // On Desktop: Keep desktop behavior unchanged (0ms interval / on every new camera frame).
+      const minInferenceInterval = isAndroid ? 50 : 0;
+      const timeSinceInference = currentTime - lastInferenceTimeRef.current;
 
-      if (canTrackHands && video && landmarker && video.currentTime !== lastVideoTime && !isInferringRef.current) {
-        lastVideoTime = video.currentTime;
+      // Only perform hand tracking inference if hand tracking is enabled, landmarker is loaded, and video is active & ready
+      const shouldInfer =
+        isEnabled &&
+        video !== null &&
+        landmarker !== null &&
+        video.readyState >= 2 &&
+        !video.paused &&
+        !isInferringRef.current &&
+        timeSinceInference >= minInferenceInterval &&
+        video.currentTime !== lastVideoTimeRef.current;
+
+      if (shouldInfer && video && landmarker) {
+        lastVideoTimeRef.current = video.currentTime;
+        lastInferenceTimeRef.current = currentTime;
         isInferringRef.current = true;
         fpsCountersRef.current.camFrameCount++;
 

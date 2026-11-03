@@ -8,6 +8,7 @@ import { BombConfig, BombGameSettings } from '../types/backend';
 import { TrackedHand } from '../types/motion';
 import { CartoonBombSvg } from './CartoonBombSvg';
 import { DEFAULT_BOMB_CONFIGS, DEFAULT_BOMB_SETTINGS } from '../utils/bombDefaults';
+import { isAndroidDevice } from '../utils/device';
 
 export interface BombGameOverlayProps {
   isActive: boolean;
@@ -177,6 +178,7 @@ export const BombGameOverlay: React.FC<BombGameOverlayProps> = ({
   onPlayBurstSound,
   onTriggerParticles,
 }) => {
+  const isAndroid = isAndroidDevice();
   const [activeBombs, setActiveBombs] = useState<LaunchedBombEntity[]>([]);
   const [scorePopups, setScorePopups] = useState<FloatingScorePopup[]>([]);
   const mortarsRef = useRef<LaunchMortarDef[]>(INITIAL_MORTARS.map((m) => ({ ...m })));
@@ -609,16 +611,20 @@ export const BombGameOverlay: React.FC<BombGameOverlayProps> = ({
 
         // Sparks & glow trail during high-speed ascent (vy < 0)
         if (bomb.vy < 0) {
-          bomb.trail.push({
-            id: `spk_${frameNow}_${Math.random().toString(36).substring(2, 6)}`,
-            x: bomb.x + (Math.random() - 0.5) * 8,
-            y: bomb.y + bomb.radius * 0.7,
-            time: frameNow,
-            size: 8 + Math.random() * 6,
-          });
+          const shouldAdd = !isAndroid || Math.random() < 0.5;
+          if (shouldAdd) {
+            bomb.trail.push({
+              id: `spk_${frameNow}_${Math.random().toString(36).substring(2, 6)}`,
+              x: bomb.x + (Math.random() - 0.5) * 8,
+              y: bomb.y + bomb.radius * 0.7,
+              time: frameNow,
+              size: 8 + Math.random() * 6,
+            });
+          }
         }
-        // Filter out sparks older than 160ms
-        bomb.trail = bomb.trail.filter((pt) => frameNow - pt.time < 160);
+        // Filter out sparks older than 160ms (100ms on Android to keep pool small)
+        const maxSparkAge = isAndroid ? 100 : 160;
+        bomb.trail = bomb.trail.filter((pt) => frameNow - pt.time < maxSparkAge);
 
         // Soft dampening bounce on left and right screen borders
         if (bomb.x < bomb.radius + 15) {
@@ -790,14 +796,14 @@ export const BombGameOverlay: React.FC<BombGameOverlayProps> = ({
           return (
             <div
               key={pt.id}
-              className="absolute rounded-full pointer-events-none blur-[1px]"
+              className={`absolute rounded-full pointer-events-none ${isAndroid ? '' : 'blur-[1px]'}`}
               style={{
                 left: `${pt.x - size / 2}px`,
                 top: `${pt.y - size / 2}px`,
                 width: `${size}px`,
                 height: `${size}px`,
                 backgroundColor: '#FDE047',
-                boxShadow: `0 0 10px ${bomb.config.color || '#F59E0B'}`,
+                boxShadow: isAndroid ? undefined : `0 0 10px ${bomb.config.color || '#F59E0B'}`,
                 opacity,
               }}
             />
@@ -841,7 +847,7 @@ export const BombGameOverlay: React.FC<BombGameOverlayProps> = ({
           >
             {/* Ambient colorful glow ring */}
             <div
-              className="absolute inset-0 rounded-full blur-md opacity-45 pointer-events-none"
+              className={`absolute inset-0 rounded-full opacity-45 pointer-events-none ${isAndroid ? '' : 'blur-md'}`}
               style={{ backgroundColor: bomb.config.color }}
             />
 
@@ -849,9 +855,9 @@ export const BombGameOverlay: React.FC<BombGameOverlayProps> = ({
             {isAscending && (
               <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 pointer-events-none flex flex-col items-center">
                 <div
-                  className="w-4 h-6 rounded-full bg-gradient-to-t from-transparent via-amber-400 to-yellow-200 blur-[1px] animate-pulse"
+                  className={`w-4 h-6 rounded-full bg-gradient-to-t from-transparent via-amber-400 to-yellow-200 animate-pulse ${isAndroid ? '' : 'blur-[1px]'}`}
                   style={{
-                    boxShadow: `0 4px 12px ${bomb.config.color || '#F59E0B'}`,
+                    boxShadow: isAndroid ? undefined : `0 4px 12px ${bomb.config.color || '#F59E0B'}`,
                   }}
                 />
               </div>

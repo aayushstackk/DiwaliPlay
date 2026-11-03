@@ -6,6 +6,7 @@
 import React from 'react';
 import { BombConfig } from '../types/backend';
 import { resolveAssetUrl } from '../utils/assetUrl';
+import { isAndroidDevice } from '../utils/device';
 
 interface CartoonBombSvgProps {
   bomb: Partial<BombConfig>;
@@ -79,6 +80,8 @@ export const CartoonBombSvg: React.FC<CartoonBombSvgProps> = ({
     badgeShadow = 'rgba(59, 130, 246, 0.5)';
   }
 
+  const isAndroid = isAndroidDevice();
+
   return (
     <div
       className={`relative inline-flex items-center justify-center select-none ${
@@ -89,7 +92,9 @@ export const CartoonBombSvg: React.FC<CartoonBombSvgProps> = ({
         height: size,
         transform: rotation ? `rotate(${rotation}deg)` : undefined,
         transformOrigin: '50% 55%',
-        filter: isPenalty
+        filter: isAndroid
+          ? undefined
+          : isPenalty
           ? 'drop-shadow(0 10px 18px rgba(239, 68, 68, 0.25))'
           : 'drop-shadow(0 10px 20px rgba(0, 0, 0, 0.55))',
       }}
@@ -490,7 +495,9 @@ export const CartoonBombSvg: React.FC<CartoonBombSvgProps> = ({
             borderColor: badgeBorder,
             color: '#FFFFFF',
             fontSize: Math.max(10, Math.round(size * 0.14)),
-            boxShadow: `0 4px 14px ${badgeShadow}, inset 0 1px 0 rgba(255, 255, 255, 0.45)`,
+            boxShadow: isAndroid
+              ? undefined
+              : `0 4px 14px ${badgeShadow}, inset 0 1px 0 rgba(255, 255, 255, 0.45)`,
             textShadow: '0 1px 2px rgba(0, 0, 0, 0.8)',
           }}
         >
