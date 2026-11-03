@@ -75,36 +75,49 @@ const SEGMENT_COLORS = [
   '#9333EA'
 ];
 
-// Parse voucher name into clean, high-impact two-line display for wheel segments
+// Parse voucher name into clean, high-impact two-line prize text for wheel segments
 function parseVoucherTitle(name: string): { line1: string; line2: string } {
   const clean = (name || '').trim();
-  if (!clean) return { line1: 'DIWALI', line2: 'VOUCHER' };
+  if (!clean) return { line1: 'DIWALI', line2: 'GIFT' };
 
   // Strip emojis for clean text rendering in SVG
-  const words = clean
+  const text = clean
     .replace(/[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]/gu, '')
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
+    .trim();
 
-  if (words.length === 0) return { line1: 'GIFT', line2: 'VOUCHER' };
+  // Pattern 1: e.g. "₹1000/- OFF", "₹500/- OFF", "20% OFF", "₹200/- OFF"
+  const amountMatch = text.match(/^([₹$€£]?\s*\d+(?:\/\-|\/)?%?)\s*(.*)$/i);
+  if (amountMatch && amountMatch[1]) {
+    let amt = amountMatch[1].trim();
+    if (/^[₹$€£]\d+$/.test(amt)) {
+      amt = `${amt}/-`;
+    }
+    const rest = amountMatch[2]?.trim();
+    return {
+      line1: amt.toUpperCase(),
+      line2: rest ? rest.toUpperCase() : 'OFF'
+    };
+  }
+
+  // Pattern 2: e.g. "Flat ₹500 OFF" or "Flat 1000"
+  const flatMatch = text.match(/^(flat|get|win|save|upto)\s+([₹$€£]?\s*\d+(?:\/\-|\/)?%?)\s*(.*)$/i);
+  if (flatMatch) {
+    let amt = flatMatch[2].trim();
+    if (/^[₹$€£]\d+$/.test(amt)) {
+      amt = `${amt}/-`;
+    }
+    const rest = [flatMatch[1], flatMatch[3]].filter(Boolean).join(' ').trim();
+    return {
+      line1: amt.toUpperCase(),
+      line2: rest ? rest.toUpperCase() : 'OFF'
+    };
+  }
+
+  // Fallback: split words roughly in half
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return { line1: 'DIWALI', line2: 'GIFT' };
   if (words.length === 1) return { line1: words[0].toUpperCase(), line2: '' };
   if (words.length === 2) return { line1: words[0].toUpperCase(), line2: words[1].toUpperCase() };
-
-  // Patterns like "Flat ₹500 OFF" -> line1: "FLAT ₹500", line2: "OFF"
-  if (/^(flat|get|win|save|upto|up\s*to)$/i.test(words[0])) {
-    return {
-      line1: `${words[0]} ${words[1]}`.toUpperCase(),
-      line2: words.slice(2).join(' ').toUpperCase()
-    };
-  }
-  // Patterns like "₹500 Festive Voucher" -> line1: "₹500", line2: words.slice(1)
-  if (/^[₹$€£]?\d+%?/i.test(words[0])) {
-    return {
-      line1: words[0].toUpperCase(),
-      line2: words.slice(1).join(' ').toUpperCase()
-    };
-  }
 
   const mid = Math.ceil(words.length / 2);
   return {
@@ -1360,29 +1373,6 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
                                 <filter id="badge-shadow" x="-30%" y="-30%" width="160%" height="160%">
                                   <feDropShadow dx="0" dy="2" stdDeviation="2.5" floodColor="#000000" floodOpacity="0.65" />
                                 </filter>
-
-                                {/* Individual Segment Wedge Clip Paths for Edge-to-Edge Panels */}
-                                {wheelRewards.map((_, i) => {
-                                  const startAngle = i * sliceAngle;
-                                  const endAngle = (i + 1) * sliceAngle;
-                                  const startRad = (startAngle * Math.PI) / 180;
-                                  const endRad = (endAngle * Math.PI) / 180;
-                                  const x1 = centerCoord + 232 * Math.sin(startRad);
-                                  const y1 = centerCoord - 232 * Math.cos(startRad);
-                                  const x2 = centerCoord + 232 * Math.sin(endRad);
-                                  const y2 = centerCoord - 232 * Math.cos(endRad);
-                                  const largeArc = sliceAngle > 180 ? 1 : 0;
-                                  const pathData =
-                                    numSlices === 1
-                                      ? `M ${centerCoord} ${centerCoord} m -232, 0 a 232,232 0 1,0 464,0 a 232,232 0 1,0 -464,0`
-                                      : `M ${centerCoord} ${centerCoord} L ${x1} ${y1} A 232 232 0 ${largeArc} 1 ${x2} ${y2} Z`;
-
-                                  return (
-                                    <clipPath key={`clip-${i}`} id={`gameover-slice-clip-${i}`}>
-                                      <path d={pathData} />
-                                    </clipPath>
-                                  );
-                                })}
                               </defs>
 
                               {/* Multi-layered Outer Casino Rim */}
@@ -1412,23 +1402,25 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
                                 strokeWidth="1.5"
                               />
 
-                              {/* Wheel Slices with Edge-to-Edge Printed Prize Panels & Fallback Layout */}
+                              {/* Wheel Slices with TEXT-ONLY Prize Labels */}
                               {(() => {
                                 const activeRadius = 232;
                                 const pegsPerSlice = numSlices <= 4 ? 4 : (numSlices <= 6 ? 3 : (numSlices <= 10 ? 2 : 1));
                                 const totalPegs = Math.max(16, numSlices * pegsPerSlice);
                                 const pegAngleStep = 360 / totalPegs;
 
-                                const wedgeWidthAtRim = numSlices === 1 ? 464 : 2 * activeRadius * Math.sin((sliceAngle * Math.PI) / 360);
-                                const imgBoxWidth = numSlices === 1 ? 464 : Math.max(wedgeWidthAtRim * 1.15, 140);
-
-                                const titleFontSize = numSlices <= 4 ? 17 : (numSlices <= 6 ? 14 : (numSlices <= 8 ? 12 : 10.5));
-                                const subFontSize = numSlices <= 4 ? 12 : (numSlices <= 6 ? 10.5 : (numSlices <= 8 ? 9 : 8));
+                                const baseTitleFontSize = numSlices <= 4 ? 22 : (numSlices <= 6 ? 19 : (numSlices <= 8 ? 16.5 : (numSlices <= 10 ? 14.5 : 13)));
+                                const baseSubFontSize = numSlices <= 4 ? 14 : (numSlices <= 6 ? 12.5 : (numSlices <= 8 ? 11 : (numSlices <= 10 ? 9.5 : 8.5)));
                                 const titleStrokeWidth = numSlices <= 6 ? 3.5 : 2.8;
-                                const subStrokeWidth = numSlices <= 6 ? 2.8 : 2.2;
-                                const line1Dist = 134;
-                                const line2Dist = 114;
-                                const maxTextWidth = Math.max(40, 2 * 134 * Math.sin((sliceAngle * Math.PI) / 360) * 0.86);
+                                const subStrokeWidth = numSlices <= 6 ? 2.6 : 2.0;
+
+                                // Radial positioning: Line 1 in upper wide portion, Line 2 below it
+                                const line1Dist = 152;
+                                const line2Dist = 122;
+                                const starDist = 184;
+
+                                const maxTextWidthLine1 = Math.max(36, 2 * line1Dist * Math.sin((sliceAngle * Math.PI) / 360) * 0.84);
+                                const maxTextWidthLine2 = Math.max(30, 2 * line2Dist * Math.sin((sliceAngle * Math.PI) / 360) * 0.82);
 
                                 return (
                                   <>
@@ -1454,6 +1446,16 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
                                           ? `M ${centerCoord} ${centerCoord} m -${activeRadius}, 0 a ${activeRadius},${activeRadius} 0 1,0 ${activeRadius * 2},0 a ${activeRadius},${activeRadius} 0 1,0 -${activeRadius * 2},0`
                                           : `M ${centerCoord} ${centerCoord} L ${x1} ${y1} A ${activeRadius} ${activeRadius} 0 ${largeArc} 1 ${x2} ${y2} Z`;
 
+                                      // Dynamic font size scaling if text is longer
+                                      const line1Scale = line1.length > 7 ? Math.max(0.72, 7 / line1.length) : 1;
+                                      const titleFontSize = Math.round(baseTitleFontSize * line1Scale * 10) / 10;
+
+                                      const line2Scale = line2.length > 7 ? Math.max(0.72, 7 / line2.length) : 1;
+                                      const subFontSize = Math.round(baseSubFontSize * line2Scale * 10) / 10;
+
+                                      // If no line2, center line1 vertically in the slice
+                                      const yPosLine1 = line2 ? line1Dist : 138;
+
                                       return (
                                         <g key={reward.id || i}>
                                           {/* Segment Wedge Base Fill */}
@@ -1465,86 +1467,73 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
                                             strokeOpacity="0.4"
                                           />
 
-                                          {/* Clipped Printed Prize Panel Content */}
-                                          <g clipPath={`url(#gameover-slice-clip-${i})`}>
-                                            {reward.imageUrl ? (
-                                              /* Large, zoomed, edge-to-edge printed prize panel image filling segment */
-                                              <g transform={`rotate(${midAngle}, ${centerCoord}, ${centerCoord})`}>
-                                                <image
-                                                  href={resolveAssetUrl(reward.imageUrl)}
-                                                  x={centerCoord - imgBoxWidth / 2}
-                                                  y={centerCoord - activeRadius}
-                                                  width={imgBoxWidth}
-                                                  height={activeRadius}
-                                                  preserveAspectRatio="xMidYMid slice"
-                                                />
-                                              </g>
-                                            ) : (
-                                              /* Premium Fallback Panel for Missing Voucher Image */
-                                              <g transform={`rotate(${midAngle}, ${centerCoord}, ${centerCoord})`}>
-                                                {/* Fallback Gift Emblem */}
-                                                <text
-                                                  x={centerCoord}
-                                                  y={centerCoord - 165}
-                                                  textAnchor="middle"
-                                                  fontSize={numSlices <= 4 ? 34 : (numSlices <= 6 ? 28 : (numSlices <= 8 ? 24 : 20))}
-                                                  filter="url(#badge-shadow)"
-                                                >
-                                                  🎁
-                                                </text>
-
-                                                {/* Headline Amount */}
-                                                <text
-                                                  x={centerCoord}
-                                                  y={centerCoord - (line2 ? line1Dist : (line1Dist + line2Dist) / 2)}
-                                                  textAnchor="middle"
-                                                  fill={paletteItem.textPrimary}
-                                                  stroke="#0A0713"
-                                                  strokeWidth={titleStrokeWidth}
-                                                  paintOrder="stroke fill"
-                                                  strokeLinejoin="round"
-                                                  fontSize={titleFontSize}
-                                                  fontWeight="900"
-                                                  fontFamily="'Cinzel', 'Arial Black', sans-serif"
-                                                  letterSpacing="0.5"
-                                                  textLength={line1.length > 8 ? maxTextWidth : undefined}
-                                                  lengthAdjust={line1.length > 8 ? "spacingAndGlyphs" : undefined}
-                                                >
-                                                  {line1}
-                                                </text>
-
-                                                {/* Subtitle */}
-                                                {line2 && (
-                                                  <text
-                                                    x={centerCoord}
-                                                    y={centerCoord - line2Dist}
-                                                    textAnchor="middle"
-                                                    fill={paletteItem.textSecondary}
-                                                    stroke="#0A0713"
-                                                    strokeWidth={subStrokeWidth}
-                                                    paintOrder="stroke fill"
-                                                    strokeLinejoin="round"
-                                                    fontSize={subFontSize}
-                                                    fontWeight="800"
-                                                    fontFamily="'Cinzel', sans-serif"
-                                                    letterSpacing="0.8"
-                                                    textLength={line2.length > 9 ? maxTextWidth : undefined}
-                                                    lengthAdjust={line2.length > 9 ? "spacingAndGlyphs" : undefined}
-                                                  >
-                                                    {line2}
-                                                  </text>
-                                                )}
-                                              </g>
-                                            )}
-                                          </g>
-
                                           {/* Subtle Radial Sheen Overlay for 3D Laminated Finish */}
                                           <path
                                             d={pathData}
                                             fill="url(#slice-sheen)"
-                                            opacity="0.2"
+                                            opacity="0.22"
                                             pointerEvents="none"
                                           />
+
+                                          {/* Prize Label Group following the angle of the segment */}
+                                          <g transform={`rotate(${midAngle}, ${centerCoord}, ${centerCoord})`}>
+                                            {/* Decorative Golden Star Accent near Rim */}
+                                            <text
+                                              x={centerCoord}
+                                              y={centerCoord - starDist}
+                                              textAnchor="middle"
+                                              fill="#F59E0B"
+                                              fontSize={numSlices <= 6 ? 12 : 10}
+                                              opacity="0.9"
+                                              pointerEvents="none"
+                                            >
+                                              ★
+                                            </text>
+
+                                            {/* Headline Prize Amount (e.g. ₹1000/-, 20%, ₹500/-) */}
+                                            <text
+                                              x={centerCoord}
+                                              y={centerCoord - yPosLine1}
+                                              textAnchor="middle"
+                                              fill={paletteItem.textPrimary}
+                                              stroke="#0C0704"
+                                              strokeWidth={titleStrokeWidth}
+                                              paintOrder="stroke fill"
+                                              strokeLinejoin="round"
+                                              fontSize={titleFontSize}
+                                              fontWeight="900"
+                                              fontFamily="'Cinzel', 'Arial Black', sans-serif"
+                                              letterSpacing="0.6"
+                                              textLength={line1.length > 6 ? maxTextWidthLine1 : undefined}
+                                              lengthAdjust={line1.length > 6 ? "spacingAndGlyphs" : undefined}
+                                              pointerEvents="none"
+                                            >
+                                              {line1}
+                                            </text>
+
+                                            {/* Suffix / Action (e.g. OFF, DISCOUNT) */}
+                                            {line2 && (
+                                              <text
+                                                x={centerCoord}
+                                                y={centerCoord - line2Dist}
+                                                textAnchor="middle"
+                                                fill={paletteItem.textSecondary}
+                                                stroke="#0C0704"
+                                                strokeWidth={subStrokeWidth}
+                                                paintOrder="stroke fill"
+                                                strokeLinejoin="round"
+                                                fontSize={subFontSize}
+                                                fontWeight="800"
+                                                fontFamily="'Cinzel', sans-serif"
+                                                letterSpacing="1.5"
+                                                textLength={line2.length > 5 ? maxTextWidthLine2 : undefined}
+                                                lengthAdjust={line2.length > 5 ? "spacingAndGlyphs" : undefined}
+                                                pointerEvents="none"
+                                              >
+                                                {line2}
+                                              </text>
+                                            )}
+                                          </g>
 
                                           {/* Golden Brass Spoke Divider Line */}
                                           <line
@@ -1644,17 +1633,27 @@ const GameOverModalComponent: React.FC<GameOverModalProps> = ({
                       <span>🎉</span>
                     </div>
 
-                    {/* Voucher Image / Icon */}
-                    <div className="w-14 h-14 sm:w-16 sm:h-16 lg:w-20 lg:h-20 rounded-xl bg-gradient-to-b from-amber-400 via-yellow-500 to-amber-600 p-0.5 shadow-[0_0_20px_rgba(245,158,11,0.4)] my-1 flex-shrink-0">
-                      <div className="w-full h-full rounded-[10px] bg-[#1C1226] p-1 flex items-center justify-center overflow-hidden">
+                    {/* Prominent Voucher Image on Winning Result */}
+                    <div className="w-20 h-20 sm:w-24 sm:h-24 lg:w-28 lg:h-28 rounded-2xl bg-gradient-to-b from-amber-300 via-yellow-500 to-amber-700 p-1 shadow-[0_0_25px_rgba(245,158,11,0.5)] my-1 flex-shrink-0 transition-transform duration-500 scale-100 hover:scale-105">
+                      <div className="w-full h-full rounded-[12px] bg-[#1C1226] p-1.5 flex items-center justify-center overflow-hidden">
                         {winningVoucher.imageUrl ? (
                           <img
                             src={resolveAssetUrl(winningVoucher.imageUrl)}
                             alt={winningVoucher.name}
-                            className="w-full h-full object-contain"
+                            className="w-full h-full object-contain drop-shadow"
                           />
                         ) : (
-                          <Gift className="w-8 h-8 text-amber-400" />
+                          <div className="flex flex-col items-center justify-center text-center p-1">
+                            <Gift className="w-8 h-8 sm:w-10 sm:h-10 text-amber-400 drop-shadow mb-0.5 animate-pulse" />
+                            <span className="text-[11px] sm:text-xs font-black font-['Cinzel',serif] text-amber-200">
+                              {parseVoucherTitle(winningVoucher.name).line1}
+                            </span>
+                            {parseVoucherTitle(winningVoucher.name).line2 && (
+                              <span className="text-[9px] sm:text-[10px] font-bold text-amber-300/80 tracking-wider">
+                                {parseVoucherTitle(winningVoucher.name).line2}
+                              </span>
+                            )}
+                          </div>
                         )}
                       </div>
                     </div>
