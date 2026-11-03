@@ -24,19 +24,69 @@ interface SpinWheelModalProps {
   onRewardWon?: (reward: RewardItem) => void;
 }
 
-// Clean, festive, balanced Diwali colors for wheel segments
-const SEGMENT_COLORS = [
-  '#C2410C', // Warm Terracotta
-  '#D97706', // Marigold Amber
-  '#991B1B', // Deep Festive Red
-  '#047857', // Emerald Green
-  '#B45309', // Warm Ochre
-  '#4338CA', // Royal Indigo
-  '#854D0E', // Golden Bronze
-  '#7C2D12', // Rich Rust
-  '#0F766E', // Forest Teal
-  '#9333EA'  // Festive Purple
+// Premium Black, Orange and Gold Casino Segment Theme Palette
+const CASINO_SEGMENT_PALETTE = [
+  { bg: '#1E140A', stroke: '#F59E0B', textPrimary: '#FFFBEB', textSecondary: '#FDE68A' }, // Deep Obsidian Black-Gold
+  { bg: '#C2410C', stroke: '#FDE68A', textPrimary: '#FFFFFF', textSecondary: '#FEF3C7' }, // Radiant Festive Orange
+  { bg: '#2D1A0E', stroke: '#F59E0B', textPrimary: '#FFFBEB', textSecondary: '#FDE68A' }, // Burnished Bronze Dark
+  { bg: '#D97706', stroke: '#FEF3C7', textPrimary: '#FFFFFF', textSecondary: '#FEF3C7' }, // Marigold Gold
+  { bg: '#140E08', stroke: '#F59E0B', textPrimary: '#FFFBEB', textSecondary: '#FDE68A' }, // Jet Onyx Gold
+  { bg: '#B45309', stroke: '#FEF3C7', textPrimary: '#FFFFFF', textSecondary: '#FEF3C7' }, // Rich Warm Amber
+  { bg: '#781D42', stroke: '#FDE68A', textPrimary: '#FFFBEB', textSecondary: '#FDE68A' }, // Deep Royal Wine
+  { bg: '#EA580C', stroke: '#FEF3C7', textPrimary: '#FFFFFF', textSecondary: '#FEF3C7' }, // Vibrant Flame Orange
 ];
+
+// Clean, festive, balanced Diwali colors fallback
+const SEGMENT_COLORS = [
+  '#C2410C',
+  '#D97706',
+  '#991B1B',
+  '#047857',
+  '#B45309',
+  '#4338CA',
+  '#854D0E',
+  '#7C2D12',
+  '#0F766E',
+  '#9333EA'
+];
+
+// Parse voucher name into clean, high-impact two-line display for wheel segments
+function parseVoucherTitle(name: string): { line1: string; line2: string } {
+  const clean = (name || '').trim();
+  if (!clean) return { line1: 'DIWALI', line2: 'VOUCHER' };
+
+  // Strip emojis for clean text rendering in SVG
+  const words = clean
+    .replace(/[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]/gu, '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (words.length === 0) return { line1: 'GIFT', line2: 'VOUCHER' };
+  if (words.length === 1) return { line1: words[0].toUpperCase(), line2: '' };
+  if (words.length === 2) return { line1: words[0].toUpperCase(), line2: words[1].toUpperCase() };
+
+  // Patterns like "Flat ₹500 OFF" -> line1: "FLAT ₹500", line2: "OFF"
+  if (/^(flat|get|win|save|upto|up\s*to)$/i.test(words[0])) {
+    return {
+      line1: `${words[0]} ${words[1]}`.toUpperCase(),
+      line2: words.slice(2).join(' ').toUpperCase()
+    };
+  }
+  // Patterns like "₹500 Festive Voucher" -> line1: "₹500", line2: words.slice(1)
+  if (/^[₹$€£]?\d+%?/i.test(words[0])) {
+    return {
+      line1: words[0].toUpperCase(),
+      line2: words.slice(1).join(' ').toUpperCase()
+    };
+  }
+
+  const mid = Math.ceil(words.length / 2);
+  return {
+    line1: words.slice(0, mid).join(' ').toUpperCase(),
+    line2: words.slice(mid).join(' ').toUpperCase()
+  };
+}
 
 export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
   isOpen,
@@ -70,6 +120,7 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
   const isSpinningRef = useRef<boolean>(false);
   const rotationRef = useRef<number>(0);
   const wheelSvgRef = useRef<SVGSVGElement | null>(null);
+  const flapperNeedleRef = useRef<HTMLDivElement | null>(null);
   const lastTickTimeRef = useRef<number>(0);
 
   // Sync rotationRef when rotation state changes or on initial mount
@@ -94,10 +145,10 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
     return audioCtxRef.current;
   }, []);
 
-  // Realistic mechanical "kt kt kt" flapper tick sound
-  const playRealisticTick = useCallback(() => {
+  // Premium Casino Mechanical "Kat-Kat-Kat" Flapper Tick Sound
+  const playRealisticTick = useCallback((speedRatio = 1.0) => {
     const now = performance.now();
-    if (now - lastTickTimeRef.current < 28) return; // Prevent audio overload
+    if (now - lastTickTimeRef.current < 18) return; // Rate limiter prevents audio distortion
     lastTickTimeRef.current = now;
 
     try {
@@ -105,52 +156,125 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
       if (!ctx) return;
       const t = ctx.currentTime;
 
-      // Realistic flapper click: fast pitch drop + bandpass filter
+      // 1. Transient click noise burst (flapper snapping off brass peg)
+      const bufferSize = Math.max(1, Math.floor(ctx.sampleRate * 0.005)); // 5ms
+      const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+      const output = noiseBuffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        const decay = Math.exp(-i / (bufferSize * 0.28));
+        output[i] = (Math.random() * 2 - 1) * decay;
+      }
+      const noiseNode = ctx.createBufferSource();
+      noiseNode.buffer = noiseBuffer;
+
+      const noiseFilter = ctx.createBiquadFilter();
+      noiseFilter.type = 'bandpass';
+      noiseFilter.frequency.setValueAtTime(3600 + (Math.random() - 0.5) * 400, t);
+      noiseFilter.Q.setValueAtTime(2.6, t);
+
+      const noiseGain = ctx.createGain();
+      const peakNoise = 0.32 * Math.min(1.2, Math.max(0.65, speedRatio));
+      noiseGain.gain.setValueAtTime(peakNoise, t);
+      noiseGain.gain.exponentialRampToValueAtTime(0.001, t + 0.005);
+
+      noiseNode.connect(noiseFilter);
+      noiseFilter.connect(noiseGain);
+      noiseGain.connect(ctx.destination);
+      noiseNode.start(t);
+
+      // 2. Resonant body snap (pitch-decaying oscillator for authentic mechanical click)
       const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      const filter = ctx.createBiquadFilter();
+      const oscGain = ctx.createGain();
+      const oscFilter = ctx.createBiquadFilter();
 
       osc.type = 'triangle';
-      osc.frequency.setValueAtTime(850, t);
-      osc.frequency.exponentialRampToValueAtTime(140, t + 0.018);
+      const baseFreq = 1350 + (Math.random() - 0.5) * 120;
+      osc.frequency.setValueAtTime(baseFreq, t);
+      osc.frequency.exponentialRampToValueAtTime(170, t + 0.015);
 
-      filter.type = 'bandpass';
-      filter.frequency.setValueAtTime(1200, t);
-      filter.Q.setValueAtTime(2.2, t);
+      oscFilter.type = 'bandpass';
+      oscFilter.frequency.setValueAtTime(1050, t);
+      oscFilter.Q.setValueAtTime(2.4, t);
 
-      gain.gain.setValueAtTime(0.25, t);
-      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.018);
+      const peakOsc = 0.38 * Math.min(1.2, Math.max(0.7, speedRatio));
+      oscGain.gain.setValueAtTime(peakOsc, t);
+      oscGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.016);
 
-      osc.connect(filter);
-      filter.connect(gain);
-      gain.connect(ctx.destination);
-
+      osc.connect(oscFilter);
+      oscFilter.connect(oscGain);
+      oscGain.connect(ctx.destination);
       osc.start(t);
-      osc.stop(t + 0.02);
+      osc.stop(t + 0.017);
+
+      // 3. Low physical body thud (gives the click weight and punch)
+      const thump = ctx.createOscillator();
+      const thumpGain = ctx.createGain();
+      thump.type = 'sine';
+      thump.frequency.setValueAtTime(150, t);
+      thump.frequency.exponentialRampToValueAtTime(45, t + 0.013);
+
+      thumpGain.gain.setValueAtTime(0.24, t);
+      thumpGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.013);
+
+      thump.connect(thumpGain);
+      thumpGain.connect(ctx.destination);
+      thump.start(t);
+      thump.stop(t + 0.014);
     } catch {}
   }, [getAudioContext]);
 
-  // Cheerful victory sound when the wheel lands on the winning slice
+  // Triumphant Casino Victory Fanfare Chime on Stop
   const playVictoryChime = useCallback(() => {
     try {
       const ctx = getAudioContext();
       if (!ctx) return;
       const now = ctx.currentTime;
-      const freqs = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6
-      freqs.forEach((freq, idx) => {
+
+      // Stage 1: Ascending Golden Arpeggio (C5 -> E5 -> G5 -> B5 -> C6 -> E6)
+      const arpeggio = [523.25, 659.25, 783.99, 987.77, 1046.5, 1318.51];
+      arpeggio.forEach((freq, idx) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = 'triangle';
-        osc.frequency.setValueAtTime(freq, now + idx * 0.09);
+        osc.frequency.setValueAtTime(freq, now + idx * 0.075);
 
-        gain.gain.setValueAtTime(0, now + idx * 0.09);
-        gain.gain.linearRampToValueAtTime(0.25, now + idx * 0.09 + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.09 + 0.85);
+        gain.gain.setValueAtTime(0, now + idx * 0.075);
+        gain.gain.linearRampToValueAtTime(0.25, now + idx * 0.075 + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.075 + 0.65);
 
         osc.connect(gain);
         gain.connect(ctx.destination);
-        osc.start(now + idx * 0.09);
-        osc.stop(now + idx * 0.09 + 0.9);
+        osc.start(now + idx * 0.075);
+        osc.stop(now + idx * 0.075 + 0.7);
+      });
+
+      // Stage 2: Grand Finale Celebratory Chord (C5 + G5 + C6 + E6) with Shimmer Harmonic
+      const chordTime = now + 0.48;
+      const chordFreqs = [523.25, 783.99, 1046.5, 1318.51];
+      chordFreqs.forEach((freq) => {
+        const osc = ctx.createOscillator();
+        const oscHarmonic = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, chordTime);
+
+        // Bell shimmer harmonic
+        oscHarmonic.type = 'sine';
+        oscHarmonic.frequency.setValueAtTime(freq * 2.01, chordTime);
+
+        gain.gain.setValueAtTime(0, chordTime);
+        gain.gain.linearRampToValueAtTime(0.18, chordTime + 0.035);
+        gain.gain.exponentialRampToValueAtTime(0.0001, chordTime + 1.45);
+
+        osc.connect(gain);
+        oscHarmonic.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start(chordTime);
+        oscHarmonic.start(chordTime);
+        osc.stop(chordTime + 1.5);
+        oscHarmonic.stop(chordTime + 1.5);
       });
     } catch {}
   }, [getAudioContext]);
@@ -247,19 +371,23 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
         };
       });
 
-    // 3. Start wheel animation IMMEDIATELY on this exact frame (0ms delay)
-    const cruiseSpeed = 1200; // degrees per second
-    const accelDuration = 300; // ms to reach full cruise speed
-    const minCruiseTime = 1100; // ms of thrilling fast spin before slowing down
+    // 3. Start wheel animation IMMEDIATELY on this exact frame with premium casino physics
+    const cruiseSpeed = 1440; // 1440 deg/sec = 4 full rotations/sec
+    const accelDuration = 350; // ms to reach full cruising speed
+    const minCruiseTime = 1200; // ms of thrilling fast spinning before gradual slowdown
     const animStartTime = performance.now();
 
-    let lastSegmentIndex = Math.floor(initialAngle / sliceAngle);
+    const pegsPerSlice = numSlices <= 4 ? 4 : (numSlices <= 6 ? 3 : (numSlices <= 10 ? 2 : 1));
+    const totalPegs = Math.max(16, numSlices * pegsPerSlice);
+    const pegAngleStep = 360 / totalPegs;
+
+    let lastPegIndex = Math.floor(initialAngle / pegAngleStep);
 
     // Deceleration trajectory state
     let decelInitiated = false;
     let decelStartAngle = 0;
     let decelStartTime = 0;
-    let decelDuration = 3000;
+    let decelDuration = 6000;
     let totalDecelDegrees = 0;
     let winningTargetReward: RewardItem | null = null;
     let hasFailed = false;
@@ -273,8 +401,7 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
         let currentAngle: number;
         if (elapsed < accelDuration) {
           const p = elapsed / accelDuration;
-          const currentSpeed = cruiseSpeed * p;
-          currentAngle = initialAngle + 0.5 * currentSpeed * (elapsed / 1000);
+          currentAngle = initialAngle + 0.5 * cruiseSpeed * (accelDuration / 1000) * (p * p);
         } else {
           const accelDistance = 0.5 * cruiseSpeed * (accelDuration / 1000);
           const cruiseElapsed = (elapsed - accelDuration) / 1000;
@@ -287,11 +414,23 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
           wheelSvgRef.current.style.transform = `rotate(${currentAngle}deg)`;
         }
 
-        // Realistic flapper sound as segments pass
-        const currentSegmentIndex = Math.floor(currentAngle / sliceAngle);
-        if (currentSegmentIndex > lastSegmentIndex) {
-          playRealisticTick();
-          lastSegmentIndex = currentSegmentIndex;
+        // Ticks precisely synchronized with perimeter pegs passing the top pointer
+        const currentPegIndex = Math.floor(currentAngle / pegAngleStep);
+        if (currentPegIndex > lastPegIndex) {
+          playRealisticTick(1.0);
+          lastPegIndex = currentPegIndex;
+        }
+
+        // Mechanical flapper needle deflection locked to passing pegs
+        const pegPhase = (((currentAngle % pegAngleStep) + pegAngleStep) % pegAngleStep) / pegAngleStep;
+        let flapperDeflection = 0;
+        if (pegPhase > 0.75) {
+          flapperDeflection = -13 * ((pegPhase - 0.75) / 0.25);
+        } else if (pegPhase < 0.25) {
+          flapperDeflection = -13 * (1 - (pegPhase / 0.25));
+        }
+        if (flapperNeedleRef.current) {
+          flapperNeedleRef.current.style.transform = `rotate(${flapperDeflection}deg)`;
         }
 
         // Check if we can begin smooth deceleration:
@@ -318,28 +457,30 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
             let forwardDelta = (targetStopAngle - currentMod) % 360;
             if (forwardDelta <= 0) forwardDelta += 360;
 
-            // Compute seamless cubic ease-out deceleration matching incoming cruiseSpeed
-            const idealDecelDistance = (cruiseSpeed * 2.8) / 3;
-            const fullTurns = Math.max(3, Math.ceil((idealDecelDistance - forwardDelta) / 360));
+            // 7 full turns during slowdown for suspenseful, natural deceleration
+            const fullTurns = 7;
             totalDecelDegrees = fullTurns * 360 + forwardDelta;
-            decelDuration = ((3 * totalDecelDegrees) / cruiseSpeed) * 1000;
+
+            // Deceleration duration matching incoming cruise speed exactly for zero jerk:
+            // For easing f(u) = 1 - (1 - u)^3.5, derivative at u=0 is 3.5 * totalDecelDegrees / decelDuration = cruiseSpeed
+            decelDuration = ((3.5 * totalDecelDegrees) / cruiseSpeed) * 1000;
           } else {
             // Server error: ease to a graceful stop
             hasFailed = true;
             failureMessage = serverResult.errorMessage || 'Unable to spin. Please try again.';
-            totalDecelDegrees = 360;
-            decelDuration = 1200;
+            totalDecelDegrees = 720;
+            decelDuration = 1800;
           }
         }
 
         animFrameRef.current = requestAnimationFrame(animate);
       } else {
-        // --- PHASE 2: Smooth Deceleration to Target Angle ---
+        // --- PHASE 2: Ultra-Smooth Quartic Deceleration to Winning Voucher ---
         const decelElapsed = time - decelStartTime;
         const progress = Math.min(1, decelElapsed / decelDuration);
 
-        // Smooth cubic ease-out: 1 - (1 - u)^3
-        const eased = 1 - Math.pow(1 - progress, 3);
+        // Continuous quartic-style deceleration curve: 1 - (1 - u)^3.5
+        const eased = 1 - Math.pow(1 - progress, 3.5);
         const currentAngle = decelStartAngle + totalDecelDegrees * eased;
 
         rotationRef.current = currentAngle;
@@ -347,20 +488,41 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
           wheelSvgRef.current.style.transform = `rotate(${currentAngle}deg)`;
         }
 
-        // Realistic flapper sound during slowdown
-        const currentSegmentIndex = Math.floor(currentAngle / sliceAngle);
-        if (currentSegmentIndex > lastSegmentIndex) {
-          playRealisticTick();
-          lastSegmentIndex = currentSegmentIndex;
+        // Calculate momentary speed ratio for dynamic audio pitch and volume
+        const currentSpeed = cruiseSpeed * Math.pow(1 - progress, 2.5);
+        const speedRatio = Math.max(0.4, currentSpeed / cruiseSpeed);
+
+        const currentPegIndex = Math.floor(currentAngle / pegAngleStep);
+        if (currentPegIndex > lastPegIndex) {
+          playRealisticTick(speedRatio);
+          lastPegIndex = currentPegIndex;
+        }
+
+        // Flapper needle deflection tracking slowing pegs
+        const pegPhase = (((currentAngle % pegAngleStep) + pegAngleStep) % pegAngleStep) / pegAngleStep;
+        let flapperDeflection = 0;
+        if (pegPhase > 0.75) {
+          flapperDeflection = -13 * ((pegPhase - 0.75) / 0.25);
+        } else if (pegPhase < 0.25) {
+          flapperDeflection = -13 * (1 - (pegPhase / 0.25));
+        }
+        if (flapperNeedleRef.current) {
+          flapperNeedleRef.current.style.transform = `rotate(${flapperDeflection}deg)`;
         }
 
         if (progress < 1) {
           animFrameRef.current = requestAnimationFrame(animate);
         } else {
-          // --- Complete Stop on Winner ---
+          // --- Complete Gentle Rest on Winner ---
           const finalAngle = decelStartAngle + totalDecelDegrees;
           rotationRef.current = finalAngle;
           setRotation(finalAngle);
+          if (wheelSvgRef.current) {
+            wheelSvgRef.current.style.transform = `rotate(${finalAngle}deg)`;
+          }
+          if (flapperNeedleRef.current) {
+            flapperNeedleRef.current.style.transform = 'rotate(0deg)';
+          }
           setIsSpinning(false);
           isSpinningRef.current = false;
 
@@ -427,15 +589,23 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
           </div>
         ) : (
           <div className="relative flex items-center justify-center my-3">
-            {/* Top Pointer Indicator (Clean Downward Marker) */}
-            <div className="absolute -top-2.5 z-20 flex flex-col items-center pointer-events-none drop-shadow-md">
-              <div className="w-3.5 h-3.5 rounded-full bg-amber-400 border-2 border-neutral-900 shadow" />
-              <div className="w-0 h-0 border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-t-[14px] border-t-amber-400 -mt-0.5" />
+            {/* Top Pointer Indicator with physical deflecting flapper */}
+            <div className="absolute -top-3 z-30 flex flex-col items-center pointer-events-none drop-shadow-[0_4px_8px_rgba(0,0,0,0.7)]">
+              {/* Pivot jewel mount */}
+              <div className="w-4 h-4 rounded-full bg-gradient-to-br from-amber-200 via-amber-400 to-amber-700 border border-amber-950 flex items-center justify-center shadow-md">
+                <div className="w-1.5 h-1.5 rounded-full bg-amber-100 shadow-inner" />
+              </div>
+              {/* Deflecting flapper needle */}
+              <div
+                ref={flapperNeedleRef}
+                className="w-0 h-0 border-l-[7px] border-l-transparent border-r-[7px] border-r-transparent border-t-[17px] border-t-amber-400 -mt-1 origin-top filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.6)]"
+                style={{ transformOrigin: '50% 0%', willChange: 'transform' }}
+              />
             </div>
 
-            {/* SVG Wheel (Clean, Readable, Modern Festive) */}
+            {/* SVG Wheel with Casino Styling, Metallic Pegs & Clear Large Vouchers */}
             <div
-              className="relative rounded-full shadow-lg overflow-hidden"
+              className="relative rounded-full shadow-[0_0_30px_rgba(245,158,11,0.35)] overflow-hidden"
               style={{ width: '320px', height: '320px', maxWidth: '82vw', maxHeight: '82vw' }}
             >
               <svg
@@ -446,87 +616,294 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
                   transform: `rotate(${rotation}deg)`
                 }}
               >
-                {/* Clean Outer Rim */}
+                <defs>
+                  {/* Multi-stop luxury metallic gold rim gradient */}
+                  <linearGradient id="modal-gold-rim-metal" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#FDE68A" />
+                    <stop offset="25%" stopColor="#B45309" />
+                    <stop offset="50%" stopColor="#F59E0B" />
+                    <stop offset="75%" stopColor="#78350F" />
+                    <stop offset="100%" stopColor="#FCD34D" />
+                  </linearGradient>
+
+                  {/* 3D metallic peg rivet gradient */}
+                  <radialGradient id="modal-gold-peg-grad" cx="35%" cy="35%" r="65%">
+                    <stop offset="0%" stopColor="#FFFFFF" />
+                    <stop offset="25%" stopColor="#FDE68A" />
+                    <stop offset="60%" stopColor="#D97706" />
+                    <stop offset="100%" stopColor="#78350F" />
+                  </radialGradient>
+
+                  {/* Radial spoke divider golden shimmer */}
+                  <linearGradient id="modal-gold-spoke-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#FDE68A" />
+                    <stop offset="50%" stopColor="#F59E0B" />
+                    <stop offset="100%" stopColor="#92400E" />
+                  </linearGradient>
+
+                  {/* Radial slice sheen highlight */}
+                  <radialGradient id="modal-slice-sheen" cx="50%" cy="50%" r="50%">
+                    <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.25" />
+                    <stop offset="65%" stopColor="#000000" stopOpacity="0" />
+                    <stop offset="100%" stopColor="#000000" stopOpacity="0.4" />
+                  </radialGradient>
+
+                  {/* Voucher badge drop shadow */}
+                  <filter id="modal-badge-shadow" x="-30%" y="-30%" width="160%" height="160%">
+                    <feDropShadow dx="0" dy="2" stdDeviation="2.5" floodColor="#000000" floodOpacity="0.65" />
+                  </filter>
+
+                  {/* Individual Segment Wedge Clip Paths for Edge-to-Edge Panels */}
+                  {rewards.map((_, i) => {
+                    const startAngle = i * sliceAngle;
+                    const endAngle = (i + 1) * sliceAngle;
+                    const startRad = (startAngle * Math.PI) / 180;
+                    const endRad = (endAngle * Math.PI) / 180;
+                    const x1 = centerCoord + 232 * Math.sin(startRad);
+                    const y1 = centerCoord - 232 * Math.cos(startRad);
+                    const x2 = centerCoord + 232 * Math.sin(endRad);
+                    const y2 = centerCoord - 232 * Math.cos(endRad);
+                    const largeArc = sliceAngle > 180 ? 1 : 0;
+                    const pathData =
+                      numSlices === 1
+                        ? `M ${centerCoord} ${centerCoord} m -232, 0 a 232,232 0 1,0 464,0 a 232,232 0 1,0 -464,0`
+                        : `M ${centerCoord} ${centerCoord} L ${x1} ${y1} A 232 232 0 ${largeArc} 1 ${x2} ${y2} Z`;
+
+                    return (
+                      <clipPath key={`modal-clip-${i}`} id={`modal-slice-clip-${i}`}>
+                        <path d={pathData} />
+                      </clipPath>
+                    );
+                  })}
+                </defs>
+
+                {/* Multi-layered Outer Casino Rim */}
                 <circle
                   cx={centerCoord}
                   cy={centerCoord}
                   r="247"
-                  fill="#1C140E"
-                  stroke="#D97706"
-                  strokeWidth="4"
+                  fill="#0C0704"
+                  stroke="url(#modal-gold-rim-metal)"
+                  strokeWidth="6"
+                />
+                <circle
+                  cx={centerCoord}
+                  cy={centerCoord}
+                  r="238"
+                  fill="none"
+                  stroke="#78350F"
+                  strokeWidth="12"
+                  strokeOpacity="0.4"
+                />
+                <circle
+                  cx={centerCoord}
+                  cy={centerCoord}
+                  r="232"
+                  fill="none"
+                  stroke="#F59E0B"
+                  strokeWidth="1.5"
                 />
 
-                {/* Slices */}
-                {rewards.map((reward, i) => {
-                  const startAngle = i * sliceAngle;
-                  const endAngle = (i + 1) * sliceAngle;
-                  const midAngle = (i + 0.5) * sliceAngle;
-                  const fillColor = SEGMENT_COLORS[i % SEGMENT_COLORS.length];
+                {/* Wheel Slices with Edge-to-Edge Printed Prize Panels & Fallback Layout */}
+                {(() => {
+                  const activeRadius = 232;
+                  const pegsPerSlice = numSlices <= 4 ? 4 : (numSlices <= 6 ? 3 : (numSlices <= 10 ? 2 : 1));
+                  const totalPegs = Math.max(16, numSlices * pegsPerSlice);
+                  const pegAngleStep = 360 / totalPegs;
 
-                  const startRad = (startAngle * Math.PI) / 180;
-                  const endRad = (endAngle * Math.PI) / 180;
+                  const wedgeWidthAtRim = numSlices === 1 ? 464 : 2 * activeRadius * Math.sin((sliceAngle * Math.PI) / 360);
+                  const imgBoxWidth = numSlices === 1 ? 464 : Math.max(wedgeWidthAtRim * 1.15, 140);
 
-                  const x1 = centerCoord + wheelRadius * Math.sin(startRad);
-                  const y1 = centerCoord - wheelRadius * Math.cos(startRad);
-                  const x2 = centerCoord + wheelRadius * Math.sin(endRad);
-                  const y2 = centerCoord - wheelRadius * Math.cos(endRad);
-
-                  const largeArc = sliceAngle > 180 ? 1 : 0;
-                  const pathData =
-                    numSlices === 1
-                      ? `M ${centerCoord} ${centerCoord} m -${wheelRadius}, 0 a ${wheelRadius},${wheelRadius} 0 1,0 ${wheelRadius * 2},0 a ${wheelRadius},${wheelRadius} 0 1,0 -${wheelRadius * 2},0`
-                      : `M ${centerCoord} ${centerCoord} L ${x1} ${y1} A ${wheelRadius} ${wheelRadius} 0 ${largeArc} 1 ${x2} ${y2} Z`;
+                  const titleFontSize = numSlices <= 4 ? 17 : (numSlices <= 6 ? 14 : (numSlices <= 8 ? 12 : 10.5));
+                  const subFontSize = numSlices <= 4 ? 12 : (numSlices <= 6 ? 10.5 : (numSlices <= 8 ? 9 : 8));
+                  const titleStrokeWidth = numSlices <= 6 ? 3.5 : 2.8;
+                  const subStrokeWidth = numSlices <= 6 ? 2.8 : 2.2;
+                  const line1Dist = 134;
+                  const line2Dist = 114;
+                  const maxTextWidth = Math.max(40, 2 * 134 * Math.sin((sliceAngle * Math.PI) / 360) * 0.86);
 
                   return (
-                    <g key={reward.id}>
-                      {/* Segment Arc */}
-                      <path
-                        d={pathData}
-                        fill={fillColor}
-                        stroke="#FAF5EA"
-                        strokeWidth="1.5"
-                        strokeOpacity="0.4"
-                      />
+                    <>
+                      {/* Slices Group */}
+                      {rewards.map((reward, i) => {
+                        const startAngle = i * sliceAngle;
+                        const endAngle = (i + 1) * sliceAngle;
+                        const midAngle = (i + 0.5) * sliceAngle;
+                        const paletteItem = CASINO_SEGMENT_PALETTE[i % CASINO_SEGMENT_PALETTE.length];
+                        const { line1, line2 } = parseVoucherTitle(reward.name);
 
-                      {/* Reward Logo/Image Only on Slice */}
-                      <g
-                        transform={`rotate(${midAngle}, ${centerCoord}, ${centerCoord}) translate(${centerCoord}, ${centerCoord - 150})`}
-                      >
-                        <circle cx="0" cy="0" r="26" fill="#FFFFFF" stroke="#E5E7EB" strokeWidth="1" />
-                        {reward.imageUrl ? (
-                          <image
-                            href={resolveAssetUrl(reward.imageUrl)}
-                            x="-20"
-                            y="-20"
-                            width="40"
-                            height="40"
-                            preserveAspectRatio="xMidYMid meet"
+                        const startRad = (startAngle * Math.PI) / 180;
+                        const endRad = (endAngle * Math.PI) / 180;
+
+                        const x1 = centerCoord + activeRadius * Math.sin(startRad);
+                        const y1 = centerCoord - activeRadius * Math.cos(startRad);
+                        const x2 = centerCoord + activeRadius * Math.sin(endRad);
+                        const y2 = centerCoord - activeRadius * Math.cos(endRad);
+
+                        const largeArc = sliceAngle > 180 ? 1 : 0;
+                        const pathData =
+                          numSlices === 1
+                            ? `M ${centerCoord} ${centerCoord} m -${activeRadius}, 0 a ${activeRadius},${activeRadius} 0 1,0 ${activeRadius * 2},0 a ${activeRadius},${activeRadius} 0 1,0 -${activeRadius * 2},0`
+                            : `M ${centerCoord} ${centerCoord} L ${x1} ${y1} A ${activeRadius} ${activeRadius} 0 ${largeArc} 1 ${x2} ${y2} Z`;
+
+                        return (
+                          <g key={reward.id || i}>
+                            {/* Segment Wedge Base Fill */}
+                            <path
+                              d={pathData}
+                              fill={paletteItem.bg}
+                              stroke="#D97706"
+                              strokeWidth="1.2"
+                              strokeOpacity="0.4"
+                            />
+
+                            {/* Clipped Printed Prize Panel Content */}
+                            <g clipPath={`url(#modal-slice-clip-${i})`}>
+                              {reward.imageUrl ? (
+                                /* Large, zoomed, edge-to-edge printed prize panel image filling segment */
+                                <g transform={`rotate(${midAngle}, ${centerCoord}, ${centerCoord})`}>
+                                  <image
+                                    href={resolveAssetUrl(reward.imageUrl)}
+                                    x={centerCoord - imgBoxWidth / 2}
+                                    y={centerCoord - activeRadius}
+                                    width={imgBoxWidth}
+                                    height={activeRadius}
+                                    preserveAspectRatio="xMidYMid slice"
+                                  />
+                                </g>
+                              ) : (
+                                /* Premium Fallback Panel for Missing Voucher Image */
+                                <g transform={`rotate(${midAngle}, ${centerCoord}, ${centerCoord})`}>
+                                  {/* Fallback Gift Emblem */}
+                                  <text
+                                    x={centerCoord}
+                                    y={centerCoord - 165}
+                                    textAnchor="middle"
+                                    fontSize={numSlices <= 4 ? 34 : (numSlices <= 6 ? 28 : (numSlices <= 8 ? 24 : 20))}
+                                    filter="url(#modal-badge-shadow)"
+                                  >
+                                    🎁
+                                  </text>
+
+                                  {/* Headline Amount */}
+                                  <text
+                                    x={centerCoord}
+                                    y={centerCoord - (line2 ? line1Dist : (line1Dist + line2Dist) / 2)}
+                                    textAnchor="middle"
+                                    fill={paletteItem.textPrimary}
+                                    stroke="#0A0713"
+                                    strokeWidth={titleStrokeWidth}
+                                    paintOrder="stroke fill"
+                                    strokeLinejoin="round"
+                                    fontSize={titleFontSize}
+                                    fontWeight="900"
+                                    fontFamily="'Cinzel', 'Arial Black', sans-serif"
+                                    letterSpacing="0.5"
+                                    textLength={line1.length > 8 ? maxTextWidth : undefined}
+                                    lengthAdjust={line1.length > 8 ? "spacingAndGlyphs" : undefined}
+                                  >
+                                    {line1}
+                                  </text>
+
+                                  {/* Subtitle */}
+                                  {line2 && (
+                                    <text
+                                      x={centerCoord}
+                                      y={centerCoord - line2Dist}
+                                      textAnchor="middle"
+                                      fill={paletteItem.textSecondary}
+                                      stroke="#0A0713"
+                                      strokeWidth={subStrokeWidth}
+                                      paintOrder="stroke fill"
+                                      strokeLinejoin="round"
+                                      fontSize={subFontSize}
+                                      fontWeight="800"
+                                      fontFamily="'Cinzel', sans-serif"
+                                      letterSpacing="0.8"
+                                      textLength={line2.length > 9 ? maxTextWidth : undefined}
+                                      lengthAdjust={line2.length > 9 ? "spacingAndGlyphs" : undefined}
+                                    >
+                                      {line2}
+                                    </text>
+                                  )}
+                                </g>
+                              )}
+                            </g>
+
+                            {/* Subtle Radial Sheen Overlay for 3D Laminated Finish */}
+                            <path
+                              d={pathData}
+                              fill="url(#modal-slice-sheen)"
+                              opacity="0.2"
+                              pointerEvents="none"
+                            />
+
+                            {/* Golden Brass Spoke Divider Line */}
+                            <line
+                              x1={centerCoord + 58 * Math.sin(startRad)}
+                              y1={centerCoord - 58 * Math.cos(startRad)}
+                              x2={centerCoord + activeRadius * Math.sin(startRad)}
+                              y2={centerCoord - activeRadius * Math.cos(startRad)}
+                              stroke="url(#modal-gold-spoke-grad)"
+                              strokeWidth="2.5"
+                              strokeLinecap="round"
+                            />
+                          </g>
+                        );
+                      })}
+
+                      {/* Perimeter 3D Metallic Golden Pegs / Rivets */}
+                      {Array.from({ length: totalPegs }).map((_, p) => (
+                        <g key={`modal-peg-${p}`} transform={`rotate(${p * pegAngleStep}, ${centerCoord}, ${centerCoord})`}>
+                          <circle
+                            cx={centerCoord}
+                            cy={centerCoord - 238}
+                            r="3.8"
+                            fill="url(#modal-gold-peg-grad)"
+                            stroke="#451A03"
+                            strokeWidth="0.8"
                           />
-                        ) : (
-                          <text
-                            x="0"
-                            y="7"
-                            textAnchor="middle"
-                            fontSize="20"
-                          >
-                            🎁
-                          </text>
-                        )}
-                      </g>
-                    </g>
+                          <circle
+                            cx={centerCoord - 1}
+                            cy={centerCoord - 239.1}
+                            r="1.2"
+                            fill="#FFFFFF"
+                            opacity="0.9"
+                          />
+                        </g>
+                      ))}
+                    </>
                   );
-                })}
+                })()}
+
+                {/* Center 3D Gold Bevel Hub */}
+                <circle
+                  cx={centerCoord}
+                  cy={centerCoord}
+                  r="58"
+                  fill="#140D07"
+                  stroke="url(#modal-gold-rim-metal)"
+                  strokeWidth="4"
+                />
+                <circle
+                  cx={centerCoord}
+                  cy={centerCoord}
+                  r="50"
+                  fill="#20140A"
+                  stroke="#F59E0B"
+                  strokeWidth="1.5"
+                />
               </svg>
 
-              {/* Center SPIN Button */}
+              {/* Center Interactive 3D Gold SPIN Button */}
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <button
                   type="button"
                   onClick={handleSpinClick}
                   disabled={(!isMasterSession && hasSpun) || isSpinning || rewards.length === 0}
-                  className="pointer-events-auto w-18 h-18 sm:w-20 sm:h-20 rounded-full bg-amber-500 hover:bg-amber-400 border-4 border-[#1A120B] shadow-md flex items-center justify-center cursor-pointer active:scale-95 transition-transform disabled:opacity-75 disabled:cursor-not-allowed"
+                  className="pointer-events-auto w-18 h-18 sm:w-20 sm:h-20 rounded-full bg-gradient-to-b from-amber-300 via-amber-500 to-amber-700 hover:from-amber-200 hover:via-amber-400 hover:to-amber-600 border-[4px] border-[#140D07] shadow-[0_0_18px_rgba(245,158,11,0.55),inset_0_2px_4px_rgba(255,255,255,0.7),inset_0_-2px_4px_rgba(0,0,0,0.5)] hover:shadow-[0_0_25px_rgba(245,158,11,0.85),inset_0_2px_4px_rgba(255,255,255,0.9)] flex items-center justify-center cursor-pointer active:scale-95 transition-all disabled:opacity-75 disabled:cursor-not-allowed group"
                 >
-                  <span className="text-xs sm:text-sm font-black font-['Cinzel',serif] tracking-wider text-neutral-950 uppercase">
+                  <span className="text-xs sm:text-sm font-black font-['Cinzel',serif] tracking-wider text-neutral-950 uppercase drop-shadow-[0_1px_1px_rgba(255,255,255,0.4)]">
                     {isSpinning ? '...' : (!isMasterSession && hasSpun) ? 'DONE' : 'SPIN'}
                   </span>
                 </button>
