@@ -89,6 +89,23 @@ const cachedBranding: CachedData = {
 
 const listeners = new Set<() => void>();
 
+// Polling pause control: the kiosk pauses background branding refreshes during
+// countdown/gameplay so no network work or re-renders happen mid-round.
+let pollingPaused = false;
+const resumeListeners = new Set<() => void>();
+
+/**
+ * Pauses or resumes the 8s background branding refresh (and focus/visibility refreshes).
+ * Resuming triggers an immediate refresh to catch up on admin changes made mid-round.
+ */
+export function setBrandingPollingPaused(paused: boolean): void {
+  if (pollingPaused === paused) return;
+  pollingPaused = paused;
+  if (!paused) {
+    resumeListeners.forEach((cb) => cb());
+  }
+}
+
 function notifyListeners() {
   listeners.forEach((fn) => fn());
 }
@@ -215,12 +232,17 @@ export function useBranding(): BrandingState {
     listeners.add(handleUpdate);
 
     fetchBranding();
-    const interval = setInterval(fetchBranding, 8000);
-    const handleSync = () => fetchBranding();
+    const pollIfActive = () => {
+      if (!pollingPaused) fetchBranding();
+    };
+    const interval = setInterval(pollIfActive, 8000);
+    const handleSync = pollIfActive;
     window.addEventListener('focus', handleSync);
     document.addEventListener('visibilitychange', handleSync);
+    resumeListeners.add(fetchBranding);
 
     return () => {
+      resumeListeners.delete(fetchBranding);
       listeners.delete(handleUpdate);
       clearInterval(interval);
       window.removeEventListener('focus', handleSync);

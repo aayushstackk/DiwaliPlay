@@ -97,6 +97,52 @@ export function isLowEndHardware(): boolean {
  */
 export function setDynamicLowEndOverride(val: boolean | null): void {
   dynamicLowEndOverride = val;
+  notifyLowEndListeners();
+}
+
+// ----------------------------------------------------------------------------
+// Low-end mode change notifications
+// Lets canvases, particle engines and CSS react when adaptive quality kicks in
+// mid-session (e.g. FPS drops below ~42 during a heavy combo burst).
+// ----------------------------------------------------------------------------
+const lowEndListeners = new Set<(isLowEnd: boolean) => void>();
+let lastNotifiedLowEnd: boolean | null = null;
+
+function notifyLowEndListeners(): void {
+  const current = isLowEndHardware();
+  if (current === lastNotifiedLowEnd) return;
+  lastNotifiedLowEnd = current;
+  if (typeof document !== 'undefined') {
+    document.documentElement.classList.toggle('low-end', current);
+  }
+  lowEndListeners.forEach((cb) => cb(current));
+}
+
+/**
+ * Subscribes to low-end mode changes. Returns an unsubscribe function.
+ * Also applies the `low-end` class on <html> so CSS can drop expensive effects.
+ */
+export function subscribeLowEndMode(cb: (isLowEnd: boolean) => void): () => void {
+  lowEndListeners.add(cb);
+  return () => {
+    lowEndListeners.delete(cb);
+  };
+}
+
+/**
+ * Applies the initial `low-end` class on <html>. Call once at app start.
+ */
+export function initLowEndMode(): boolean {
+  notifyLowEndListeners();
+  return isLowEndHardware();
+}
+
+/**
+ * Canvas backing-store scale. Effects are drawn at reduced resolution on low-end
+ * devices and stretched by CSS; glowing sparks look nearly identical.
+ */
+export function getCanvasRenderScale(): number {
+  return isLowEndHardware() ? 0.6 : 1;
 }
 
 /**
@@ -118,10 +164,14 @@ export function recordFrameTimeForAdaptiveQuality(dtMs: number): boolean {
       const avgMs = frameSum / frameCount;
       if (avgMs > 24) {
         // Average frame rate dropped below ~42 FPS: automatically enable low-end optimizations
-        dynamicLowEndOverride = true;
+        if (dynamicLowEndOverride !== true) {
+          dynamicLowEndOverride = true;
+          notifyLowEndListeners();
+        }
       } else if (avgMs < 18 && dynamicLowEndOverride === true && !isLowEndHardware()) {
         // Recovered back to smooth 55-60 FPS on high-end hardware
         dynamicLowEndOverride = null;
+        notifyLowEndListeners();
       }
     }
   }

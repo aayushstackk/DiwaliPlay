@@ -51,3 +51,6 @@ windows-kiosk/.bridge-token
 *.pem
 *.key
 
+
+# MediaPipe WASM runtime (copied from node_modules by vite.config.ts at dev/build time)
+public/mediapipe/

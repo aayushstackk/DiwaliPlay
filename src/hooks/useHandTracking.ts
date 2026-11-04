@@ -33,7 +33,17 @@ import { CrackerEngine } from '../utils/crackerEngine';
 import { SoundEngine, CrackerSoundType } from '../utils/soundEngine';
 import { SfxKey, GameAudioSettings } from '../types/backend';
 import { INITIAL_SCORE_STATE, calculateBurstPoints } from '../utils/scoreSystem';
-import { isAndroidDevice } from '../utils/device';
+import {
+  isAndroidDevice,
+  isLowEndHardware,
+  subscribeLowEndMode,
+  getCanvasRenderScale,
+  recordFrameTimeForAdaptiveQuality,
+} from '../utils/device';
+
+// Hand-detection rate cap in low-end mode. Rendering stays at display rate; hand
+// positions between detections come from the existing velocity extrapolation.
+const LOW_END_INFERENCE_FPS = 24;
 
 const DEFAULT_HAND = (side: 'left' | 'right'): TrackedHand => ({
   side,
@@ -171,7 +181,23 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
 
   // Cracker Particle Engine Instance (Object-pooled, zero GC overhead)
   // On Android, 350 particles provide abundant festive visuals while halving CPU/GPU particle load
-  const crackerEngineRef = useRef<CrackerEngine>(new CrackerEngine(isAndroid ? 350 : 700));
+  // Lazily created once (a plain `new` in useRef's argument would re-allocate the pool on every render)
+  const crackerEngineRef = useRef<CrackerEngine>(null as unknown as CrackerEngine);
+  if (!crackerEngineRef.current) {
+    crackerEngineRef.current = new CrackerEngine(isAndroid ? 350 : 700, isLowEndHardware());
+  }
+
+  // Logical (CSS pixel) size of the effects canvas. The backing store may be smaller in
+  // low-end mode; all hand/particle coordinates stay in these logical pixels.
+  const canvasViewSizeRef = useRef({
+    w: typeof window !== 'undefined' ? window.innerWidth || 1920 : 1920,
+    h: typeof window !== 'undefined' ? window.innerHeight || 1080 : 1080,
+  });
+
+  // Apply low-end quality changes (incl. mid-session adaptive switches) to the particle engine
+  useEffect(() => {
+    return subscribeLowEndMode((isLowEnd) => crackerEngineRef.current.setLowEndMode(isLowEnd));
+  }, []);
 
   // Cracker spawn timer trackers
   const spawnTimersRef = useRef({
@@ -341,17 +367,16 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
         setIsModelLoading(true);
         setModelLoadingProgress('Loading MediaPipe Vision WASM assets...');
 
-        const vision = await FilesetResolver.forVisionTasks(
-          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
-        );
+        // Self-hosted runtime (copied from node_modules by vite.config.ts) — version-matched and cached
+        const vision = await FilesetResolver.forVisionTasks(`/mediapipe/${__MEDIAPIPE_VERSION__}/wasm`);
 
         if (!isMounted) return;
         setModelLoadingProgress('Loading Hand Landmarker with WebGL GPU acceleration...');
 
         const landmarker = await HandLandmarker.createFromOptions(vision, {
           baseOptions: {
-            modelAssetPath:
-              'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+            // Self-hosted copy of hand_landmarker/float16/1 (public/models)
+            modelAssetPath: '/models/hand_landmarker.task',
             delegate: 'GPU',
           },
           runningMode: 'VIDEO',
@@ -410,7 +435,16 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
           activeTracks.forEach((track) => track.stop());
         }
 
-        const videoConstraints: MediaTrackConstraints = isAndroid
+        const lowEndCamera = isLowEndHardware();
+        const videoConstraints: MediaTrackConstraints = lowEndCamera
+          ? {
+              // Low-end: detection runs at 24fps, so don't pay to decode 60fps frames
+              width: { ideal: 640, max: 640 },
+              height: { ideal: 480, max: 480 },
+              frameRate: { ideal: LOW_END_INFERENCE_FPS, max: 30 },
+              facingMode: { ideal: 'user' },
+            }
+          : isAndroid
           ? {
               width: { ideal: 640, max: 640 },
               height: { ideal: 480, max: 480 },
@@ -499,6 +533,9 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
     let rvfcHandle: number | null = null;
     let isCancelled = false;
     let rvfcActive = false;
+    let inferenceTokens = 1;
+    let lastThrottleCheck = 0;
+    let lastRenderTime = 0;
 
     const runInference = (currentTime: number) => {
       const video = videoRef.current;
@@ -515,9 +552,23 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
       if (!canTrackHands || !video || !landmarker || !canvas) {
         return;
       }
+      const viewW = canvasViewSizeRef.current.w;
+      const viewH = canvasViewSizeRef.current.h;
 
       if (video.currentTime === lastVideoTime || isInferringRef.current) {
         return;
+      }
+
+      // Low-end: cap detection at ~24fps using a token bucket (with a 30fps camera this
+      // runs 4 of every 5 frames rather than every other frame)
+      if (isLowEndHardware()) {
+        const elapsed = lastThrottleCheck > 0 ? currentTime - lastThrottleCheck : 1000;
+        lastThrottleCheck = currentTime;
+        inferenceTokens = Math.min(1, inferenceTokens + (elapsed * LOW_END_INFERENCE_FPS) / 1000);
+        if (inferenceTokens < 1) {
+          return;
+        }
+        inferenceTokens -= 1;
       }
 
       lastVideoTime = video.currentTime;
@@ -556,12 +607,12 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
           const prevL = historyRef.current.left;
           const prevR = historyRef.current.right;
 
-          const distL = prevL.prevPx > 0 ? Math.abs(palm.x * canvas.width - prevL.prevPx) : 9999;
-          const distR = prevR.prevPx > 0 ? Math.abs(palm.x * canvas.width - prevR.prevPx) : 9999;
+          const distL = prevL.prevPx > 0 ? Math.abs(palm.x * viewW - prevL.prevPx) : 9999;
+          const distR = prevR.prevPx > 0 ? Math.abs(palm.x * viewW - prevR.prevPx) : 9999;
 
-          if (distL < distR && distL < canvas.width * 0.4) {
+          if (distL < distR && distL < viewW * 0.4) {
             rawLeft = marks;
-          } else if (distR < distL && distR < canvas.width * 0.4) {
+          } else if (distR < distL && distR < viewW * 0.4) {
             rawRight = marks;
           } else {
             if (palm.x < 0.5) rawLeft = marks;
@@ -608,8 +659,8 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
             histL.vx,
             histL.vy,
             dtL,
-            canvas.width,
-            canvas.height,
+            viewW,
+            viewH,
             0.82
           );
           histL.lastRealLandmarks = activeLeftMarks;
@@ -626,8 +677,8 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
         let updatedLeft: TrackedHand;
         if (activeLeftMarks && isLeftDetected) {
           const palm = getPalmCenterScreen(activeLeftMarks);
-          const px = Math.round(palm.x * canvas.width);
-          const py = Math.round(palm.y * canvas.height);
+          const px = Math.round(palm.x * viewW);
+          const py = Math.round(palm.y * viewH);
 
           if (dtL > 0.003 && histL.prevPx > 0) {
             const dX = px - histL.prevPx;
@@ -736,8 +787,8 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
             histR.vx,
             histR.vy,
             dtR,
-            canvas.width,
-            canvas.height,
+            viewW,
+            viewH,
             0.82
           );
           histR.lastRealLandmarks = activeRightMarks;
@@ -754,8 +805,8 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
         let updatedRight: TrackedHand;
         if (activeRightMarks && isRightDetected) {
           const palm = getPalmCenterScreen(activeRightMarks);
-          const px = Math.round(palm.x * canvas.width);
-          const py = Math.round(palm.y * canvas.height);
+          const px = Math.round(palm.x * viewW);
+          const py = Math.round(palm.y * viewH);
 
           if (dtR > 0.003 && histR.prevPx > 0) {
             const dX = px - histR.prevPx;
@@ -981,12 +1032,19 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
         return;
       }
 
-      const targetWidth = window.innerWidth || 1920;
-      const targetHeight = window.innerHeight || 1080;
-      if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
-        canvas.width = targetWidth;
-        canvas.height = targetHeight;
+      // Logical size = viewport in CSS pixels; backing store is scaled down in low-end mode
+      // (CSS stretches the canvas back to full screen)
+      const viewW = window.innerWidth || 1920;
+      const viewH = window.innerHeight || 1080;
+      const renderScale = getCanvasRenderScale();
+      const backingW = Math.round(viewW * renderScale);
+      const backingH = Math.round(viewH * renderScale);
+      if (canvas.width !== backingW || canvas.height !== backingH) {
+        canvas.width = backingW;
+        canvas.height = backingH;
       }
+      canvasViewSizeRef.current.w = viewW;
+      canvasViewSizeRef.current.h = viewH;
 
       const ctx = canvas.getContext('2d');
       if (!ctx) {
@@ -995,6 +1053,12 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
       }
 
       const currentTime = performance.now();
+
+      // Feed adaptive quality monitor (auto-switches to low-end mode if FPS drops below ~42)
+      if (lastRenderTime > 0) {
+        recordFrameTimeForAdaptiveQuality(currentTime - lastRenderTime);
+      }
+      lastRenderTime = currentTime;
 
       // Ensure RVFC is running if supported, otherwise fallback to per-frame inference
       if (!rvfcActive) {
@@ -1008,14 +1072,15 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
       // 60FPS CANVAS RENDERING & PARTICLE SIMULATION
       // Always executes on every rAF tick to deliver silky smooth 60fps visuals decoupled from camera FPS
       // -------------------------------------------------------------
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.setTransform(canvas.width / viewW, 0, 0, canvas.height / viewH, 0, 0);
+      ctx.clearRect(0, 0, viewW, viewH);
 
       const renderHistL = historyRef.current.left;
       const renderHistR = historyRef.current.right;
 
       // Update & Render Fireworks Particle Layer (burst explosions)
       crackerEngine.update();
-      crackerEngine.render(ctx, canvas.width, canvas.height);
+      crackerEngine.render(ctx, viewW, viewH);
 
       if (isEnabled) {
         if (isGameplayActiveRef.current) {
@@ -1064,8 +1129,8 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
               ctx,
               renderHistL.activeMarks,
               'left',
-              canvas.width,
-              canvas.height,
+              viewW,
+              viewH,
               renderHistL.smoothedSpeed,
               renderHistL.gesture,
               renderHistL.isPredicted
@@ -1076,8 +1141,8 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
               ctx,
               renderHistR.activeMarks,
               'right',
-              canvas.width,
-              canvas.height,
+              viewW,
+              viewH,
               renderHistR.smoothedSpeed,
               renderHistR.gesture,
               renderHistR.isPredicted

@@ -9,7 +9,7 @@ import { TrackedHand } from '../types/motion';
 import { CartoonBombSvg } from './CartoonBombSvg';
 import { DEFAULT_BOMB_CONFIGS, DEFAULT_BOMB_SETTINGS } from '../utils/bombDefaults';
 import { getHandFlamePosition } from '../utils/motionMath';
-import { isLowEndHardware, recordFrameTimeForAdaptiveQuality } from '../utils/device';
+import { isLowEndHardware, getCanvasRenderScale } from '../utils/device';
 
 export interface BombGameOverlayProps {
   isActive: boolean;
@@ -744,9 +744,13 @@ export const BombGameOverlay: React.FC<BombGameOverlayProps> = ({
     if (!canvas) return;
     const w = typeof window !== 'undefined' ? window.innerWidth : 1280;
     const h = typeof window !== 'undefined' ? window.innerHeight : 720;
-    if (canvas.width !== w || canvas.height !== h) {
-      canvas.width = w;
-      canvas.height = h;
+    // Backing store is scaled down in low-end mode; drawing uses CSS-pixel coordinates via setTransform
+    const scale = getCanvasRenderScale();
+    const bw = Math.round(w * scale);
+    const bh = Math.round(h * scale);
+    if (canvas.width !== bw || canvas.height !== bh) {
+      canvas.width = bw;
+      canvas.height = bh;
     }
   }, []);
 
@@ -791,8 +795,8 @@ export const BombGameOverlay: React.FC<BombGameOverlayProps> = ({
       // Clamped delta-time maintains perfectly consistent trajectory and physics across frame rates
       const dt = Math.max(0.001, Math.min(rawDt, 0.05));
 
-      // Adaptive quality monitoring
-      const isLowEnd = recordFrameTimeForAdaptiveQuality(dt * 1000);
+      // Adaptive quality (frame times are recorded by the hand-tracking render loop)
+      const isLowEnd = isLowEndHardware();
 
       const screenW = typeof window !== 'undefined' ? window.innerWidth : 1280;
       const screenH = typeof window !== 'undefined' ? window.innerHeight : 720;
@@ -1008,7 +1012,10 @@ export const BombGameOverlay: React.FC<BombGameOverlayProps> = ({
       if (canvas) {
         const ctx = canvas.getContext('2d');
         if (ctx) {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          // Re-sync size when low-end mode switches mid-round, then draw in CSS pixels
+          syncCanvasSize();
+          ctx.setTransform(canvas.width / screenW, 0, 0, canvas.height / screenH, 0, 0);
+          ctx.clearRect(0, 0, screenW, screenH);
 
           // Rocket propulsion exhaust plumes under ascending bombs
           ctx.save();

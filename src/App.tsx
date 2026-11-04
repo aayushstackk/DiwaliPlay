@@ -14,7 +14,7 @@ import { KioskStartupScreen } from './components/KioskStartupScreen';
 import { SpinWheelModal } from './components/SpinWheelModal';
 import { DiwaliWallpaper } from './components/DiwaliWallpaper';
 import { BombGameOverlay } from './components/BombGameOverlay';
-import { useBranding } from './hooks/useBranding';
+import { useBranding, setBrandingPollingPaused } from './hooks/useBranding';
 import { GAME_DURATION_SECONDS, formatGameTimer } from './utils/scoreSystem';
 import { Camera, Sparkles, AlertTriangle, Timer, Trophy, RotateCcw, Maximize2, Minimize2, Target } from 'lucide-react';
 import { gameApi } from './services/api';
@@ -699,6 +699,21 @@ export default function App() {
   };
 
   const isKioskStartup = !activeCode || !currentUser;
+
+  // Pause background branding refreshes during countdown & gameplay (no network or re-renders mid-round)
+  useEffect(() => {
+    const isRoundInProgress = phase === 'COUNTDOWN' || phase === 'PLAYING';
+    setBrandingPollingPaused(isRoundInProgress);
+    // Lets CSS drop frosted-glass blurs while the round is running (see index.css)
+    document.documentElement.classList.toggle('round-active', isRoundInProgress);
+  }, [phase]);
+  useEffect(
+    () => () => {
+      setBrandingPollingPaused(false);
+      document.documentElement.classList.remove('round-active');
+    },
+    []
+  );
   const brandDisplayName = branding.brandName ? branding.brandName.toUpperCase() : 'ITSSPOTLIGHT';
   const isCameraPreviewVisible =
     !isKioskStartup &&

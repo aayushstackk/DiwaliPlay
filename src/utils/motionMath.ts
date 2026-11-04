@@ -11,6 +11,7 @@ import {
   HandGesture,
   GameMappingPreview,
 } from '../types/motion';
+import { isLowEndHardware } from './device';
 
 /**
  * Standard MediaPipe anatomical hand skeleton connections
@@ -837,8 +838,9 @@ export function renderHandFlame(
     ctx.fill();
   }
 
-  // Spawn new sparks to maintain a lively convective cloud of 12-16 embers
-  if (pList.length < 16 && Math.random() < 0.7) {
+  // Spawn new sparks to maintain a lively convective cloud of 12-16 embers (6 in low-end mode)
+  const maxEmbers = isLowEndHardware() ? 6 : 16;
+  if (pList.length < maxEmbers && Math.random() < 0.7) {
     pList.push({
       id: ++particleIdCounter,
       x: swayCenter * 0.5 + (Math.random() - 0.5) * (flameW * 0.7),

@@ -131,6 +131,9 @@ async function startServer() {
   } else {
     // In production: serve pre-built dist assets
     const distPath = path.resolve(__dirname, 'dist');
+    // Long-lived caching for the self-hosted MediaPipe runtime (versioned path) and hand model
+    app.use('/mediapipe', express.static(path.join(distPath, 'mediapipe'), { maxAge: '365d', immutable: true }));
+    app.use('/models', express.static(path.join(distPath, 'models'), { maxAge: '30d' }));
     app.use(express.static(distPath));
     app.get('*', (_req, res) => {
       res.sendFile(path.resolve(distPath, 'index.html'));

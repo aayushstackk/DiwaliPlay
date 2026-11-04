@@ -476,3 +476,40 @@
 }
 
 
+
+/* ==========================================================================
+   Performance: low-end quality mode & active rounds
+   `html.low-end` is set by utils/device.ts (hardware detection or FPS drop);
+   `html.round-active` is set by App.tsx during countdown & gameplay.
+   ========================================================================== */
+
+/* Frosted-glass panels re-blur everything behind them every frame while the
+   camera feed and effect canvases animate underneath. Drop them in low-end mode
+   and during rounds; panels keep their own semi-transparent backgrounds. */
+html.low-end [class*="backdrop-blur"],
+html.round-active [class*="backdrop-blur"] {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+/* Large blurred decorative glows (wallpaper/background ambience). Without the
+   blur they'd render as hard-edged blobs, so hide them instead. */
+html.low-end .blur-lg,
+html.low-end .blur-xl,
+html.low-end .blur-2xl,
+html.low-end .blur-\[80px\],
+html.low-end .blur-\[90px\],
+html.low-end .blur-\[100px\],
+html.low-end .blur-\[130px\],
+html.low-end .blur-\[140px\] {
+  display: none !important;
+}
+
+/* Pause looping decorative CSS animations in low-end mode (loading spinners
+   using animate-spin keep running so progress is still visible). */
+html.low-end .animate-pulse,
+html.low-end .animate-ping,
+html.low-end .animate-bounce,
+html.low-end .animate-spin-slow {
+  animation-play-state: paused !important;
+}

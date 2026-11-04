@@ -58,6 +58,17 @@ const COLOR_PALETTES = {
 
 const ALL_PALETTE_NAMES = ['gold', 'saffron', 'ruby', 'emerald', 'royal', 'electric'] as const;
 
+// Batched spark rendering: particles are grouped by colour, quantised alpha and size
+// so each group is drawn with a single stroke() instead of 2 draw calls per particle.
+const ALPHA_LEVELS = 5;
+const SIZE_LEVELS = 3;
+const BUCKETS_PER_COLOR = ALPHA_LEVELS * SIZE_LEVELS;
+// Stroke widths per size level (~1.3x the representative spark size so the round
+// line caps stand in for the old separate spark-head dot)
+const SIZE_LEVEL_WIDTHS = [2.1, 3.2, 4.7];
+// Particle cap used in low-end quality mode
+const LOW_END_PARTICLE_LIMIT = 260;
+
 function randomFrom<T>(arr: readonly T[] | T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
@@ -84,8 +95,17 @@ export class CrackerEngine {
   // Screen flash vignette on mega explosions
   public flashIntensity = 0;
 
-  constructor(maxParticles = 700) {
+  // Quality controls (see setLowEndMode)
+  private activeLimit: number;
+  private flashEnabled = true;
+  private nextFreeIndex = 0;
+
+  // Reusable render batches: color -> [alphaLevel * SIZE_LEVELS + sizeLevel] -> particle indices
+  private batches = new Map<string, number[][]>();
+
+  constructor(maxParticles = 700, isLowEnd = false) {
     this.maxParticles = maxParticles;
+    this.activeLimit = maxParticles;
     this.particles = new Array(maxParticles).fill(null).map(() => ({
       active: false,
       x: 0,
@@ -114,6 +134,17 @@ export class CrackerEngine {
       alpha: 1,
       speed: 4,
     }));
+
+    this.setLowEndMode(isLowEnd);
+  }
+
+  /**
+   * Low-end quality mode: caps live particles and skips the full-screen flash fill.
+   * Safe to call mid-session; existing particles finish their lifecycle normally.
+   */
+  public setLowEndMode(isLowEnd: boolean) {
+    this.activeLimit = isLowEnd ? Math.min(LOW_END_PARTICLE_LIMIT, this.maxParticles) : this.maxParticles;
+    this.flashEnabled = !isLowEnd;
   }
 
   /**
@@ -132,10 +163,15 @@ export class CrackerEngine {
     drag = 0.97,
     flicker = true
   ) {
-    // Find next inactive particle in ring buffer
-    for (let i = 0; i < this.maxParticles; i++) {
+    if (this.activeCount >= this.activeLimit) return;
+
+    // Find next inactive particle in ring buffer (scan starts at the last freed slot)
+    for (let n = 0; n < this.maxParticles; n++) {
+      const i = (this.nextFreeIndex + n) % this.maxParticles;
       const p = this.particles[i];
       if (!p.active) {
+        this.nextFreeIndex = (i + 1) % this.maxParticles;
+        this.activeCount++;
         p.active = true;
         p.x = x;
         p.y = y;
@@ -648,8 +684,8 @@ export class CrackerEngine {
    * Uses 'lighter' blend mode for luminescent radiant glow without per-particle shadowBlur overhead.
    */
   public render(ctx: CanvasRenderingContext2D, width: number, height: number) {
-    // 1. Screen flash effect on mega explosions
-    if (this.flashIntensity > 0.02) {
+    // 1. Screen flash effect on mega explosions (skipped in low-end mode: full-screen fill)
+    if (this.flashEnabled && this.flashIntensity > 0.02) {
       ctx.fillStyle = `rgba(255, 245, 210, ${this.flashIntensity * 0.3})`;
       ctx.fillRect(0, 0, width, height);
     }
@@ -670,8 +706,12 @@ export class CrackerEngine {
       ctx.stroke();
     }
 
-    // 3. Render glowing cracker spark particles (fast batched rendering)
-    ctx.lineCap = 'round';
+    // 3. Render glowing cracker spark particles, batched by colour / alpha / size.
+    //    One stroke() per group instead of a stroke + fill per particle.
+    for (const buckets of this.batches.values()) {
+      for (let b = 0; b < BUCKETS_PER_COLOR; b++) buckets[b].length = 0;
+    }
+
     for (let i = 0; i < this.maxParticles; i++) {
       const p = this.particles[i];
       if (!p.active) continue;
@@ -679,21 +719,37 @@ export class CrackerEngine {
       const alpha = p.flicker && Math.random() > 0.85 ? p.alpha * 0.6 : p.alpha;
       if (alpha <= 0.02) continue;
 
-      ctx.globalAlpha = alpha;
+      const alphaLevel = Math.min(ALPHA_LEVELS - 1, Math.floor(alpha * ALPHA_LEVELS));
+      const sizeLevel = p.size < 2 ? 0 : p.size < 3 ? 1 : 2;
 
-      // Draw particle spark streak
-      ctx.beginPath();
-      ctx.moveTo(p.trailX, p.trailY);
-      ctx.lineTo(p.x, p.y);
-      ctx.strokeStyle = p.color;
-      ctx.lineWidth = p.size;
-      ctx.stroke();
+      let buckets = this.batches.get(p.color);
+      if (!buckets) {
+        buckets = Array.from({ length: BUCKETS_PER_COLOR }, () => [] as number[]);
+        this.batches.set(p.color, buckets);
+      }
+      buckets[alphaLevel * SIZE_LEVELS + sizeLevel].push(i);
+    }
 
-      // Spark head point
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.size * 0.8, 0, Math.PI * 2);
-      ctx.fillStyle = p.color;
-      ctx.fill();
+    ctx.lineCap = 'round';
+    for (const [color, buckets] of this.batches) {
+      ctx.strokeStyle = color;
+      for (let b = 0; b < BUCKETS_PER_COLOR; b++) {
+        const list = buckets[b];
+        if (list.length === 0) continue;
+
+        const alphaLevel = Math.floor(b / SIZE_LEVELS);
+        ctx.globalAlpha = (alphaLevel + 0.5) / ALPHA_LEVELS;
+        ctx.lineWidth = SIZE_LEVEL_WIDTHS[b % SIZE_LEVELS];
+
+        ctx.beginPath();
+        for (let k = 0; k < list.length; k++) {
+          const p = this.particles[list[k]];
+          ctx.moveTo(p.trailX, p.trailY);
+          // Nudge zero-length streaks so the round cap still draws a spark head
+          ctx.lineTo(p.x === p.trailX && p.y === p.trailY ? p.x + 0.01 : p.x, p.y);
+        }
+        ctx.stroke();
+      }
     }
 
     // Restore standard blend mode and alpha
@@ -713,6 +769,7 @@ export class CrackerEngine {
     }
     this.totalBursts = 0;
     this.activeCount = 0;
+    this.nextFreeIndex = 0;
     this.flashIntensity = 0;
   }
 }
