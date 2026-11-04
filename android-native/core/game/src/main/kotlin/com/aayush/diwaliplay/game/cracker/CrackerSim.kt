@@ -12,6 +12,7 @@ import kotlin.math.sin
 
 private const val LOW_END_PARTICLE_LIMIT = 260
 private const val MAX_RINGS = 40
+private const val MAX_STEP_SECONDS = 0.1
 private const val TWO_PI_FACTOR = 2.0
 
 /**
@@ -37,8 +38,12 @@ class CrackerSim(
     private val maxParticles: Int = 700,
     private val random: GameRandom,
 ) {
-    val particles: Array<Particle> = Array(maxParticles) { Particle() }
-    val rings: Array<Ring> = Array(MAX_RINGS) { Ring() }
+    internal val pool: Array<Particle> = Array(maxParticles) { Particle() }
+    internal val ringPool: Array<Ring> = Array(MAX_RINGS) { Ring() }
+
+    /** Read-only covariant view of the pool (same array, no allocation). */
+    val particles: Array<out ParticleView> get() = pool
+    val rings: Array<out RingView> get() = ringPool
 
     var totalBursts = 0
         private set
@@ -87,7 +92,7 @@ class CrackerSim(
         if (activeCount >= activeLimit) return
         for (n in 0 until maxParticles) {
             val i = (nextFreeIndex + n) % maxParticles
-            val p = particles[i]
+            val p = pool[i]
             if (!p.active) {
                 nextFreeIndex = (i + 1) % maxParticles
                 activeCount++
@@ -112,7 +117,7 @@ class CrackerSim(
 
     private fun spawnRing(x: Double, y: Double, maxRadius: Double, color: Int, speed: Double = 4.0) {
         for (i in 0 until MAX_RINGS) {
-            val r = rings[i]
+            val r = ringPool[i]
             if (!r.active) {
                 r.active = true
                 r.x = x
@@ -481,7 +486,9 @@ class CrackerSim(
      * `flash -= 0.04 * k`.
      */
     fun step(dtSeconds: Double) {
-        val k = frameScale(dtSeconds)
+        // Ignore zero/negative/NaN dt (would revive or freeze particles); cap huge pauses at 0.1 s.
+        if (!(dtSeconds > 0.0)) return
+        val k = frameScale(min(dtSeconds, MAX_STEP_SECONDS))
         var active = 0
 
         if (flashIntensity > 0) {
@@ -489,7 +496,7 @@ class CrackerSim(
         }
 
         for (i in 0 until maxParticles) {
-            val p = particles[i]
+            val p = pool[i]
             if (!p.active) continue
 
             active++
@@ -514,7 +521,7 @@ class CrackerSim(
         }
 
         for (i in 0 until MAX_RINGS) {
-            val r = rings[i]
+            val r = ringPool[i]
             if (!r.active) continue
 
             r.radius += r.speed * k
@@ -535,19 +542,11 @@ class CrackerSim(
      * `vx' = vx*d`, `x += vx'`, so after k frames `vx' = vx*d^k` and `x += vx * d(1-d^k)/(1-d)`;
      * likewise `vy' = vy*d^k + g(1-d^k)/(1-d)` with the matching displacement sum. (A naive
      * `x += vx*k` after the drag step is ~v/2 px off per 30 Hz step, i.e. up to ~7 px.)
-     * Falls back to the plain `*k` form when drag is ~1.
      */
     private fun advanceVariableStep(p: Particle, k: Double) {
         val d = p.drag
         val dk = d.pow(k)
-        val oneMinusD = 1 - d
-        if (abs(oneMinusD) < 1e-9) {
-            p.vx *= dk
-            p.vy = p.vy * dk + p.gravity * k
-            p.x += p.vx * k
-            p.y += p.vy * k
-            return
-        }
+        val oneMinusD = 1 - d // drag is always in [0.95, 0.98], so never 0
         val s = d * (1 - dk) / oneMinusD // sum_{i=1..k} d^i
         val g = p.gravity / oneMinusD // terminal-velocity term of vy
         p.x += p.vx * s
@@ -560,8 +559,8 @@ class CrackerSim(
      * Clears all particles and rings and resets stats. Like the web engine, [lastStyle] is not reset.
      */
     fun reset() {
-        for (i in 0 until maxParticles) particles[i].active = false
-        for (i in 0 until MAX_RINGS) rings[i].active = false
+        for (i in 0 until maxParticles) pool[i].active = false
+        for (i in 0 until MAX_RINGS) ringPool[i].active = false
         totalBursts = 0
         activeCount = 0
         nextFreeIndex = 0

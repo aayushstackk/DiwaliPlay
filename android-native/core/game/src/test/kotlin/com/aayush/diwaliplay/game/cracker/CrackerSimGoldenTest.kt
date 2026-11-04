@@ -83,7 +83,7 @@ class CrackerSimGoldenTest {
         near("$label sumSize", s["sumSize"]!!.d(), act.fold(0.0) { a, i -> a + sim.particles[i].size })
         for (sm in s["samples"]!!.jsonArray.map { it.jsonObject }) {
             val i = sm["i"]!!.jsonPrimitive.int
-            val p = sim.particles[i]
+            val p = sim.pool[i]
             assertThat(p.active).isTrue()
             near("$label[$i].x", sm["x"]!!.d(), p.x)
             near("$label[$i].y", sm["y"]!!.d(), p.y)
@@ -217,5 +217,36 @@ class CrackerSimGoldenTest {
         // k must be exactly 1.0 for dt = 1/60 so arithmetic reduces to the TS per-frame update.
         assertThat(frameScale(1.0 / 60.0)).isEqualTo(1.0)
         assertThat(frameScale(1.0 / 30.0)).isEqualTo(2.0)
+    }
+
+    @Test
+    fun nonPositiveOrNaNDtIsIgnored() {
+        val sim = CrackerSim(random = Mulberry32(4))
+        sim.createBombBurst(900.0, 500.0)
+        sim.step(dt60)
+        val before = sim.pool.map { doubleArrayOf(it.x, it.y, it.alpha) }
+        val flash = sim.flashIntensity
+        val count = sim.activeCount
+        for (bad in listOf(0.0, -0.5, Double.NaN, Double.NEGATIVE_INFINITY)) sim.step(bad)
+        assertThat(sim.pool.map { doubleArrayOf(it.x, it.y, it.alpha) }.map { it.toList() })
+            .isEqualTo(before.map { it.toList() })
+        assertThat(sim.flashIntensity).isEqualTo(flash)
+        assertThat(sim.activeCount).isEqualTo(count)
+    }
+
+    @Test
+    fun hugeDtIsClamped() {
+        val a = CrackerSim(random = Mulberry32(6))
+        val b = CrackerSim(random = Mulberry32(6))
+        a.createPunchBlast(900.0, 500.0, 1.0)
+        b.createPunchBlast(900.0, 500.0, 1.0)
+        a.step(30.0)
+        b.step(0.1)
+        for (i in a.pool.indices) {
+            assertThat(a.pool[i].active).isEqualTo(b.pool[i].active)
+            assertThat(a.pool[i].x).isEqualTo(b.pool[i].x)
+            assertThat(a.pool[i].alpha).isEqualTo(b.pool[i].alpha)
+        }
+        assertThat(a.flashIntensity).isEqualTo(b.flashIntensity)
     }
 }
