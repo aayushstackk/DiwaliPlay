@@ -18,8 +18,21 @@ import {
   Touchpad,
   Target,
   Shield,
+  ShieldCheck,
+  Unlock,
+  RefreshCw,
+  Power,
   Key
 } from 'lucide-react';
+
+interface KioskStatusState {
+  available: boolean;
+  backProtection: boolean;
+  autoLaunch: boolean;
+  lastStateChange?: string;
+  lastStateChangeReason?: string;
+  loading: boolean;
+}
 
 interface GameSettingsSectionProps {
   settings: SystemSettings | null;
@@ -63,6 +76,183 @@ export const GameSettingsSection: React.FC<GameSettingsSectionProps> = ({
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Windows Kiosk Subsystem State
+  const [kioskStatus, setKioskStatus] = useState<KioskStatusState>({
+    available: false,
+    backProtection: false,
+    autoLaunch: true,
+    loading: true
+  });
+  const [showPasscodeModal, setShowPasscodeModal] = useState(false);
+  const [enteredPasscode, setEnteredPasscode] = useState('');
+  const [passcodeError, setPasscodeError] = useState<string | null>(null);
+  const [isKioskUpdating, setIsKioskUpdating] = useState(false);
+  const [kioskFeedback, setKioskFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const fetchKioskStatus = async () => {
+    try {
+      if (typeof window !== 'undefined' && (window as any).electronDesktop?.getKioskStatus) {
+        const res = await (window as any).electronDesktop.getKioskStatus();
+        if (res && res.success) {
+          setKioskStatus({
+            available: true,
+            backProtection: Boolean(res.backProtection),
+            autoLaunch: Boolean(res.autoLaunch),
+            lastStateChange: res.lastStateChange,
+            lastStateChangeReason: res.lastStateChangeReason,
+            loading: false
+          });
+          return;
+        }
+      }
+
+      if (
+        typeof window !== 'undefined' &&
+        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+      ) {
+        try {
+          const res = await fetch('http://127.0.0.1:8536/api/status');
+          if (res.ok) {
+            const data = await res.json();
+            setKioskStatus({
+              available: true,
+              backProtection: Boolean(data.backProtection),
+              autoLaunch: Boolean(data.autoLaunch),
+              lastStateChange: data.lastStateChange,
+              lastStateChangeReason: data.lastStateChangeReason,
+              loading: false
+            });
+            return;
+          }
+        } catch {}
+      }
+
+      setKioskStatus(prev => ({ ...prev, available: false, loading: false }));
+    } catch {
+      setKioskStatus(prev => ({ ...prev, available: false, loading: false }));
+    }
+  };
+
+  useEffect(() => {
+    fetchKioskStatus();
+  }, []);
+
+  const handleToggleKiosk = async (targetState: boolean) => {
+    if (currentUserRole !== 'superadmin') {
+      setKioskFeedback({
+        type: 'error',
+        message: 'Superadmin permissions are required to modify Kiosk Protection settings.'
+      });
+      return;
+    }
+
+    if (!targetState && kioskStatus.backProtection) {
+      setEnteredPasscode('');
+      setPasscodeError(null);
+      setShowPasscodeModal(true);
+      return;
+    }
+
+    await applyKioskState(targetState);
+  };
+
+  const applyKioskState = async (targetState: boolean, passcode?: string) => {
+    setIsKioskUpdating(true);
+    setKioskFeedback(null);
+
+    try {
+      if (typeof window !== 'undefined' && (window as any).electronDesktop?.setKioskProtection) {
+        const res = await (window as any).electronDesktop.setKioskProtection({
+          enabled: targetState,
+          passcode: passcode || ''
+        });
+
+        if (!res.success) {
+          throw new Error(res.error || 'Failed to update kiosk protection.');
+        }
+
+        setKioskStatus(prev => ({
+          ...prev,
+          backProtection: targetState,
+          lastStateChange: res.lastStateChange || new Date().toISOString()
+        }));
+
+        setKioskFeedback({
+          type: 'success',
+          message: targetState
+            ? 'Auto Launch & Back Protection enabled (Protected Mode: auto-restart active, exit shortcuts guarded).'
+            : 'Back Protection disabled (Normal Mode: regular exit permitted, no auto-relaunch).'
+        });
+        setShowPasscodeModal(false);
+        setEnteredPasscode('');
+        return;
+      }
+
+      if (
+        typeof window !== 'undefined' &&
+        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+      ) {
+        const res = await fetch('http://127.0.0.1:8536/api/toggle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            state: targetState ? 'ON' : 'OFF',
+            passcode: passcode || ''
+          })
+        });
+
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.message || 'Failed to update kiosk protection.');
+        }
+
+        setKioskStatus(prev => ({
+          ...prev,
+          backProtection: targetState,
+          lastStateChange: new Date().toISOString()
+        }));
+
+        setKioskFeedback({
+          type: 'success',
+          message: targetState
+            ? 'Auto Launch & Back Protection enabled (Protected Mode: auto-restart active, exit shortcuts guarded).'
+            : 'Back Protection disabled (Normal Mode: regular exit permitted, no auto-relaunch).'
+        });
+        setShowPasscodeModal(false);
+        setEnteredPasscode('');
+        return;
+      }
+
+      throw new Error('Kiosk control IPC bridge is only available in the Windows Electron application.');
+    } catch (err: any) {
+      if (showPasscodeModal) {
+        setPasscodeError(err.message || 'Invalid passcode');
+      } else {
+        setKioskFeedback({
+          type: 'error',
+          message: err.message || 'Failed to update kiosk protection.'
+        });
+      }
+    } finally {
+      setIsKioskUpdating(false);
+    }
+  };
+
+  const handleConfirmPasscode = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!enteredPasscode.trim()) {
+      setPasscodeError('Please enter the admin passcode.');
+      return;
+    }
+    applyKioskState(false, enteredPasscode.trim());
+  };
+
+  const handleTestExit = () => {
+    if (typeof window !== 'undefined' && (window as any).electronDesktop?.exit) {
+      (window as any).electronDesktop.exit();
+    }
+  };
 
   useEffect(() => {
     if (settings) {
@@ -460,6 +650,173 @@ export const GameSettingsSection: React.FC<GameSettingsSectionProps> = ({
             Security audit logs record every settings change made by authenticated admins.
           </div>
         </div>
+
+        {/* CARD 5: Windows Kiosk Auto Launch & Back Protection */}
+        <div className={`border rounded-2xl p-4 shadow-sm flex flex-col justify-between space-y-3 lg:col-span-2 ${cardBg}`}>
+          <div>
+            <div className={`flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b gap-2 ${
+              isLight ? 'border-[#D8C7AE]' : 'border-slate-800'
+            }`}>
+              <div className="flex items-center gap-2">
+                <Shield className={`w-4 h-4 ${
+                  kioskStatus.backProtection
+                    ? 'text-emerald-400'
+                    : isLight ? 'text-[#B36D4E]' : 'text-cyan-400'
+                }`} />
+                <span className={`text-xs font-bold uppercase tracking-wide ${primaryText}`}>
+                  Auto Launch & Back Protection
+                </span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono border ${
+                  isLight
+                    ? 'bg-[#76513D]/10 text-[#76513D] border-[#76513D]/20'
+                    : 'bg-slate-800 text-slate-400 border-slate-700'
+                }`}>
+                  Windows Kiosk
+                </span>
+              </div>
+
+              {/* Status Badge & Toggle Switch */}
+              <div className="flex items-center gap-3">
+                {/* Status Indicator */}
+                <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono font-bold border ${
+                  kioskStatus.backProtection
+                    ? 'bg-emerald-950/70 border-emerald-500/50 text-emerald-300'
+                    : isLight
+                      ? 'bg-[#FAF4E8] border-[#D8C7AE] text-[#806B58]'
+                      : 'bg-slate-900 border-slate-800 text-slate-400'
+                }`}>
+                  <span className={`w-2 h-2 rounded-full ${
+                    kioskStatus.backProtection ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'
+                  }`} />
+                  <span>
+                    {kioskStatus.backProtection ? 'PROTECTED MODE' : 'NORMAL MODE'}
+                  </span>
+                </div>
+
+                {/* ON / OFF Toggle Buttons */}
+                <div className={`inline-flex p-0.5 rounded-xl border ${cardSubBg}`}>
+                  <button
+                    type="button"
+                    disabled={isKioskUpdating}
+                    onClick={() => handleToggleKiosk(true)}
+                    className={`px-3.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      kioskStatus.backProtection
+                        ? 'bg-emerald-600 text-white shadow-sm'
+                        : isLight
+                          ? 'text-[#806B58] hover:text-[#493426]'
+                          : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    ON
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isKioskUpdating}
+                    onClick={() => handleToggleKiosk(false)}
+                    className={`px-3.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      !kioskStatus.backProtection
+                        ? isLight
+                          ? 'bg-[#76513D] text-[#FDF9F3] shadow-sm'
+                          : 'bg-slate-700 text-slate-100 shadow-sm'
+                        : isLight
+                          ? 'text-[#806B58] hover:text-[#493426]'
+                          : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    OFF
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Description & Operational Details */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+              <div className={`p-3 rounded-xl border text-xs space-y-1.5 ${cardSubBg}`}>
+                <div className={`font-bold flex items-center gap-1.5 ${
+                  kioskStatus.backProtection ? 'text-emerald-400' : primaryText
+                }`}>
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>When ON (Protected Mode)</span>
+                </div>
+                <ul className={`text-[11px] space-y-1 list-disc list-inside ${secondaryText}`}>
+                  <li>Watchdog monitors DiwaliPlay and auto-relaunches on exit or crash.</li>
+                  <li>Blocks accidental exit keys (Alt+F4, Windows Key, Alt+Tab, Ctrl+Esc).</li>
+                  <li>Emergency admin unlock: <span className="font-mono font-bold text-amber-400">Ctrl + Alt + Shift + D</span>.</li>
+                </ul>
+              </div>
+
+              <div className={`p-3 rounded-xl border text-xs space-y-1.5 ${cardSubBg}`}>
+                <div className={`font-bold flex items-center gap-1.5 ${
+                  !kioskStatus.backProtection ? (isLight ? 'text-[#B36D4E]' : 'text-cyan-400') : primaryText
+                }`}>
+                  <Unlock className={`w-3.5 h-3.5 ${isLight ? 'text-[#B36D4E]' : 'text-cyan-400'}`} />
+                  <span>When OFF (Normal Mode)</span>
+                </div>
+                <ul className={`text-[11px] space-y-1 list-disc list-inside ${secondaryText}`}>
+                  <li>Allows standard exit via Alt+F4, close button, or exit button.</li>
+                  <li>Watchdog stands by without relaunching after app closure.</li>
+                  <li>Switching OFF requires Admin Passcode (Default: <span className="font-mono font-bold">8536</span>).</li>
+                </ul>
+              </div>
+            </div>
+
+            {/* Live Kiosk Feedback */}
+            {kioskFeedback && (
+              <div className={`mt-3 p-2.5 rounded-xl text-xs flex items-center gap-2 ${
+                kioskFeedback.type === 'success'
+                  ? 'bg-emerald-950/60 border border-emerald-500/40 text-emerald-200'
+                  : 'bg-rose-950/60 border border-rose-500/40 text-rose-200'
+              }`}>
+                {kioskFeedback.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                )}
+                <span>{kioskFeedback.message}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Footer bar with diagnostics and safe exit test */}
+          <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t text-[10px] ${
+            isLight ? 'border-[#D8C7AE]/60' : 'border-slate-800/80'
+          } ${secondaryText}`}>
+            <div>
+              <span>Engine: </span>
+              <span className={`font-mono ${isLight ? 'text-[#76513D]' : 'text-cyan-400'}`}>
+                windows-kiosk (Watchdog + Guardian)
+              </span>
+              {kioskStatus.lastStateChange && (
+                <span className="ml-2 font-mono text-[9px] opacity-75">
+                  Last updated: {new Date(kioskStatus.lastStateChange).toLocaleTimeString()}
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={fetchKioskStatus}
+                className="hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                <RefreshCw className="w-3 h-3" />
+                <span>Refresh Status</span>
+              </button>
+
+              {typeof window !== 'undefined' && (window as any).electronDesktop?.exit && (
+                <button
+                  type="button"
+                  onClick={handleTestExit}
+                  className="px-2 py-0.5 rounded border border-rose-500/40 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-[10px] flex items-center gap-1 cursor-pointer transition-colors"
+                  title="Test App Exit: If Back Protection is ON, watchdog will recover and relaunch within 2s; if OFF, app exits normally."
+                >
+                  <Power className="w-2.5 h-2.5" />
+                  <span>Test Exit</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       </form>
 
       {/* Confirmation Modal */}
@@ -533,6 +890,83 @@ export const GameSettingsSection: React.FC<GameSettingsSectionProps> = ({
                 Confirm & Persist
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Passcode Prompt Modal for Turning Protection OFF */}
+      {showPasscodeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className={`border rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4 ${
+            isLight
+              ? 'bg-[#FBF5EA] border-[#D8C7AE] text-[#493426] shadow-[0_20px_60px_rgba(73,52,38,0.3)]'
+              : 'bg-[#0F1B2E] border-cyan-500/30 text-slate-100 shadow-2xl'
+          }`}>
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center shrink-0">
+                <Key className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className={`text-base font-bold ${primaryText}`}>
+                  Admin Passcode Required
+                </h3>
+                <p className={`text-xs mt-0.5 ${secondaryText}`}>
+                  Enter passcode to disable Kiosk Back Protection and restore normal PC operation.
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handleConfirmPasscode} className="space-y-3">
+              <div>
+                <label className={`block text-xs font-semibold mb-1 ${primaryText}`}>
+                  Admin Passcode
+                </label>
+                <input
+                  type="password"
+                  autoFocus
+                  placeholder="Enter passcode (Default: 8536)"
+                  value={enteredPasscode}
+                  onChange={(e) => {
+                    setEnteredPasscode(e.target.value);
+                    setPasscodeError(null);
+                  }}
+                  className={`w-full px-3 py-2 rounded-xl text-sm font-mono border outline-none transition-colors ${inputBg}`}
+                />
+                {passcodeError && (
+                  <p className="text-[11px] text-rose-400 mt-1 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3 shrink-0" />
+                    <span>{passcodeError}</span>
+                  </p>
+                )}
+              </div>
+
+              <div className={`flex items-center justify-end gap-2 pt-2 border-t ${
+                isLight ? 'border-[#D8C7AE]' : 'border-slate-800'
+              }`}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPasscodeModal(false);
+                    setEnteredPasscode('');
+                    setPasscodeError(null);
+                  }}
+                  className={`px-4 py-2 rounded-xl border text-xs font-semibold cursor-pointer transition-colors ${
+                    isLight
+                      ? 'bg-[#FAF4E8] hover:bg-[#F1E8D9] border-[#D8C7AE] text-[#493426]'
+                      : 'bg-slate-900 border-slate-800 hover:border-slate-700 text-slate-300'
+                  }`}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isKioskUpdating}
+                  className="px-4 py-2 rounded-xl font-bold text-xs bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-md cursor-pointer transition-all disabled:opacity-50"
+                >
+                  {isKioskUpdating ? 'Verifying...' : 'Unlock & Turn OFF'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

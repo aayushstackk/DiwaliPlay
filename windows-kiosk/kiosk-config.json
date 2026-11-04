@@ -1,0 +1,17 @@
+{
+  "backProtection": false,
+  "autoLaunch": true,
+  "appName": "DiwaliPlay",
+  "executablePath": "dist-electron\\win-unpacked\\DiwaliPlay.exe",
+  "fallbackExecutablePath": "electron\\main.cjs",
+  "checkIntervalSeconds": 3,
+  "restartDelaySeconds": 2,
+  "maxCrashCountInWindow": 5,
+  "crashWindowMinutes": 5,
+  "blockAltF4": true,
+  "adminUnlockKeyCombo": "Ctrl+Alt+Shift+D",
+  "adminPasscode": "8536",
+  "lastStateChange": "2026-11-04T11:55:48.026Z",
+  "lastStateChangeReason": "Admin Panel Test"
+}
+

@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DiwaliPlay - Windows Kiosk Back Protection Controller</title>
+  <style>
+    :root {
+      --bg: #090510;
+      --card-bg: #140d24;
+      --gold: #f59e0b;
+      --gold-light: #fbbf24;
+      --gold-bright: #fde047;
+      --emerald: #10b981;
+      --ruby: #f43f5e;
+      --border: rgba(245, 158, 11, 0.35);
+      --text: #fef3c7;
+      --muted: #a39bb8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      background: radial-gradient(circle at 50% 20%, #1e1136 0%, var(--bg) 80%);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 680px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .header-card {
+      background: var(--card-bg);
+      border: 1.5px solid var(--border);
+      border-radius: 20px;
+      padding: 24px;
+      text-align: center;
+      position: relative;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6), 0 0 30px rgba(245, 158, 11, 0.15);
+      overflow: hidden;
+    }
+
+    .header-card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, #f59e0b, #fde047, #f59e0b);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+    }
+
+    .badge-protected {
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.5);
+      color: #34d399;
+      box-shadow: 0 0 15px rgba(16, 185, 129, 0.3);
+    }
+
+    .badge-normal {
+      background: rgba(245, 158, 11, 0.15);
+      border: 1px solid rgba(245, 158, 11, 0.4);
+      color: var(--gold-light);
+    }
+
+    h1 {
+      font-size: 26px;
+      font-weight: 900;
+      letter-spacing: 0.5px;
+      color: #fff;
+      text-shadow: 0 0 20px rgba(245, 158, 11, 0.4);
+      margin-bottom: 4px;
+    }
+
+    .subtitle {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .control-card {
+      background: var(--card-bg);
+      border: 1.5px solid var(--border);
+      border-radius: 20px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px;
+      background: rgba(0, 0, 0, 0.35);
+      border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .toggle-info h3 {
+      font-size: 17px;
+      font-weight: 800;
+      color: #fff;
+      margin-bottom: 4px;
+    }
+
+    .toggle-info p {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    /* Switch */
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 68px;
+      height: 36px;
+      flex-shrink: 0;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #2b253b;
+      transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      border-radius: 36px;
+      border: 1.5px solid rgba(255, 255, 255, 0.15);
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 26px;
+      width: 26px;
+      left: 4px;
+      bottom: 3.5px;
+      background-color: #948aa8;
+      transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      border-radius: 50%;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    }
+
+    input:checked + .slider {
+      background: linear-gradient(135deg, #059669, #10b981);
+      border-color: #34d399;
+      box-shadow: 0 0 20px rgba(16, 185, 129, 0.5);
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(31px);
+      background-color: #ffffff;
+      box-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
+    }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .status-item {
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 12px;
+      padding: 12px;
+    }
+
+    .status-label {
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+
+    .status-value {
+      font-size: 14px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .log-box {
+      background: #06030c;
+      border: 1px solid rgba(245, 158, 11, 0.2);
+      border-radius: 12px;
+      padding: 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 11px;
+      color: #cbd5e1;
+      height: 160px;
+      overflow-y: auto;
+      line-height: 1.6;
+      white-space: pre-wrap;
+    }
+
+    .log-entry-info { color: #38bdf8; }
+    .log-entry-warn { color: #facc15; }
+    .log-entry-alert { color: #e879f9; }
+    .log-entry-error { color: #f87171; }
+
+    .btn-group {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      padding: 10px 16px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-gold {
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      color: #120b02;
+      box-shadow: 0 4px 15px rgba(245, 158, 11, 0.3);
+    }
+    .btn-gold:hover { filter: brightness(1.1); }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.08);
+      color: #f1f5f9;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+    }
+    .btn-secondary:hover { background: rgba(255, 255, 255, 0.12); }
+
+    .instructions {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.5;
+      padding: 12px;
+      background: rgba(245, 158, 11, 0.05);
+      border: 1px dashed rgba(245, 158, 11, 0.25);
+      border-radius: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header-card">
+      <div id="modeBadge" class="badge badge-normal">● Status: Loading...</div>
+      <h1>DiwaliPlay Kiosk Guard</h1>
+      <p class="subtitle">Windows AutoLaunch &amp; Back Protection Module</p>
+    </div>
+
+    <div class="control-card">
+      <div class="toggle-row">
+        <div class="toggle-info">
+          <h3>Back Protection: <span id="toggleText">OFF</span></h3>
+          <p id="toggleDesc">When OFF: Normal PC mode. User can close the app normally. No auto-restart.</p>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="protectionToggle" />
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="status-grid">
+        <div class="status-item">
+          <div class="status-label">DiwaliPlay App</div>
+          <div id="appStatus" class="status-value">Checking...</div>
+        </div>
+        <div class="status-item">
+          <div class="status-label">AutoLaunch at Boot</div>
+          <div id="autoLaunchStatus" class="status-value">Active</div>
+        </div>
+        <div class="status-item">
+          <div class="status-label">Accidental Exit Guard</div>
+          <div id="guardStatus" class="status-value">Inactive (Normal)</div>
+        </div>
+        <div class="status-item">
+          <div class="status-label">Last Changed</div>
+          <div id="lastChanged" class="status-value">-</div>
+        </div>
+      </div>
+
+      <div class="btn-group">
+        <button class="btn btn-gold" id="btnLaunch">🚀 Launch DiwaliPlay</button>
+        <button class="btn btn-secondary" id="btnRefresh">🔄 Refresh Status</button>
+        <button class="btn btn-secondary" id="btnTestCrash">🧪 Test Auto-Restart</button>
+      </div>
+
+      <div class="instructions">
+        <strong>💡 Kiosk Admin Info:</strong> When Back Protection is <strong>ON</strong>, DiwaliPlay automatically restarts if closed or crashed, and exit hotkeys (Alt+F4, Win) are locked. To emergency unlock from keyboard: press <strong>Ctrl + Alt + Shift + D</strong>.
+      </div>
+
+      <div>
+        <div class="status-label" style="margin-bottom: 6px;">Watchdog Activity Log</div>
+        <div id="logBox" class="log-box">Connecting to local kiosk controller...</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const toggle = document.getElementById('protectionToggle');
+    const toggleText = document.getElementById('toggleText');
+    const toggleDesc = document.getElementById('toggleDesc');
+    const modeBadge = document.getElementById('modeBadge');
+    const appStatus = document.getElementById('appStatus');
+    const autoLaunchStatus = document.getElementById('autoLaunchStatus');
+    const guardStatus = document.getElementById('guardStatus');
+    const lastChanged = document.getElementById('lastChanged');
+    const logBox = document.getElementById('logBox');
+
+    async function fetchStatus() {
+      try {
+        const res = await fetch('/api/status');
+        if (!res.ok) throw new Error('Status fetch failed');
+        const data = await res.json();
+        updateUI(data);
+      } catch (err) {
+        // Fallback for direct file:// view (reads mock or prompt)
+        logBox.innerHTML = "[INFO] Standalone UI view. Connecting to local watchdog...\n" +
+          "Use toggle-protection.bat or admin-kiosk-server.ps1 for live synchronization.";
+      }
+    }
+
+    function updateUI(data) {
+      toggle.checked = !!data.backProtection;
+      if (data.backProtection) {
+        toggleText.textContent = "ON";
+        toggleText.style.color = "#34d399";
+        toggleDesc.textContent = "When ON: Protected Kiosk. App automatically restarts if closed. Alt+F4 guarded.";
+        modeBadge.className = "badge badge-protected";
+        modeBadge.textContent = "● Protected Kiosk Mode (ON)";
+        guardStatus.textContent = "Active (Locked)";
+        guardStatus.style.color = "#34d399";
+      } else {
+        toggleText.textContent = "OFF";
+        toggleText.style.color = "#fef3c7";
+        toggleDesc.textContent = "When OFF: Normal PC mode. User can close the app normally. Watchdog will not force restart.";
+        modeBadge.className = "badge badge-normal";
+        modeBadge.textContent = "● Normal PC Mode (OFF)";
+        guardStatus.textContent = "Inactive (Permits exit)";
+        guardStatus.style.color = "#a39bb8";
+      }
+
+      appStatus.textContent = data.isRunning ? `Running (PID: ${data.pid || 'Active'})` : "Stopped";
+      appStatus.style.color = data.isRunning ? "#34d399" : "#f87171";
+      autoLaunchStatus.textContent = data.autoLaunch ? "Enabled (At Logon)" : "Disabled";
+      lastChanged.textContent = data.lastStateChange ? new Date(data.lastStateChange).toLocaleTimeString() : "Startup";
+
+      if (data.recentLogs && data.recentLogs.length > 0) {
+        logBox.innerHTML = data.recentLogs.map(escapeHtml).join("\n");
+        logBox.scrollTop = logBox.scrollHeight;
+      }
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      let line = div.innerHTML;
+      if (line.includes('[INFO]')) line = `<span class="log-entry-info">${line}</span>`;
+      else if (line.includes('[WARN]')) line = `<span class="log-entry-warn">${line}</span>`;
+      else if (line.includes('[ALERT]')) line = `<span class="log-entry-alert">${line}</span>`;
+      else if (line.includes('[ERROR]')) line = `<span class="log-entry-error">${line}</span>`;
+      return line;
+    }
+
+    toggle.addEventListener('change', async () => {
+      const targetState = toggle.checked;
+      let passcode = "";
+
+      if (!targetState) {
+        // Disabling requires confirmation
+        const pass = prompt("Admin Passcode required to turn OFF Back Protection (Default: 8536):", "8536");
+        if (pass === null) {
+          toggle.checked = true; // revert
+          return;
+        }
+        passcode = pass;
+      }
+
+      try {
+        const res = await fetch('/api/toggle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ state: targetState ? "ON" : "OFF", passcode })
+        });
+        const result = await res.json();
+        if (result.success) {
+          fetchStatus();
+        } else {
+          alert("Error: " + (result.message || "Failed to update state"));
+          toggle.checked = !targetState; // revert
+        }
+      } catch (err) {
+        alert("Local kiosk controller is not responding. Run toggle-protection.bat directly.");
+        toggle.checked = !targetState;
+      }
+    });
+
+    document.getElementById('btnRefresh').addEventListener('click', fetchStatus);
+
+    document.getElementById('btnLaunch').addEventListener('click', async () => {
+      try {
+        await fetch('/api/launch', { method: 'POST' });
+        setTimeout(fetchStatus, 1500);
+      } catch {
+        alert("Please use toggle-protection.bat or start DiwaliPlay directly.");
+      }
+    });
+
+    document.getElementById('btnTestCrash').addEventListener('click', async () => {
+      if (!confirm("This will simulate an application crash to test watchdog relaunch behavior. Proceed?")) return;
+      try {
+        await fetch('/api/test-crash', { method: 'POST' });
+        setTimeout(fetchStatus, 2000);
+      } catch {
+        alert("Command sent. Watch log for auto-restart.");
+      }
+    });
+
+    // Auto poll every 4 seconds
+    fetchStatus();
+    setInterval(fetchStatus, 4000);
+  </script>
+</body>
+</html>
+
