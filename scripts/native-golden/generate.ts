@@ -20,6 +20,7 @@ import {
 } from '../../src/utils/motionMath';
 import { recognizeHandGesture } from '../../src/utils/gestureRecognition';
 import { CrackerEngine } from '../../src/utils/crackerEngine';
+import { SPIN_CONSTANTS, calculateTargetStopAngle, calculateDecelTrajectory } from '../../src/utils/spinWheelPhysics';
 import { DEFAULT_BOMB_CONFIGS, DEFAULT_BOMB_SETTINGS } from '../../src/utils/bombDefaults';
 import type { GameScoreState, HandGesture, LandmarkPoint } from '../../src/types/motion';
 import type { AchievementTier } from '../../src/types/backend';
@@ -45,6 +46,39 @@ export function withSeededRandom<T>(seed: number, fn: () => T): T {
 function sequence(seed: number, count: number): number[] {
   const rng = mulberry32(seed);
   return Array.from({ length: count }, () => rng());
+}
+
+
+/**
+ * Per-frame wheel angle, replicated from SpinWheelModal.tsx's animate loop (the maths lives inline in the
+ * component, so it cannot be imported). Phase 1 = accel + cruise (elapsed since spin start);
+ * phase 2 = deceleration (elapsed since decel start).
+ */
+function modalCruiseAngle(initialAngle: number, elapsed: number): number {
+  const cruiseSpeed = SPIN_CONSTANTS.CRUISE_SPEED;
+  const accelDuration = SPIN_CONSTANTS.ACCEL_DURATION_MS;
+  if (elapsed < accelDuration) {
+    const p = elapsed / accelDuration;
+    return initialAngle + 0.5 * cruiseSpeed * (accelDuration / 1000) * (p * p);
+  }
+  const accelDistance = 0.5 * cruiseSpeed * (accelDuration / 1000);
+  return initialAngle + accelDistance + cruiseSpeed * ((elapsed - accelDuration) / 1000);
+}
+
+function modalDecelAngle(t: { decelStartAngle: number; totalDecelDegrees: number; decelDurationMs: number }, elapsed: number): number {
+  const progress = Math.min(1, elapsed / t.decelDurationMs);
+  const eased = 1 - Math.pow(1 - progress, SPIN_CONSTANTS.DECEL_EASING_POWER);
+  return t.decelStartAngle + t.totalDecelDegrees * eased;
+}
+
+const SPIN_STEP_MS = 16;
+
+function spinTrajectory(startAngle: number, target: number) {
+  const t = calculateDecelTrajectory(startAngle, target);
+  const angles: number[] = [];
+  // Every 16 ms through the end of the decel, plus one clamped sample past it.
+  for (let k = 0; k * SPIN_STEP_MS < t.decelDurationMs + SPIN_STEP_MS; k++) angles.push(modalDecelAngle(t, k * SPIN_STEP_MS));
+  return { startAngle, target, ...t, angles };
 }
 
 const GESTURES: HandGesture[] = ['OPEN_PALM', 'FIST', 'THUMBS_UP', 'POINTING', 'PEACE', 'UNKNOWN'];
@@ -301,6 +335,35 @@ export const generators: Record<string, Generator> = {
   bomb_defaults: {
     target: 'game',
     run: () => ({ settings: DEFAULT_BOMB_SETTINGS, configs: DEFAULT_BOMB_CONFIGS }),
+  },
+  spin_wheel: {
+    target: 'game',
+    run: () => {
+      const slices = [4, 5, 6, 7, 8, 9, 10, 11, 12];
+      // Spin start 0 deg, decel begins at minCruiseTime (accel + min cruise), as in the modal.
+      const cruiseEndMs = SPIN_CONSTANTS.ACCEL_DURATION_MS + SPIN_CONSTANTS.MIN_CRUISE_DURATION_MS;
+      const mainStart = modalCruiseAngle(0, cruiseEndMs);
+      const extraStarts = [37.3, 359.9, 1234.5]; // exercises wrap-around and the forwardDelta < 15 branch (n=8)
+      const cruiseElapsed: number[] = [];
+      for (let e = 0; e <= 1200; e += SPIN_STEP_MS) cruiseElapsed.push(e);
+      return {
+        constants: SPIN_CONSTANTS,
+        stepMs: SPIN_STEP_MS,
+        targetAngles: slices.map((n) => ({
+          numSlices: n,
+          angles: Array.from({ length: n }, (_, i) => calculateTargetStopAngle(i, n)),
+        })),
+        edgeTargetAngles: [[0, 0], [0, -3], [2, 0], [3, 1], [5, 5]].map(([idx, n]) => ({ targetIdx: idx, numSlices: n, angle: calculateTargetStopAngle(idx, n) })),
+        cruise: [0, 123.4].map((initial) => ({ initialAngle: initial, elapsedMs: cruiseElapsed, angles: cruiseElapsed.map((e) => modalCruiseAngle(initial, e)) })),
+        trajectories: slices.flatMap((n) =>
+          Array.from({ length: n }, (_, i) => {
+            const target = calculateTargetStopAngle(i, n);
+            const starts = n === 8 ? [mainStart, ...extraStarts, target, (target + 10) % 360] : [mainStart];
+            return starts.map((st) => ({ numSlices: n, targetIdx: i, ...spinTrajectory(st, target) }));
+          }).flat(),
+        ),
+      };
+    },
   },
   motion_math: {
     target: 'tracking',
