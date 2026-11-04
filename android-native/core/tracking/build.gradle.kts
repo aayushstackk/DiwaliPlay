@@ -25,4 +25,7 @@ kotlin {
 
 dependencies {
     implementation(project(":core:model"))
+    testImplementation(libs.kotlinx.serialization.json)
+    testImplementation(libs.junit)
+    testImplementation(libs.truth)
 }
