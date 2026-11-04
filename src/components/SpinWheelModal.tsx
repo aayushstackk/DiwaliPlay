@@ -13,6 +13,13 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { resolveAssetUrl } from '../utils/assetUrl';
+import {
+  SPIN_CONSTANTS,
+  calculateTargetStopAngle,
+  calculateDecelTrajectory,
+  getOrCreateTickBuffer,
+  playPreRenderedTick,
+} from '../utils/spinWheelPhysics';
 
 interface SpinWheelModalProps {
   isOpen: boolean;
@@ -117,7 +124,6 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
   // Wheel State
   const [isSpinning, setIsSpinning] = useState(false);
   const [hasSpun, setHasSpun] = useState(false);
-  const [rotation, setRotation] = useState(0);
   const [winningReward, setWinningReward] = useState<RewardItem | null>(null);
   const [showPrizeModal, setShowPrizeModal] = useState(false);
 
@@ -129,6 +135,7 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
   );
 
   const audioCtxRef = useRef<AudioContext | null>(null);
+  const tickBufferRef = useRef<AudioBuffer | null>(null);
   const animFrameRef = useRef<number | null>(null);
   const isSpinningRef = useRef<boolean>(false);
   const rotationRef = useRef<number>(0);
@@ -136,20 +143,13 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
   const flapperNeedleRef = useRef<HTMLDivElement | null>(null);
   const lastTickTimeRef = useRef<number>(0);
 
-  // Sync rotationRef when rotation state changes or on initial mount
-  useEffect(() => {
-    rotationRef.current = rotation;
-    if (wheelSvgRef.current) {
-      wheelSvgRef.current.style.transform = `rotate(${rotation}deg)`;
-    }
-  }, [rotation]);
-
-  // Initialize or resume shared Web Audio Context
+  // Initialize or resume shared Web Audio Context with pre-rendered tick buffer
   const getAudioContext = useCallback(() => {
     if (!audioCtxRef.current) {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       if (AudioCtx) {
         audioCtxRef.current = new AudioCtx();
+        tickBufferRef.current = getOrCreateTickBuffer(audioCtxRef.current);
       }
     }
     if (audioCtxRef.current?.state === 'suspended') {
@@ -158,82 +158,14 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
     return audioCtxRef.current;
   }, []);
 
-  // Premium Casino Mechanical "Kat-Kat-Kat" Flapper Tick Sound
+  // Ultra-fast zero-allocation tick sound playback (0.01ms execution)
   const playRealisticTick = useCallback((speedRatio = 1.0) => {
-    const now = performance.now();
-    if (now - lastTickTimeRef.current < 18) return; // Rate limiter prevents audio distortion
-    lastTickTimeRef.current = now;
-
-    try {
-      const ctx = getAudioContext();
-      if (!ctx) return;
-      const t = ctx.currentTime;
-
-      // 1. Transient click noise burst (flapper snapping off brass peg)
-      const bufferSize = Math.max(1, Math.floor(ctx.sampleRate * 0.005)); // 5ms
-      const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-      const output = noiseBuffer.getChannelData(0);
-      for (let i = 0; i < bufferSize; i++) {
-        const decay = Math.exp(-i / (bufferSize * 0.28));
-        output[i] = (Math.random() * 2 - 1) * decay;
-      }
-      const noiseNode = ctx.createBufferSource();
-      noiseNode.buffer = noiseBuffer;
-
-      const noiseFilter = ctx.createBiquadFilter();
-      noiseFilter.type = 'bandpass';
-      noiseFilter.frequency.setValueAtTime(3600 + (Math.random() - 0.5) * 400, t);
-      noiseFilter.Q.setValueAtTime(2.6, t);
-
-      const noiseGain = ctx.createGain();
-      const peakNoise = 0.32 * Math.min(1.2, Math.max(0.65, speedRatio));
-      noiseGain.gain.setValueAtTime(peakNoise, t);
-      noiseGain.gain.exponentialRampToValueAtTime(0.001, t + 0.005);
-
-      noiseNode.connect(noiseFilter);
-      noiseFilter.connect(noiseGain);
-      noiseGain.connect(ctx.destination);
-      noiseNode.start(t);
-
-      // 2. Resonant body snap (pitch-decaying oscillator for authentic mechanical click)
-      const osc = ctx.createOscillator();
-      const oscGain = ctx.createGain();
-      const oscFilter = ctx.createBiquadFilter();
-
-      osc.type = 'triangle';
-      const baseFreq = 1350 + (Math.random() - 0.5) * 120;
-      osc.frequency.setValueAtTime(baseFreq, t);
-      osc.frequency.exponentialRampToValueAtTime(170, t + 0.015);
-
-      oscFilter.type = 'bandpass';
-      oscFilter.frequency.setValueAtTime(1050, t);
-      oscFilter.Q.setValueAtTime(2.4, t);
-
-      const peakOsc = 0.38 * Math.min(1.2, Math.max(0.7, speedRatio));
-      oscGain.gain.setValueAtTime(peakOsc, t);
-      oscGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.016);
-
-      osc.connect(oscFilter);
-      oscFilter.connect(oscGain);
-      oscGain.connect(ctx.destination);
-      osc.start(t);
-      osc.stop(t + 0.017);
-
-      // 3. Low physical body thud (gives the click weight and punch)
-      const thump = ctx.createOscillator();
-      const thumpGain = ctx.createGain();
-      thump.type = 'sine';
-      thump.frequency.setValueAtTime(150, t);
-      thump.frequency.exponentialRampToValueAtTime(45, t + 0.013);
-
-      thumpGain.gain.setValueAtTime(0.24, t);
-      thumpGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.013);
-
-      thump.connect(thumpGain);
-      thumpGain.connect(ctx.destination);
-      thump.start(t);
-      thump.stop(t + 0.014);
-    } catch {}
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    if (!tickBufferRef.current) {
+      tickBufferRef.current = getOrCreateTickBuffer(ctx);
+    }
+    playPreRenderedTick(ctx, tickBufferRef.current, speedRatio, lastTickTimeRef);
   }, [getAudioContext]);
 
   // Triumphant Casino Victory Fanfare Chime on Stop
@@ -384,10 +316,10 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
         };
       });
 
-    // 3. Start wheel animation IMMEDIATELY on this exact frame with premium casino physics
-    const cruiseSpeed = 1440; // 1440 deg/sec = 4 full rotations/sec
-    const accelDuration = 350; // ms to reach full cruising speed
-    const minCruiseTime = 1200; // ms of thrilling fast spinning before gradual slowdown
+    // 3. Start wheel animation IMMEDIATELY on this exact frame with shared physics (2.2s–2.6s duration)
+    const cruiseSpeed = SPIN_CONSTANTS.CRUISE_SPEED;
+    const accelDuration = SPIN_CONSTANTS.ACCEL_DURATION_MS;
+    const minCruiseTime = SPIN_CONSTANTS.ACCEL_DURATION_MS + SPIN_CONSTANTS.MIN_CRUISE_DURATION_MS;
     const animStartTime = performance.now();
 
     const pegsPerSlice = numSlices <= 4 ? 4 : (numSlices <= 6 ? 3 : (numSlices <= 10 ? 2 : 1));
@@ -400,7 +332,7 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
     let decelInitiated = false;
     let decelStartAngle = 0;
     let decelStartTime = 0;
-    let decelDuration = 6000;
+    let decelDuration = 1600;
     let totalDecelDegrees = 0;
     let winningTargetReward: RewardItem | null = null;
     let hasFailed = false;
@@ -447,11 +379,9 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
         }
 
         // Check if we can begin smooth deceleration:
-        // Requires minimum excitement duration AND received server response
         if (elapsed >= minCruiseTime && serverResult !== null) {
           decelInitiated = true;
           decelStartTime = time;
-          decelStartAngle = currentAngle;
 
           if (serverResult.success && serverResult.reward) {
             winningTargetReward = serverResult.reward;
@@ -460,29 +390,17 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
               targetIdx = serverResult.rewardIndex ?? 0;
             }
 
-            // Target alignment math:
-            // Slice center: (targetIdx + 0.5) * sliceAngle
-            // Marker is at 12 o'clock (0 degrees)
-            const sliceCenterAngle = (targetIdx + 0.5) * sliceAngle;
-            const targetStopAngle = (360 - (sliceCenterAngle % 360)) % 360;
-
-            const currentMod = ((decelStartAngle % 360) + 360) % 360;
-            let forwardDelta = (targetStopAngle - currentMod) % 360;
-            if (forwardDelta <= 0) forwardDelta += 360;
-
-            // 7 full turns during slowdown for suspenseful, natural deceleration
-            const fullTurns = 7;
-            totalDecelDegrees = fullTurns * 360 + forwardDelta;
-
-            // Deceleration duration matching incoming cruise speed exactly for zero jerk:
-            // For easing f(u) = 1 - (1 - u)^3.5, derivative at u=0 is 3.5 * totalDecelDegrees / decelDuration = cruiseSpeed
-            decelDuration = ((3.5 * totalDecelDegrees) / cruiseSpeed) * 1000;
+            const targetStopAngle = calculateTargetStopAngle(targetIdx, numSlices);
+            const trajectory = calculateDecelTrajectory(currentAngle, targetStopAngle);
+            decelStartAngle = trajectory.decelStartAngle;
+            totalDecelDegrees = trajectory.totalDecelDegrees;
+            decelDuration = trajectory.decelDurationMs;
           } else {
-            // Server error: ease to a graceful stop
             hasFailed = true;
             failureMessage = serverResult.errorMessage || 'Unable to spin. Please try again.';
+            decelStartAngle = currentAngle;
             totalDecelDegrees = 720;
-            decelDuration = 1800;
+            decelDuration = 1200;
           }
         }
 
@@ -492,8 +410,8 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
         const decelElapsed = time - decelStartTime;
         const progress = Math.min(1, decelElapsed / decelDuration);
 
-        // Continuous quartic-style deceleration curve: 1 - (1 - u)^3.5
-        const eased = 1 - Math.pow(1 - progress, 3.5);
+        // Continuous quartic-style deceleration curve
+        const eased = 1 - Math.pow(1 - progress, SPIN_CONSTANTS.DECEL_EASING_POWER);
         const currentAngle = decelStartAngle + totalDecelDegrees * eased;
 
         rotationRef.current = currentAngle;
@@ -501,9 +419,8 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
           wheelSvgRef.current.style.transform = `rotate(${currentAngle}deg)`;
         }
 
-        // Calculate momentary speed ratio for dynamic audio pitch and volume
-        const currentSpeed = cruiseSpeed * Math.pow(1 - progress, 2.5);
-        const speedRatio = Math.max(0.4, currentSpeed / cruiseSpeed);
+        const currentSpeed = cruiseSpeed * Math.pow(1 - progress, SPIN_CONSTANTS.DECEL_EASING_POWER - 1);
+        const speedRatio = Math.max(0.3, currentSpeed / cruiseSpeed);
 
         const currentPegIndex = Math.floor(currentAngle / pegAngleStep);
         if (currentPegIndex > lastPegIndex) {
@@ -511,7 +428,6 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
           lastPegIndex = currentPegIndex;
         }
 
-        // Flapper needle deflection tracking slowing pegs
         const pegPhase = (((currentAngle % pegAngleStep) + pegAngleStep) % pegAngleStep) / pegAngleStep;
         let flapperDeflection = 0;
         if (pegPhase > 0.75) {
@@ -529,7 +445,6 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
           // --- Complete Gentle Rest on Winner ---
           const finalAngle = decelStartAngle + totalDecelDegrees;
           rotationRef.current = finalAngle;
-          setRotation(finalAngle);
           if (wheelSvgRef.current) {
             wheelSvgRef.current.style.transform = `rotate(${finalAngle}deg)`;
           }
@@ -626,7 +541,7 @@ export const SpinWheelModal: React.FC<SpinWheelModalProps> = ({
                 viewBox="0 0 500 500"
                 className="w-full h-full select-none will-change-transform"
                 style={{
-                  transform: `rotate(${rotation}deg)`
+                  transform: `rotate(${rotationRef.current}deg)`
                 }}
               >
                 <defs>

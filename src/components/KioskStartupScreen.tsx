@@ -25,14 +25,7 @@ export const KioskStartupScreen: React.FC<KioskStartupScreenProps> = ({
   const [isVerifying, setIsVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successUser, setSuccessUser] = useState<User | null>(null);
-  const [registrationUrl, setRegistrationUrl] = useState<string>('');
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const url = `${window.location.origin}/register`;
-      setRegistrationUrl(url);
-    }
-  }, []);
+  const registrationUrl = typeof window !== 'undefined' ? `${window.location.origin}/register` : '/register';
 
   const verifyCode = useCallback(async (codeStr: string) => {
     if (codeStr.length !== 4 || isVerifying) return;
@@ -130,13 +123,7 @@ export const KioskStartupScreen: React.FC<KioskStartupScreenProps> = ({
 
             {/* QR CODE */}
             <div className="p-3.5 bg-white/5 border border-amber-500/30 rounded-2xl shadow-[0_0_30px_rgba(245,158,11,0.2)] flex items-center justify-center">
-              {registrationUrl ? (
-                <QrCodeSvg url={registrationUrl} size={175} />
-              ) : (
-                <div className="w-[175px] h-[175px] bg-neutral-950 rounded-xl flex items-center justify-center text-xs text-neutral-500 font-mono">
-                  Loading QR...
-                </div>
-              )}
+              <QrCodeSvg url={registrationUrl} size={175} />
             </div>
 
             {/* ✨ FREE TO PLAY ✨ */}

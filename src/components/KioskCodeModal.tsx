@@ -28,14 +28,7 @@ export const KioskCodeModal: React.FC<KioskCodeModalProps> = ({
   const [successUser, setSuccessUser] = useState<User | null>(null);
 
   // Dynamic registration URL for mobile phone camera scanning
-  const [registrationUrl, setRegistrationUrl] = useState<string>('');
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const url = `${window.location.origin}/register`;
-      setRegistrationUrl(url);
-    }
-  }, []);
+  const registrationUrl = typeof window !== 'undefined' ? `${window.location.origin}/register` : '/register';
 
   // Reset state when modal opens or closes
   useEffect(() => {
@@ -132,13 +125,7 @@ export const KioskCodeModal: React.FC<KioskCodeModalProps> = ({
 
           {/* QR CODE PREVIEW */}
           <div className="my-5 flex flex-col items-center">
-            {registrationUrl ? (
-              <QrCodeSvg url={registrationUrl} size={180} />
-            ) : (
-              <div className="w-48 h-48 bg-neutral-900 rounded-xl flex items-center justify-center text-xs text-neutral-500">
-                Generating QR...
-              </div>
-            )}
+            <QrCodeSvg url={registrationUrl} size={180} />
             <span className="text-[11px] font-mono text-amber-300/80 mt-3 font-semibold tracking-wider">
               Scan with any Smartphone Camera
             </span>
