@@ -38,7 +38,12 @@ try {
     $isAdmin = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 } catch {}
 
-if (-not $isAdmin) {
+if ($isAdmin) {
+    try {
+        & icacls.exe "$KioskDir" /grant "Users:(OI)(CI)F" /T /C /Q | Out-Null
+        Write-Host "  * Configured user modify permissions on $KioskDir" -ForegroundColor Green
+    } catch {}
+} else {
     Write-Host "Notice: Installer is running in standard user mode." -ForegroundColor Yellow
     Write-Host "If Task Scheduler requires elevation, run as Administrator." -ForegroundColor Gray
 }
@@ -241,3 +246,4 @@ if (-not $taskRegistrationSuccess) {
     Write-Host "=======================================================`n" -ForegroundColor Cyan
     exit 0
 }
+
