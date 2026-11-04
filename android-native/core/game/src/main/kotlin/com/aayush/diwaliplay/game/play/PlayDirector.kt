@@ -1,6 +1,5 @@
 package com.aayush.diwaliplay.game.play
 
-import com.aayush.diwaliplay.game.GameRandom
 import com.aayush.diwaliplay.game.cracker.CrackerSim
 import com.aayush.diwaliplay.game.cracker.HandSide
 import com.aayush.diwaliplay.model.GameScoreState
@@ -18,10 +17,8 @@ import kotlin.math.min
  *    per frame it only adds motion sparkles, updates maxSpeed and the 2x combo multiplier/duration.
  *  - Points come only from bomb hits ([recordBombHit]).
  */
-@Suppress("UNUSED_PARAMETER")
 class PlayDirector(
     private val sim: CrackerSim,
-    random: GameRandom,
     private val targetScore: Int?,
 ) {
     private val combo = ComboTracker()
@@ -32,14 +29,23 @@ class PlayDirector(
     val score: GameScoreState get() = state
 
     /** Returns and clears the events raised since the last call. */
-    val events: List<PlayEvent>
-        get() {
-            val out = ArrayList(pending)
-            pending.clear()
-            return out
-        }
+    fun drainEvents(): List<PlayEvent> {
+        val out = ArrayList(pending)
+        pending.clear()
+        return out
+    }
 
-    fun step(dtSeconds: Double, nowMs: Double, left: TrackedHand, right: TrackedHand) {
+    /**
+     * Per-frame update. Motion sparkles always spawn for detected hands; maxSpeed and the combo
+     * multiplier/duration only update while [crackerModeActive] (web `isCrackerModeActive` gate).
+     */
+    fun step(dtSeconds: Double, crackerModeActive: Boolean, left: TrackedHand, right: TrackedHand) {
+        if (crackerModeActive) updateCombo(dtSeconds, left, right)
+        if (left.detected) sim.addMotionSparkles(left.pixelX, left.pixelY, HandSide.LEFT, left.movementSpeed)
+        if (right.detected) sim.addMotionSparkles(right.pixelX, right.pixelY, HandSide.RIGHT, right.movementSpeed)
+    }
+
+    private fun updateCombo(dtSeconds: Double, left: TrackedHand, right: TrackedHand) {
         val isComboActive = left.detected && right.detected &&
             left.movementSpeed > COMBO_SPEED && right.movementSpeed > COMBO_SPEED
 
@@ -50,9 +56,6 @@ class PlayDirector(
             s.copy(multiplier = 1.0)
         }
         state = s
-
-        if (left.detected) sim.addMotionSparkles(left.pixelX, left.pixelY, HandSide.LEFT, left.movementSpeed)
-        if (right.detected) sim.addMotionSparkles(right.pixelX, right.pixelY, HandSide.RIGHT, right.movementSpeed)
     }
 
     fun recordBombHit(points: Int, isPenalty: Boolean, nowMs: Double) {
@@ -86,7 +89,7 @@ class PlayDirector(
                     lastDeltaLabel = "+$points (+${ComboTracker.COMBO_BONUS} COMBO!)",
                 )
                 pending.add(PlayEvent.ComboAwarded(awarded, ComboTracker.COMBO_BONUS))
-                pending.add(PlayEvent.PlaySound(COMBO_SOUND))
+                pending.add(PlayEvent.PlaySound(PlaySoundKeys.COMBO_DING))
             }
         }
 
@@ -95,7 +98,7 @@ class PlayDirector(
         val reached = targetScore != null && targetScore > 0 && s.score >= targetScore
         if (reached && !targetWasAchieved) {
             pending.add(PlayEvent.TargetReached)
-            pending.add(PlayEvent.PlaySound(TARGET_SOUND))
+            pending.add(PlayEvent.PlaySound(PlaySoundKeys.MEGA_BLAST))
         }
         targetWasAchieved = reached
         state = s.copy(targetAchieved = reached)
@@ -103,7 +106,5 @@ class PlayDirector(
 
     private companion object {
         const val COMBO_SPEED = 260.0
-        const val COMBO_SOUND = "combo_ding"
-        const val TARGET_SOUND = "MEGA_BLAST"
     }
 }

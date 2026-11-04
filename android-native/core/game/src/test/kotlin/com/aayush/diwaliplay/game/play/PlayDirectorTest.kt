@@ -15,7 +15,7 @@ import org.junit.Test
 class PlayDirectorTest {
     private fun sim() = CrackerSim(random = Mulberry32(7))
     private fun director(target: Int? = null, sim: CrackerSim = sim()) =
-        PlayDirector(sim, Mulberry32(11), target)
+        PlayDirector(sim, target)
 
     private fun hand(side: String, speed: Double, detected: Boolean = true) = TrackedHand(
         side = side, detected = detected, pixelX = 500.0, pixelY = 400.0,
@@ -29,12 +29,12 @@ class PlayDirectorTest {
     fun idleHandsTriggerNothing() {
         val s = sim()
         val d = director(sim = s)
-        repeat(60) { d.step(1.0 / 60, it * 16.0, idleL, idleR) }
+        repeat(60) { d.step(1.0 / 60, true, idleL, idleR) }
         assertThat(s.totalBursts).isEqualTo(0)
         assertThat(s.activeCount).isEqualTo(0)
         assertThat(d.score.score).isEqualTo(0)
         assertThat(d.score.multiplier).isEqualTo(1.0)
-        assertThat(d.events).isEmpty()
+        assertThat(d.drainEvents()).isEmpty()
     }
 
     @Test
@@ -42,13 +42,13 @@ class PlayDirectorTest {
         // Web: addMotionSparkles each frame for a detected hand; speed 300 > 240 -> 2 sparkles.
         val s = sim()
         val d = director(sim = s)
-        d.step(1.0 / 60, 0.0, hand("left", 300.0), idleR)
+        d.step(1.0 / 60, true, hand("left", 300.0), idleR)
         s.step(1.0 / 60)
         assertThat(s.activeCount).isEqualTo(2)
         assertThat(s.totalBursts).isEqualTo(0)
         assertThat(d.score.score).isEqualTo(0)
         assertThat(d.score.maxSpeed).isEqualTo(300.0)
-        assertThat(d.events).isEmpty()
+        assertThat(d.drainEvents()).isEmpty()
         // single fast hand is not a combo
         assertThat(d.score.multiplier).isEqualTo(1.0)
     }
@@ -57,15 +57,27 @@ class PlayDirectorTest {
     fun bothHandsFastActivateComboMultiplierAndDuration() {
         // Both detected, both > 260 -> multiplier 2; each frame adds min(max(dt,0),0.1).
         val d = director()
-        d.step(1.0 / 60, 0.0, hand("left", 300.0), hand("right", 400.0))
-        d.step(0.5, 16.0, hand("left", 300.0), hand("right", 400.0)) // clamped to 0.1
-        d.step(-1.0, 32.0, hand("left", 300.0), hand("right", 400.0)) // clamped to 0
+        d.step(1.0 / 60, true, hand("left", 300.0), hand("right", 400.0))
+        d.step(0.5, true, hand("left", 300.0), hand("right", 400.0)) // clamped to 0.1
+        d.step(-1.0, true, hand("left", 300.0), hand("right", 400.0)) // clamped to 0
         assertThat(d.score.multiplier).isEqualTo(2.0)
         assertThat(d.score.comboDurationSec).isWithin(1e-12).of(1.0 / 60 + 0.1)
         assertThat(d.score.maxSpeed).isEqualTo(400.0)
         // exactly 260 is NOT combo (strict >)
-        d.step(1.0 / 60, 48.0, hand("left", 260.0), hand("right", 400.0))
+        d.step(1.0 / 60, true, hand("left", 260.0), hand("right", 400.0))
         assertThat(d.score.multiplier).isEqualTo(1.0)
+    }
+
+    @Test
+    fun sparklesWithoutCrackerModeButNoMaxSpeedOrCombo() {
+        val s = sim()
+        val d = director(sim = s)
+        d.step(1.0 / 60, false, hand("left", 300.0), hand("right", 400.0))
+        s.step(1.0 / 60)
+        assertThat(s.activeCount).isEqualTo(4) // 2 sparkles per hand (speed > 240)
+        assertThat(d.score.maxSpeed).isEqualTo(0.0)
+        assertThat(d.score.multiplier).isEqualTo(1.0)
+        assertThat(d.score.comboDurationSec).isEqualTo(0.0)
     }
 
     private fun hit(d: PlayDirector, points: Int, t: Double, penalty: Boolean = false) =
@@ -85,10 +97,10 @@ class PlayDirectorTest {
         assertThat(s.bombsBurst).isEqualTo(3)
         assertThat(s.lastDeltaPoints).isEqualTo(75) // 25 + 50
         assertThat(s.lastDeltaLabel).isEqualTo("+25 (+50 COMBO!)")
-        assertThat(d.events).containsExactly(
-            PlayEvent.ComboAwarded(1, 50), PlayEvent.PlaySound("combo_ding"),
+        assertThat(d.drainEvents()).containsExactly(
+            PlayEvent.ComboAwarded(1, 50), PlayEvent.PlaySound(PlaySoundKeys.COMBO_DING),
         ).inOrder()
-        assertThat(d.events).isEmpty() // drained
+        assertThat(d.drainEvents()).isEmpty() // drained
     }
 
     @Test
@@ -98,7 +110,7 @@ class PlayDirectorTest {
         hit(d, 10, 0.0); hit(d, 10, 500.0); hit(d, 10, 1200.0)
         assertThat(d.score.score).isEqualTo(30)
         assertThat(d.score.combosAwarded).isEqualTo(0)
-        assertThat(d.events).isEmpty()
+        assertThat(d.drainEvents()).isEmpty()
         // a 4th hit at 1300 -> [500,1200,1300] all within 1000 of 1300 -> bonus
         hit(d, 10, 1300.0)
         assertThat(d.score.score).isEqualTo(30 + 10 + 50)
@@ -115,7 +127,7 @@ class PlayDirectorTest {
         assertThat(d.score.lastDeltaPoints).isEqualTo(-30)
         assertThat(d.score.lastDeltaLabel).isEqualTo("-30")
         assertThat(d.score.crackersBurst).isEqualTo(3)
-        assertThat(d.events).containsExactly(
+        assertThat(d.drainEvents()).containsExactly(
             PlayEvent.PenaltyApplied(30), PlayEvent.ComboBroken,
         ).inOrder()
         // streak was cleared: hit at 300 is only the 1st of a new streak
@@ -128,7 +140,7 @@ class PlayDirectorTest {
         val d = director()
         hit(d, -20, 0.0)
         assertThat(d.score.penaltyDeductions).isEqualTo(20)
-        assertThat(d.events).containsExactly(PlayEvent.PenaltyApplied(20))
+        assertThat(d.drainEvents()).containsExactly(PlayEvent.PenaltyApplied(20))
     }
 
     @Test
@@ -145,15 +157,15 @@ class PlayDirectorTest {
     fun targetReachedEmittedOnce() {
         val d = director(target = 100)
         hit(d, 60, 0.0)
-        assertThat(d.events).isEmpty()
+        assertThat(d.drainEvents()).isEmpty()
         hit(d, 60, 2000.0) // 120 >= 100
-        assertThat(d.events).containsExactly(
-            PlayEvent.TargetReached, PlayEvent.PlaySound("MEGA_BLAST"),
+        assertThat(d.drainEvents()).containsExactly(
+            PlayEvent.TargetReached, PlayEvent.PlaySound(PlaySoundKeys.MEGA_BLAST),
         ).inOrder()
         assertThat(d.score.targetAchieved).isTrue()
         assertThat(d.score.targetScore).isEqualTo(100)
         hit(d, 60, 4000.0) // still above: no repeat
-        assertThat(d.events).isEmpty()
+        assertThat(d.drainEvents()).isEmpty()
     }
 
     @Test
@@ -161,12 +173,12 @@ class PlayDirectorTest {
         // Web App.tsx: wasTargetAchievedRef resets when score < target, so it fires again.
         val d = director(target = 100)
         hit(d, 100, 0.0)
-        d.events
+        d.drainEvents()
         hit(d, -50, 2000.0, penalty = true)
         assertThat(d.score.targetAchieved).isFalse()
-        d.events
+        d.drainEvents()
         hit(d, 60, 4000.0)
-        assertThat(d.events).contains(PlayEvent.TargetReached)
+        assertThat(d.drainEvents()).contains(PlayEvent.TargetReached)
     }
 
     @Test
@@ -174,7 +186,7 @@ class PlayDirectorTest {
         for (t in listOf<Int?>(null, 0)) {
             val d = director(target = t)
             hit(d, 500, 0.0)
-            assertThat(d.events).doesNotContain(PlayEvent.TargetReached)
+            assertThat(d.drainEvents()).doesNotContain(PlayEvent.TargetReached)
             assertThat(d.score.targetAchieved).isFalse()
         }
     }
