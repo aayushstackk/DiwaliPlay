@@ -42,8 +42,8 @@ export const QrCodeSvg: React.FC<QrDisplayProps> = React.memo(
           className="w-full h-full rounded-lg"
           shapeRendering="crispEdges"
         >
-          {/* High-contrast amber background */}
-          <rect width={viewBoxSize} height={viewBoxSize} fill="#FDE68A" rx="2" />
+          {/* High-contrast white background for guaranteed mobile camera scanning */}
+          <rect width={viewBoxSize} height={viewBoxSize} fill="#FFFFFF" rx="2" />
           {/* Crisp sharp dark modules */}
           <g transform={`translate(${padding}, ${padding})`}>
             <path d={qrData.svgPath} fill="#0A0713" />

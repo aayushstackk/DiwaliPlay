@@ -9,6 +9,7 @@ import { gameApi } from '../services/api';
 import { User, GameSession } from '../types/backend';
 import { QrCodeSvg } from './QrCodeSvg';
 import { BrandingBlock } from './BrandingBlock';
+import { getRegistrationUrl } from '../utils/registrationUrl';
 
 interface KioskStartupScreenProps {
   onCodeVerified: (user: User, code: string, session?: GameSession) => void;
@@ -25,7 +26,7 @@ export const KioskStartupScreen: React.FC<KioskStartupScreenProps> = ({
   const [isVerifying, setIsVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successUser, setSuccessUser] = useState<User | null>(null);
-  const registrationUrl = typeof window !== 'undefined' ? `${window.location.origin}/register` : '/register';
+  const registrationUrl = getRegistrationUrl();
 
   const verifyCode = useCallback(async (codeStr: string) => {
     if (codeStr.length !== 4 || isVerifying) return;

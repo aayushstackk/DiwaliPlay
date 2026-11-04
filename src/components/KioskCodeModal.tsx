@@ -8,6 +8,7 @@ import { X, QrCode, Sparkles, Check, AlertCircle, Delete, KeyRound, Flame } from
 import { gameApi } from '../services/api';
 import { User } from '../types/backend';
 import { QrCodeSvg } from './QrCodeSvg';
+import { getRegistrationUrl } from '../utils/registrationUrl';
 
 interface KioskCodeModalProps {
   isOpen: boolean;
@@ -27,8 +28,8 @@ export const KioskCodeModal: React.FC<KioskCodeModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [successUser, setSuccessUser] = useState<User | null>(null);
 
-  // Dynamic registration URL for mobile phone camera scanning
-  const registrationUrl = typeof window !== 'undefined' ? `${window.location.origin}/register` : '/register';
+  // Dynamic public registration URL for mobile phone camera scanning
+  const registrationUrl = getRegistrationUrl();
 
   // Reset state when modal opens or closes
   useEffect(() => {
