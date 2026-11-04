@@ -49,16 +49,29 @@ class GameFrameStepper(
     private val pendingRound = AtomicReference<PendingRound?>(null)
     private var lowEndApplied = false
 
-    /** Set by the surface's owner. */
+    private var surfaceOwner: Any? = null
+
+    /** Builds sprites for the attached surface's renderer, while one is attached. */
     @Volatile var spriteWarmer: SpriteWarmer? = null
+        private set
 
-    /** `GameSurfaceView.lowEnd`, sticky for the session. */
-    @Volatile var lowEndSource: () -> Boolean = { false }
+    /** The attached surface's `GameSurfaceView.lowEnd`, sticky for the session. */
+    @Volatile var lowEndSource: () -> Boolean = NEVER_LOW_END
+        private set
 
-    /** Lets go of the surface's [spriteWarmer] and [lowEndSource], which hold on to the view. */
-    fun detachSurface() {
+    /** Main thread. Replaces any surface already attached. */
+    fun attachSurface(owner: Any, warmer: SpriteWarmer, lowEnd: () -> Boolean) {
+        surfaceOwner = owner
+        spriteWarmer = warmer
+        lowEndSource = lowEnd
+    }
+
+    /** Main thread. Lets go of [owner]'s hooks, which hold on to the view; ignored if a newer surface has replaced it. */
+    fun detachSurface(owner: Any) {
+        if (surfaceOwner !== owner) return
+        surfaceOwner = null
         spriteWarmer = null
-        lowEndSource = { false }
+        lowEndSource = NEVER_LOW_END
     }
 
     /** Any thread; the sprites are built on the next frame. */
@@ -88,5 +101,6 @@ class GameFrameStepper(
     private companion object {
         /** Spec §5: dt clamped to 50 ms. */
         const val MAX_DT_SECONDS = 0.05
+        val NEVER_LOW_END: () -> Boolean = { false }
     }
 }

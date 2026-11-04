@@ -46,8 +46,7 @@ fun GameSurfaceLayer(vm: GameViewModel, active: Boolean) {
         factory = { context ->
             val sprites = BombSprites(imageFor = { config -> decodeBombImage(vm, config) })
             GameSurfaceView(context, renderer = CanvasRenderer(sprites)).also { surface ->
-                vm.frameStepper.spriteWarmer = BombSpriteWarmer(sprites)
-                vm.frameStepper.lowEndSource = { surface.lowEnd.value }
+                vm.frameStepper.attachSurface(surface, BombSpriteWarmer(sprites)) { surface.lowEnd.value }
                 surface.holder.addCallback(object : SurfaceHolder.Callback {
                     override fun surfaceCreated(holder: SurfaceHolder) = Unit
                     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) = Unit
@@ -65,10 +64,14 @@ fun GameSurfaceLayer(vm: GameViewModel, active: Boolean) {
             if (active) surface.start(vm.frameStepper::step) else surface.stop()
         }
     }
+    // `view` starts null, so this effect first runs without a surface and is disposed as soon as the factory publishes
+    // one. That disposal must not touch the hooks the factory has just attached.
     DisposableEffect(surface) {
         onDispose {
-            surface?.stop()
-            vm.frameStepper.detachSurface()
+            if (surface != null) {
+                surface.stop()
+                vm.frameStepper.detachSurface(surface)
+            }
         }
     }
 }

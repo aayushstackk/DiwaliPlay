@@ -62,7 +62,7 @@ class GameFrameStepperTest {
     @Test
     fun lowEndTripSwitchesSimAndFrameOnce() {
         var low = false
-        stepper.lowEndSource = { low }
+        stepper.attachSurface(this, { _, _ -> }) { low }
         accept()
         assertThat(stepper.step(0.016, 1_000.0).lowEnd).isFalse()
         assertThat(controller.crackers.flashEnabled).isTrue()
@@ -74,7 +74,7 @@ class GameFrameStepperTest {
     @Test
     fun preparedRoundIsWarmedOnTheRenderThreadOnce() {
         val warmed = mutableListOf<Pair<List<BombConfig>, BombGameSettings>>()
-        stepper.spriteWarmer = SpriteWarmer { c, s -> warmed += c to s }
+        stepper.attachSurface(this, { c, s -> warmed += c to s }) { false }
         val cfg = RoundSettings()
         stepper.prepareRound(cfg.bombConfigs, cfg.bombSettings)
         assertThat(warmed).isEmpty()
@@ -86,13 +86,24 @@ class GameFrameStepperTest {
     @Test
     fun detachingTheSurfaceLetsGoOfItsCallbacks() {
         var warmed = 0
-        stepper.spriteWarmer = SpriteWarmer { _, _ -> warmed++ }
-        stepper.lowEndSource = { true }
-        stepper.detachSurface()
+        val surface = Any()
+        stepper.attachSurface(surface, { _, _ -> warmed++ }) { true }
+        stepper.detachSurface(surface)
 
         val cfg = RoundSettings()
         stepper.prepareRound(cfg.bombConfigs, cfg.bombSettings)
         assertThat(stepper.step(0.016, 1_000.0).lowEnd).isFalse()
         assertThat(warmed).isEqualTo(0)
+    }
+
+    @Test
+    fun detachingAnOldSurfaceLeavesTheNewOnesHooksAlone() {
+        val old = Any()
+        stepper.attachSurface(old, { _, _ -> }) { false }
+        stepper.attachSurface(Any(), { _, _ -> }) { true }
+        stepper.detachSurface(old)
+
+        assertThat(stepper.spriteWarmer).isNotNull()
+        assertThat(stepper.step(0.016, 1_000.0).lowEnd).isTrue()
     }
 }
