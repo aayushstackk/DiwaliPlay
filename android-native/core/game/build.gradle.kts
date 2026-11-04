@@ -16,6 +16,7 @@ kotlin {
 dependencies {
     implementation(project(":core:model"))
     implementation(libs.kotlinx.coroutines.core)
+    testImplementation(libs.kotlinx.serialization.json)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.junit)
     testImplementation(libs.truth)
