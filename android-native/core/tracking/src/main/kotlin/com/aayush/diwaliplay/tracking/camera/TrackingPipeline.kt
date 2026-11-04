@@ -30,6 +30,12 @@ private const val TAG = "TrackingPipeline"
 /** Same JPEG quality as the web's camera snapshot (src/App.tsx, toDataURL 0.92). */
 private const val STILL_JPEG_QUALITY = 92
 
+/**
+ * Frames that may fail in a row before the run fails: about 0.5 s at 30 fps, which also caps how
+ * long stale hands stay published. Single failures are dropped, as the web does.
+ */
+internal const val MAX_CONSECUTIVE_FRAME_FAILURES = 15
+
 /** Strictly increasing timestamps: a value that doesn't increase becomes last + 1 (as the web does). */
 class MonotonicTimestamp {
     private var last = Long.MIN_VALUE
@@ -55,8 +61,9 @@ class MonotonicTimestamp {
  *
  * Landmarks reach HandTracker raw (it mirrors x itself); only the preview and the still are
  * mirrored. Non-16:9 frames (the 640×480 fallback) go through [cropToSixteenNine]. Results that
- * arrive after [stop] (or from a previous start) are dropped. Anything that goes wrong on these
- * threads ends as [TrackingStatus.Failed] with empty hands, never an uncaught exception; call
+ * arrive after [stop] (or from a previous start) are dropped. A frame that fails is dropped; after
+ * [MAX_CONSECUTIVE_FRAME_FAILURES] in a row, or on an unrecoverable landmarker or tracker error,
+ * the run ends as [TrackingStatus.Failed] with empty hands, never an uncaught exception. Call
  * stop() then start() to retry.
  */
 class TrackingPipeline(
@@ -108,6 +115,7 @@ class TrackingPipeline(
     private val timestamps = MonotonicTimestamp()
     private var fpsWindowStart = 0L
     private var fpsWindowFrames = 0
+    private var consecutiveFrameFailures = 0
 
     /** Test seam: can't revoke a permission from an instrumented test without killing its process. */
     internal var hasCameraPermission: () -> Boolean = {
@@ -117,7 +125,13 @@ class TrackingPipeline(
     /** Test seam: runs on the analysis thread just before each detect, to inject a failure. */
     @Volatile internal var beforeDetect: (() -> Unit)? = null
 
-    /** Emits Failed("camera permission denied") and does not start when CAMERA isn't granted. */
+    /**
+     * Does nothing while a run is in progress, and that includes a run that has reached
+     * [TrackingStatus.Failed]: to retry after Failed, call [stop] then start.
+     *
+     * Emits Failed("camera permission denied") and does not begin a run when CAMERA isn't granted,
+     * so that case alone can be retried with start.
+     */
     @MainThread
     fun start(showPreview: PreviewView?) {
         checkMain()
@@ -133,6 +147,7 @@ class TrackingPipeline(
         analysisExecutor.execute {
             fpsWindowStart = 0L
             fpsWindowFrames = 0
+            consecutiveFrameFailures = 0
             createLandmarker(gen)
         }
         camera.bind(showPreview, analysisExecutor, { image -> analyze(gen, image) }) { reason ->
@@ -175,8 +190,7 @@ class TrackingPipeline(
 
     private fun fail(gen: Int, reason: String, cause: Throwable?) {
         Log.e(TAG, reason, cause)
-        publisher.fail(gen, reason)
-        clearStill()
+        if (publisher.fail(gen, reason)) clearStill()
     }
 
     /** Now, and again after any frame already on the analysis thread (the frame gate then stops new ones). */
@@ -228,10 +242,24 @@ class TrackingPipeline(
             }
             host.detectAsync(bitmap, timestamps.next(SystemClock.uptimeMillis()), rotation)
             activeDelegate = host.delegate // detectAsync may have fallen back to CPU
+            consecutiveFrameFailures = 0
+        } catch (e: LandmarkerRebuildException) {
+            fail(gen, e.message ?: "landmarker rebuild failed", e)
         } catch (t: Throwable) {
-            fail(gen, "detect failed: ${t.message ?: t.javaClass.simpleName}", t)
+            onFrameFailed(gen, t)
         } finally {
             image.close()
+        }
+    }
+
+    /** Drops the frame, like the web's "Inference frame dropped"; only a persistent run of these fails. */
+    private fun onFrameFailed(gen: Int, t: Throwable) {
+        val failures = ++consecutiveFrameFailures
+        val message = t.message ?: t.javaClass.simpleName
+        if (failures >= MAX_CONSECUTIVE_FRAME_FAILURES) {
+            fail(gen, "detect failed on $failures frames in a row: $message", t)
+        } else {
+            Log.w(TAG, "frame dropped ($failures/$MAX_CONSECUTIVE_FRAME_FAILURES)", t)
         }
     }
 

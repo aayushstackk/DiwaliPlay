@@ -100,6 +100,16 @@ class TrackingPublisherTest {
     }
 
     @Test
+    fun failReportsWhetherItTookEffect() {
+        val old = publisher.begin()
+        publisher.end()
+        val gen = publisher.begin()
+        assertThat(publisher.fail(old, "stale")).isFalse()
+        assertThat(publisher.fail(gen, "first")).isTrue()
+        assertThat(publisher.fail(gen, "second")).isFalse()
+    }
+
+    @Test
     fun failureFromAnOlderRunIsIgnored() {
         val old = publisher.begin()
         publisher.end()

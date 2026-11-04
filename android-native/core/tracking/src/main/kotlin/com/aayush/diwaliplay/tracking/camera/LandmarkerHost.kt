@@ -96,7 +96,11 @@ class LandmarkerHost private constructor(
         Log.w(TAG, "GPU delegate failed at runtime, recreating on CPU", cause)
         closeLandmarker()
         liveGpuError = false
-        landmarker = build(Delegate.CPU)
+        landmarker = try {
+            build(Delegate.CPU)
+        } catch (t: Throwable) {
+            throw LandmarkerRebuildException(t)
+        }
         delegate = DELEGATE_CPU
     }
 
@@ -224,6 +228,10 @@ class LandmarkerHost private constructor(
         }
     }
 }
+
+/** The GPU failed and its CPU replacement could not be built, so this host can no longer detect. */
+internal class LandmarkerRebuildException(cause: Throwable) :
+    RuntimeException("CPU landmarker rebuild failed: ${cause.message ?: cause.javaClass.simpleName}", cause)
 
 /** Raw MediaPipe landmarks (no mirroring) and the top handedness score per hand. */
 internal fun HandLandmarkerResult.toHandFrame(): HandFrame = HandFrame(

@@ -10,6 +10,9 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.aayush.diwaliplay.tracking.HandTracker
 import com.google.common.truth.Truth.assertThat
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -166,5 +169,66 @@ class TrackingPipelineCameraTest {
         val next = TestOwner()
         val nextPipeline = startedPipeline(next)
         instrumentation.runOnMainSync { nextPipeline.stop() }
+    }
+
+    @Test
+    fun transientFrameFailuresAreDroppedAndOnlyAPersistentRunFails() {
+        val owner = TestOwner()
+        val pipeline = startedPipeline(owner)
+        val limit = MAX_CONSECUTIVE_FRAME_FAILURES
+
+        // limit-1 failures, one good frame, limit-1 more. Without the reset the total would trip it.
+        val script = List(limit - 1) { true } + false + List(limit - 1) { true } + false
+        val frame = AtomicInteger(0)
+        val scriptDone = CountDownLatch(1)
+        pipeline.beforeDetect = {
+            val i = frame.getAndIncrement()
+            if (i >= script.size) scriptDone.countDown()
+            else if (script[i]) throw IllegalStateException("transient $i")
+        }
+        assertThat(scriptDone.await(30, TimeUnit.SECONDS)).isTrue()
+        assertThat(pipeline.status.value).isNotInstanceOf(TrackingStatus.Failed::class.java)
+
+        // Tracking really continues: new results keep being published.
+        val before = pipeline.hands.get().hands.timestampMs
+        val deadline = System.currentTimeMillis() + 10_000
+        while (System.currentTimeMillis() < deadline && pipeline.hands.get().hands.timestampMs <= before) Thread.sleep(20)
+        assertThat(pipeline.hands.get().hands.timestampMs).isGreaterThan(before)
+        assertThat(pipeline.status.value).isInstanceOf(TrackingStatus.Running::class.java)
+
+        // A persistent failure trips on exactly the limit, then publishes empty hands.
+        val thrown = AtomicInteger(0)
+        pipeline.beforeDetect = {
+            thrown.incrementAndGet()
+            throw IllegalStateException("persistent")
+        }
+        val failed = awaitStatus(pipeline) { false }
+        assertThat(failed).isInstanceOf(TrackingStatus.Failed::class.java)
+        assertThat((failed as TrackingStatus.Failed).reason).contains("persistent")
+        awaitNoHands(pipeline)
+        awaitNoStill(pipeline)
+        assertThat(thrown.get()).isEqualTo(limit)
+
+        pipeline.beforeDetect = null
+        instrumentation.runOnMainSync { pipeline.stop() }
+    }
+
+    @Test
+    fun failedCpuRebuildIsFatalOnTheFirstFrame() {
+        val owner = TestOwner()
+        val pipeline = startedPipeline(owner)
+        val thrown = AtomicInteger(0)
+        pipeline.beforeDetect = {
+            thrown.incrementAndGet()
+            throw LandmarkerRebuildException(IllegalStateException("no cpu"))
+        }
+        val failed = awaitStatus(pipeline) { false }
+        assertThat(failed).isInstanceOf(TrackingStatus.Failed::class.java)
+        assertThat((failed as TrackingStatus.Failed).reason).contains("no cpu")
+        awaitNoHands(pipeline)
+        assertThat(thrown.get()).isEqualTo(1)
+
+        pipeline.beforeDetect = null
+        instrumentation.runOnMainSync { pipeline.stop() }
     }
 }

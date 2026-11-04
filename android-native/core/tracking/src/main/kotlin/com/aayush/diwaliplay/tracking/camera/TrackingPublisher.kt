@@ -22,7 +22,11 @@ sealed interface TrackingStatus {
 
     data class CameraLost(val reason: String) : TrackingStatus
 
-    /** Terminal for this run: frames are ignored until stop() then start(). Hands are published empty. */
+    /**
+     * Hands are published empty. After a failure during a run, frames are ignored and start() does
+     * nothing, so retrying requires stop() then start(). Only a start() refused for a missing camera
+     * permission never began a run; that one can be retried with start() alone.
+     */
     data class Failed(val reason: String) : TrackingStatus
 }
 
@@ -108,15 +112,19 @@ internal class TrackingPublisher(
         }
     }
 
-    /** Failed plus one publish of empty hands, for the first failure of [gen] only. */
-    fun fail(gen: Int, reason: String) {
-        if (gen != generation) return
-        if (failedGeneration.getAndUpdate { max(it, gen) } >= gen) return
+    /**
+     * Failed plus one publish of empty hands, for the first failure of [gen] only. Returns true if
+     * this call took effect, false if [gen] is stale or has already failed.
+     */
+    fun fail(gen: Int, reason: String): Boolean {
+        if (gen != generation) return false
+        if (failedGeneration.getAndUpdate { max(it, gen) } >= gen) return false
         executor.execute {
             if (gen != generation) return@execute // end() publishes for itself
             _status.value = TrackingStatus.Failed(reason)
             publishEmpty()
         }
+        return true
     }
 
     /** start() refused before a run began; hands are already empty. */
