@@ -36,17 +36,17 @@ export const HAND_BONES = {
 
 // Target area boundaries on mirrored screen space (0 to 1) for Alignment Phase
 export const LEFT_TARGET_AREA: TargetAreaRect = {
-  xMin: 0.08,
-  xMax: 0.44,
-  yMin: 0.22,
-  yMax: 0.82,
+  xMin: 0.0,
+  xMax: 0.52,
+  yMin: 0.02,
+  yMax: 0.98,
 };
 
 export const RIGHT_TARGET_AREA: TargetAreaRect = {
-  xMin: 0.56,
-  xMax: 0.92,
-  yMin: 0.22,
-  yMax: 0.82,
+  xMin: 0.48,
+  xMax: 1.0,
+  yMin: 0.02,
+  yMax: 0.98,
 };
 
 /**
