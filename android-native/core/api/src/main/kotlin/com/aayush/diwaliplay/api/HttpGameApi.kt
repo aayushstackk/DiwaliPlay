@@ -106,9 +106,9 @@ class HttpGameApi(
         return try {
             ApiResult.Success(DiwaliJson.decodeFromString(ser, body))
         } catch (e: kotlinx.serialization.SerializationException) {
-            ApiResult.NetworkError(e)
+            ApiResult.NetworkError(UndecodableResponseException(code, body, e))
         } catch (e: IllegalArgumentException) {
-            ApiResult.NetworkError(e)
+            ApiResult.NetworkError(UndecodableResponseException(code, body, e))
         }
     }
 

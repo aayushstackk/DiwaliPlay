@@ -159,7 +159,9 @@ class HttpGameApiTest {
 
     @Test fun undecodableSuccessBodyIsNetworkError() = runBlocking<Unit> {
         enqueue("<html>not json</html>")
-        assertThat(api.getSettings()).isInstanceOf(ApiResult.NetworkError::class.java)
+        val r = api.getSettings()
+        assertThat(r).isInstanceOf(ApiResult.NetworkError::class.java)
+        assertThat((r as ApiResult.NetworkError).cause).isInstanceOf(UndecodableResponseException::class.java)
     }
 
     @Test fun slowVerifyReturnsAfterDelay() = runBlocking<Unit> {

@@ -3,6 +3,7 @@ package com.aayush.diwaliplay.api
 import com.aayush.diwaliplay.model.CompleteSessionRequest
 import com.aayush.diwaliplay.model.DiwaliJson
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
@@ -33,7 +34,9 @@ import kotlinx.serialization.SerializationException
  *  - 4xx other than 408/429 (bad request, session not found, an "already completed"-style 409,
  *    forbidden...) -> permanent: delete file, never retry.
  *  - network error, 5xx, 408, 429 -> keep file, retry with backoff 5 s doubling up to 5 min.
- *  - unreadable/corrupt file -> delete.
+ *  - 2xx with an undecodable body counts as delivered (idempotent endpoint) -> delete file.
+ *  - IOException reading a file or any unexpected exception -> keep, retry with backoff.
+ *  - undecodable (corrupt) file -> renamed to `<name>.corrupt`, skipped.
  */
 class ResultQueue(
     private val dir: File,
@@ -49,6 +52,7 @@ class ResultQueue(
 
     init {
         dir.mkdirs()
+        dir.listFiles { f -> f.isFile && f.name.endsWith(".tmp") }?.forEach { it.delete() }
         refreshPending()
     }
 
@@ -58,7 +62,16 @@ class ResultQueue(
         synchronized(lock) {
             dir.mkdirs()
             val tmp = File(dir, "$name.tmp")
-            tmp.writeText(json)
+            try {
+                FileOutputStream(tmp).use { out ->
+                    out.write(json.toByteArray(Charsets.UTF_8))
+                    out.flush()
+                    out.fd.sync()
+                }
+            } catch (e: Throwable) {
+                tmp.delete()
+                throw e
+            }
             val target = File(dir, name)
             try {
                 Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE)
@@ -81,29 +94,49 @@ class ResultQueue(
     private suspend fun runWorker() {
         var backoffMs = INITIAL_BACKOFF_MS
         while (true) {
-            val file = nextFile()
-            if (file == null) {
-                wake.receive()
-                continue
-            }
-            val req = try {
-                DiwaliJson.decodeFromString(CompleteSessionRequest.serializer(), file.readText())
+            val outcome = try {
+                processNext()
             } catch (e: CancellationException) {
                 throw e
-            } catch (_: SerializationException) {
-                remove(file); continue
-            } catch (_: IllegalArgumentException) {
-                remove(file); continue
-            } catch (_: IOException) {
-                remove(file); continue
+            } catch (_: Exception) {
+                Outcome.RETRY // unexpected failure (throwing api, storage error...): never kill the worker
             }
-            when (val r = api.completeSession(req)) {
-                is ApiResult.Success -> { remove(file); backoffMs = INITIAL_BACKOFF_MS }
-                is ApiResult.HttpError ->
-                    if (isPermanent(r.code)) { remove(file); backoffMs = INITIAL_BACKOFF_MS }
-                    else { delay(backoffMs); backoffMs = minOf(backoffMs * 2, MAX_BACKOFF_MS) }
-                is ApiResult.NetworkError -> { delay(backoffMs); backoffMs = minOf(backoffMs * 2, MAX_BACKOFF_MS) }
+            when (outcome) {
+                Outcome.PROGRESS -> backoffMs = INITIAL_BACKOFF_MS
+                Outcome.IDLE -> wake.receive()
+                Outcome.RETRY -> { delay(backoffMs); backoffMs = minOf(backoffMs * 2, MAX_BACKOFF_MS) }
             }
+        }
+    }
+
+    private enum class Outcome { PROGRESS, IDLE, RETRY }
+
+    private suspend fun processNext(): Outcome {
+        val file = nextFile() ?: return Outcome.IDLE
+        val req = try {
+            DiwaliJson.decodeFromString(CompleteSessionRequest.serializer(), file.readText())
+        } catch (_: SerializationException) {
+            quarantine(file); return Outcome.PROGRESS
+        } catch (_: IllegalArgumentException) {
+            quarantine(file); return Outcome.PROGRESS
+        } catch (_: IOException) {
+            return Outcome.RETRY // transient storage error: keep the file
+        }
+        return when (val r = api.completeSession(req)) {
+            is ApiResult.Success -> { remove(file); Outcome.PROGRESS }
+            is ApiResult.HttpError ->
+                if (isPermanent(r.code)) { remove(file); Outcome.PROGRESS } else Outcome.RETRY
+            is ApiResult.NetworkError ->
+                // 2xx with an undecodable body: the idempotent endpoint accepted it, so it is delivered.
+                if (r.cause is UndecodableResponseException) { remove(file); Outcome.PROGRESS } else Outcome.RETRY
+        }
+    }
+
+    /** Keeps an unreadable entry for inspection (`<name>.corrupt`) but out of the queue. */
+    private fun quarantine(file: File) {
+        synchronized(lock) {
+            if (!file.renameTo(File(file.parentFile, file.name + ".corrupt"))) file.delete()
+            refreshPending()
         }
     }
 

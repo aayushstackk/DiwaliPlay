@@ -110,7 +110,7 @@ class ResultQueueTest {
         }
     }
 
-    @Test fun dropsOnAlreadyCompleted4xx() = runTest {
+    @Test fun dropsPermanent4xx() = runTest {
         for ((code, body) in listOf(
             409 to """{"success":false,"message":"Session already completed."}""",
             400 to """{"success":false,"message":"already completed"}""",
@@ -142,15 +142,65 @@ class ResultQueueTest {
         assertThat(files(dir)).isEmpty()
     }
 
-    @Test fun corruptFileIsDropped() = runTest {
+    @Test fun corruptFileIsQuarantinedNotRetried() = runTest {
         val dir = tmp.newFolder()
         File(dir, "0000_bad.json").writeText("{not json")
         val api = fake { ApiResult.Success(okResp) }
         val q = ResultQueue(dir, api, backgroundScope)
         q.start()
         runCurrent()
+        advanceTimeBy(600_000)
         assertThat(api.calls).isEmpty()
+        assertThat(File(dir, "0000_bad.json.corrupt").exists()).isTrue()
+        assertThat(q.pending.value).isEqualTo(0)
+    }
+
+    @Test fun transientReadErrorIsRetried() = runTest {
+        val dir = tmp.newFolder()
+        val api = fake { ApiResult.Success(okResp) }
+        // A directory named *.json makes readText() throw IOException.
+        val f = File(dir, "0000_x.json").apply { mkdir() }
+        val q = ResultQueue(dir, api, backgroundScope)
+        q.start()
+        runCurrent()
+        assertThat(f.exists()).isTrue() // kept, not deleted
+        f.deleteRecursively()
+        q.enqueue(req("ok"))
+        advanceTimeBy(5_001)
+        assertThat(api.calls.map { it.first }).containsExactly("ok")
+    }
+
+    @Test fun workerSurvivesThrowingApi() = runTest {
+        val dir = tmp.newFolder()
+        var first = true
+        val api = fake { if (first) { first = false; throw IllegalStateException("boom") } else ApiResult.Success(okResp) }
+        val q = ResultQueue(dir, api, backgroundScope)
+        q.enqueue(req("a"))
+        q.start()
+        runCurrent()
+        assertThat(files(dir)).hasSize(1)
+        advanceTimeBy(5_001)
+        assertThat(api.calls).hasSize(2)
         assertThat(files(dir)).isEmpty()
+    }
+
+    @Test fun undecodable2xxCountsAsDelivered() = runTest {
+        val dir = tmp.newFolder()
+        val api = fake { ApiResult.NetworkError(UndecodableResponseException(200, "<html>", RuntimeException())) }
+        val q = ResultQueue(dir, api, backgroundScope)
+        q.enqueue(req("a")); q.enqueue(req("b"))
+        q.start()
+        runCurrent()
+        assertThat(api.calls.map { it.first }).containsExactly("a", "b").inOrder()
+        assertThat(files(dir)).isEmpty()
+    }
+
+    @Test fun staleTmpFilesSweptOnInit() = runTest {
+        val dir = tmp.newFolder()
+        File(dir, "123_x.json.tmp").writeText("partial")
+        val q = ResultQueue(dir, fake { ApiResult.Success(okResp) }, backgroundScope)
+        assertThat(dir.listFiles().orEmpty().toList()).isEmpty()
+        assertThat(q.pending.value).isEqualTo(0)
     }
 
     @Test fun neverSendsSameFileConcurrently() = runTest {
