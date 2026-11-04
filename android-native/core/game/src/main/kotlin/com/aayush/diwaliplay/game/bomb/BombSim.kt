@@ -366,7 +366,7 @@ class BombSim(
 
         bomb.active = true
         bomb.config = config
-        bomb.colorArgb = parseColor(config.color)  // once per launch, reused by sparks and burst
+        bomb.colorArgb = parseBombColor(config.color)  // once per launch, reused by sparks and burst
         bomb.x = originX; bomb.y = originY; bomb.prevX = originX; bomb.prevY = originY
         bomb.vx = baseVx + shot.vxAngleOffset
         bomb.vy = vy0
@@ -473,18 +473,6 @@ class BombSim(
     private fun orDefault(v: Int, fallback: Int) = if (v == 0) fallback else v
     private fun orDefault(v: Double?, fallback: Double) = if (v == null) fallback else orDefault(v, fallback)
 
-    /**
-     * `#RRGGBB`, `#RGB` or `#RRGGBBAA` (alpha ignored) to opaque ARGB. Other CSS colour forms (names, rgb(),
-     * hsl()) fall back to the spark yellow.
-     */
-    private fun parseColor(hex: String): Int {
-        val h = hex.removePrefix("#")
-        val full = if (h.length == 3) "" + h[0] + h[0] + h[1] + h[1] + h[2] + h[2] else h
-        if (full.length != 6 && full.length != 8) return COLOR_SPARK_FALLBACK
-        val v = full.substring(0, 6).toLongOrNull(16) ?: return COLOR_SPARK_FALLBACK
-        return (0xFF000000L or v).toInt()
-    }
-
     private fun distToSegmentSq(px: Double, py: Double, x1: Double, y1: Double, x2: Double, y2: Double): Double {
         val dx = x2 - x1
         val dy = y2 - y1
@@ -498,4 +486,16 @@ class BombSim(
         val ey = py - (y1 + t * dy)
         return ex * ex + ey * ey
     }
+}
+
+/**
+ * `#RRGGBB`, `#RGB` or `#RRGGBBAA` (alpha ignored) to opaque ARGB. Other CSS colour forms (names, rgb(),
+ * hsl()) fall back to the spark yellow. Shared with GameController's bomb-hit particle burst.
+ */
+internal fun parseBombColor(hex: String): Int {
+    val h = hex.removePrefix("#")
+    val full = if (h.length == 3) "" + h[0] + h[0] + h[1] + h[1] + h[2] + h[2] else h
+    if (full.length != 6 && full.length != 8) return COLOR_SPARK_FALLBACK
+    val v = full.substring(0, 6).toLongOrNull(16) ?: return COLOR_SPARK_FALLBACK
+    return (0xFF000000L or v).toInt()
 }
