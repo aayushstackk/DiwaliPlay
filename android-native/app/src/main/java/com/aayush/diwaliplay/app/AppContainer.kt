@@ -25,7 +25,7 @@ import okhttp3.OkHttpClient
 /** Wires the core modules together. One per process; construct on the main thread. */
 class AppContainer(private val app: Application) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val http = OkHttpClient()
+    private val http = kioskHttpClient()
     val serverConfig = ServerConfig(app.getSharedPreferences("server_config", Context.MODE_PRIVATE))
 
     private val api = ReachabilityGameApi(HttpGameApi({ serverConfig.apiBaseUrl }, http))
@@ -47,8 +47,9 @@ class AppContainer(private val app: Application) {
     fun newDependencies() = AppDependencies(
         api = api,
         results = results,
+        // Lazy: the manifest read is first touched on the effects thread, not here on main.
         audio = EngineGameAudio(
-            AudioEngine(app, SoundResolver(readManifest())),
+            lazy { AudioEngine(app, SoundResolver(readManifest())) },
             app.getSystemService(AudioManager::class.java),
         ),
         tracking = tracking,
@@ -60,6 +61,9 @@ class AppContainer(private val app: Application) {
     private fun readManifest(): SoundManifest =
         app.assets.open(SoundManifest.FILE_NAME).bufferedReader().use { SoundManifest.parse(it.readText()) }
 }
+
+/** No following an https URL's redirect to http: it would resend player data in the clear. */
+internal fun kioskHttpClient(): OkHttpClient = OkHttpClient.Builder().followSslRedirects(false).build()
 
 /**
  * Lifecycle for the camera binding. Always resumed, because the view model decides when the camera runs and stops it

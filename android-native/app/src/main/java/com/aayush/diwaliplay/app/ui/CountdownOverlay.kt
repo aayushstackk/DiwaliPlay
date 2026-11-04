@@ -18,9 +18,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -60,7 +60,10 @@ fun CountdownOverlay(step: Int) {
                 if (isGo) "GO!" else step.toString(),
                 if (isGo) 72.sp else 128.sp,
                 if (isGo) Palette.Emerald300 else Palette.Amber300,
-                Modifier.scale(scale.value),
+                Modifier.graphicsLayer {
+                    scaleX = scale.value
+                    scaleY = scale.value
+                },
                 family = Fonts.Display, weight = FontWeight.Black,
             )
         }

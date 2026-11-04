@@ -23,7 +23,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.testTag
@@ -68,10 +67,9 @@ fun HudOverlay(hud: HudState, targetScore: Int?) {
 @Composable
 private fun TimerPill(seconds: Int) {
     val urgent = seconds <= 10
-    val pulse by rememberPulse()
     Row(
         Modifier
-            .alpha(if (urgent) pulse else 1f)
+            .pulsing(urgent)
             .panel(
                 if (urgent) Palette.Rose950.copy(alpha = 0.85f) else Palette.Neutral950.copy(alpha = 0.7f),
                 if (urgent) Palette.Rose500 else Palette.Amber500.copy(alpha = 0.35f),

@@ -1,6 +1,5 @@
 package com.aayush.diwaliplay.app.ui
 
-import android.graphics.BitmapFactory
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
@@ -134,9 +133,12 @@ private fun SpotlightEmblem() {
     }
 }
 
+/** Big enough for a logo the width of the design canvas on a 4K panel; admin uploads can be far larger. */
+private const val MAX_LOGO_PX = 1024
+
 /** Decodes a cached image off the main thread; null while loading, when absent, or when it won't decode (web's onError). */
 @Composable
-fun rememberDecodedImage(file: File?) = produceState<ImageBitmap?>(null, file) {
+private fun rememberDecodedImage(file: File?) = produceState<ImageBitmap?>(null, file) {
     value = null
-    if (file != null) value = withContext(Dispatchers.IO) { BitmapFactory.decodeFile(file.path)?.asImageBitmap() }
+    if (file != null) value = withContext(Dispatchers.IO) { decodeBounded(file, MAX_LOGO_PX)?.asImageBitmap() }
 }

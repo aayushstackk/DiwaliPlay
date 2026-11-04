@@ -64,8 +64,15 @@ interface GameAudio {
     fun release()
 }
 
-/** [AudioEngine] plus audio focus, held only while the music plays. Losing focus stops the music. */
-class EngineGameAudio(private val engine: AudioEngine, private val audioManager: AudioManager) : GameAudio {
+/**
+ * [AudioEngine] plus audio focus, held only while the music plays. Losing focus stops the music.
+ *
+ * [lazyEngine] reads the sound manifest, so it must first be touched off the main thread: the view model's first
+ * [apply] does that on the effects thread. Until then [isReady] says no rather than build it on the caller.
+ */
+class EngineGameAudio(private val lazyEngine: Lazy<AudioEngine>, private val audioManager: AudioManager) : GameAudio {
+    private val engine: AudioEngine get() = lazyEngine.value
+
     private val focus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
         .setAudioAttributes(
             AudioAttributes.Builder()
@@ -86,7 +93,7 @@ class EngineGameAudio(private val engine: AudioEngine, private val audioManager:
     override fun apply(settings: GameAudioSettings, files: Map<String, File>, bombs: List<BombConfig>) =
         engine.apply(settings, files, bombs)
 
-    override fun isReady(): Boolean = engine.isReady()
+    override fun isReady(): Boolean = lazyEngine.isInitialized() && engine.isReady()
 
     override fun playGameKey(key: String) { engine.playGameKey(key) }
 
@@ -107,7 +114,7 @@ class EngineGameAudio(private val engine: AudioEngine, private val audioManager:
 
     override fun release() {
         stopBgm()
-        engine.release()
+        if (lazyEngine.isInitialized()) engine.release()
     }
 }
 

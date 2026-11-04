@@ -65,7 +65,12 @@ fun GameSurfaceLayer(vm: GameViewModel, active: Boolean) {
             if (active) surface.start(vm.frameStepper::step) else surface.stop()
         }
     }
-    DisposableEffect(surface) { onDispose { surface?.stop() } }
+    DisposableEffect(surface) {
+        onDispose {
+            surface?.stop()
+            vm.frameStepper.detachSurface()
+        }
+    }
 }
 
 private fun decodeBombImage(vm: GameViewModel, config: BombConfig): Bitmap? {

@@ -82,4 +82,17 @@ class GameFrameStepperTest {
         stepper.step(0.016, 1_016.0)
         assertThat(warmed).hasSize(1)
     }
+
+    @Test
+    fun detachingTheSurfaceLetsGoOfItsCallbacks() {
+        var warmed = 0
+        stepper.spriteWarmer = SpriteWarmer { _, _ -> warmed++ }
+        stepper.lowEndSource = { true }
+        stepper.detachSurface()
+
+        val cfg = RoundSettings()
+        stepper.prepareRound(cfg.bombConfigs, cfg.bombSettings)
+        assertThat(stepper.step(0.016, 1_000.0).lowEnd).isFalse()
+        assertThat(warmed).isEqualTo(0)
+    }
 }

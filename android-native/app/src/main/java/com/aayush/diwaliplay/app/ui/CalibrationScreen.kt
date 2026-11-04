@@ -19,7 +19,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
@@ -30,6 +29,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -55,7 +55,6 @@ fun CalibrationScreen(ui: CalibrationUi, isReady: Boolean) {
 
 @Composable
 private fun GuideBanner(ui: CalibrationUi, isReady: Boolean, modifier: Modifier) {
-    val pulse by rememberPulse()
     Column(
         modifier
             .width(448.dp)
@@ -69,7 +68,7 @@ private fun GuideBanner(ui: CalibrationUi, isReady: Boolean, modifier: Modifier)
     ) {
         if (isReady) {
             Label(
-                "HANDS READY · GET READY!", 16.sp, Palette.Emerald300, Modifier.alpha(pulse),
+                "HANDS READY · GET READY!", 16.sp, Palette.Emerald300, Modifier.pulsing(),
                 family = Fonts.Display, weight = FontWeight.Bold, tracking = TrackingWider,
             )
         } else {
@@ -108,7 +107,7 @@ private fun HandIndicator(isLeft: Boolean, isActive: Boolean, holdProgress: Doub
     val idle = !isActive && !isReady
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(Modifier.size(240.dp), contentAlignment = Alignment.Center) {
-            HandRing(isActive, holdProgress, isReady, idleAlpha = if (idle) pulse else 1f)
+            HandRing(isActive, holdProgress, isReady, idleAlpha = { if (idle) pulse else 1f })
             Icon(
                 Icons.Hand, 144.dp,
                 when {
@@ -124,7 +123,7 @@ private fun HandIndicator(isLeft: Boolean, isActive: Boolean, holdProgress: Doub
                             else -> 1f
                         },
                     )
-                    .alpha(if (idle) 0.6f * pulse else 1f),
+                    .graphicsLayer { alpha = if (idle) 0.6f * pulse else 1f },
                 strokeWidth = if (isActive) 1.8f else 1.4f,
                 fill = when {
                     isReady -> Palette.Emerald400.copy(alpha = 0.25f)
@@ -171,7 +170,7 @@ private fun HandIndicator(isLeft: Boolean, isActive: Boolean, holdProgress: Doub
             Box(
                 Modifier
                     .size(10.dp)
-                    .alpha(if (idle) pulse else 1f)
+                    .graphicsLayer { alpha = if (idle) pulse else 1f }
                     .background(
                         when {
                             isReady -> Palette.Emerald400
@@ -202,15 +201,18 @@ private fun HandIndicator(isLeft: Boolean, isActive: Boolean, holdProgress: Doub
     }
 }
 
-/** The 200-unit SVG ring with its aura: dashed when idle, an arc filling as the hands are held. */
+/**
+ * The 200-unit SVG ring with its aura: dashed when idle, an arc filling as the hands are held.
+ * [idleAlpha] is read while drawing, so its pulse only redraws.
+ */
 @Composable
-private fun HandRing(isActive: Boolean, holdProgress: Double, isReady: Boolean, idleAlpha: Float) {
+private fun HandRing(isActive: Boolean, holdProgress: Double, isReady: Boolean, idleAlpha: () -> Float) {
     Canvas(Modifier.fillMaxSize()) {
         val k = size.width / 200f
         val auraInner = when {
             isReady -> Palette.Emerald400.copy(alpha = 0.35f)
             isActive -> Palette.Amber400.copy(alpha = 0.3f)
-            else -> Palette.Amber500.copy(alpha = 0.1f * idleAlpha)
+            else -> Palette.Amber500.copy(alpha = 0.1f * idleAlpha())
         }
         drawCircle(Brush.radialGradient(listOf(auraInner, Color.Transparent), radius = size.width * 0.5f * 1.05f))
 

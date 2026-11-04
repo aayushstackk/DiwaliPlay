@@ -19,7 +19,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -62,7 +61,13 @@ private fun BackdropLayer(vm: GameViewModel, branding: BrandingState) {
         factory = { context -> BackdropSurfaceView(context, vm.tracking::latestFrame).also { view = it } },
     )
     val backdrop = view
-    val content = BackdropContent(kind, branding.localFiles[branding.currentWallpaperUrl], branding.settings.wallpaperOpacity)
+    val round by vm.round.collectAsState()
+    val active = round
+    val content = BackdropContent(
+        kind,
+        branding.localFiles[active?.wallpaperUrl ?: branding.currentWallpaperUrl],
+        active?.wallpaperOpacity ?: branding.settings.wallpaperOpacity,
+    )
     LaunchedEffect(backdrop, content) { backdrop?.show(content) }
     DisposableEffect(backdrop) { onDispose { backdrop?.shutdown() } }
 }
@@ -98,14 +103,15 @@ private fun PhaseContent(vm: GameViewModel, phase: GamePhase, branding: Branding
         }
         is GamePhase.Countdown -> Box(Modifier.fillMaxSize()) {
             CountdownOverlay(phase.step)
-            RoundHeader(branding, Modifier.align(Alignment.TopStart))
+            RoundHeader(branding, Modifier.align(Alignment.TopStart), pulsing = false)
         }
         GamePhase.Playing -> Box(Modifier.fillMaxSize()) {
             val hud by vm.hud.collectAsState()
-            val settings = branding.settings
-            if (settings.gameplayMode == "touch") TouchLayer(vm::onTouch)
-            RoundHeader(branding, Modifier.align(Alignment.TopStart))
-            HudOverlay(hud, settings.targetScore.takeIf { settings.targetScoreEnabled && it > 0 })
+            val round by vm.round.collectAsState()
+            val settings = round?.settings
+            if (settings?.isTouchMode == true) TouchLayer(vm::onTouch)
+            RoundHeader(branding, Modifier.align(Alignment.TopStart), pulsing = false)
+            HudOverlay(hud, settings?.targetScore)
         }
         is GamePhase.PhotoCountdown -> PhotoPlaceholder(phase)
         is GamePhase.GameOver -> StepPlaceholder("Score: ${phase.card.score.score}", Tags.CARD_CONTINUE, vm::onCardDone)
@@ -114,11 +120,13 @@ private fun PhaseContent(vm: GameViewModel, phase: GamePhase, branding: Branding
     }
 }
 
-/** App.tsx's header pill: title, connector and the brand name. */
+/**
+ * App.tsx's header pill: title, connector and the brand name. Its sparkle pulses only outside the countdown and play,
+ * in the spirit of the web's `round-active`, which drops such effects for those phases.
+ */
 @Composable
-private fun RoundHeader(branding: BrandingState, modifier: Modifier) {
+internal fun RoundHeader(branding: BrandingState, modifier: Modifier, pulsing: Boolean = true) {
     val s = branding.settings
-    val pulse by rememberPulse()
     Row(
         modifier
             .padding(horizontal = 32.dp, vertical = 20.dp)
@@ -127,7 +135,7 @@ private fun RoundHeader(branding: BrandingState, modifier: Modifier) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Icon(Icons.Sparkles, 20.dp, Palette.Amber400, Modifier.alpha(pulse))
+        Icon(Icons.Sparkles, 20.dp, Palette.Amber400, Modifier.pulsing(pulsing))
         Label(
             s.experienceTitle.ifEmpty { "DIWALI FUN PLAY" }, 20.sp, Palette.Amber200,
             family = Fonts.Display, weight = FontWeight.Black, tracking = TrackingWider,

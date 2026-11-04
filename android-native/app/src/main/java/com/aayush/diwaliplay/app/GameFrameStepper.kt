@@ -55,6 +55,12 @@ class GameFrameStepper(
     /** `GameSurfaceView.lowEnd`, sticky for the session. */
     @Volatile var lowEndSource: () -> Boolean = { false }
 
+    /** Lets go of the surface's [spriteWarmer] and [lowEndSource], which hold on to the view. */
+    fun detachSurface() {
+        spriteWarmer = null
+        lowEndSource = { false }
+    }
+
     /** Any thread; the sprites are built on the next frame. */
     fun prepareRound(configs: List<BombConfig>, settings: BombGameSettings) {
         pendingRound.set(PendingRound(configs, settings))

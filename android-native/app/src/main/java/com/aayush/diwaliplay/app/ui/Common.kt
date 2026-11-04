@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -19,6 +20,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -73,6 +75,17 @@ fun rememberPulse(): State<Float> = rememberInfiniteTransition(label = "pulse").
     animationSpec = infiniteRepeatable(tween(1000, easing = LinearEasing), RepeatMode.Reverse),
     label = "alpha",
 )
+
+/**
+ * `animate-pulse` on this element when [enabled]. The value is read in the layer block, never in composition, so a
+ * pulse doesn't recompose anything (spec §5: Compose overlays aren't per-frame); disabled, nothing runs at all.
+ */
+@Composable
+fun Modifier.pulsing(enabled: Boolean = true): Modifier {
+    if (!enabled) return this
+    val pulse by rememberPulse()
+    return graphicsLayer { alpha = pulse }
+}
 
 /** The frosted panels of the web UI: a dark fill and a thin border. The blur is left out for speed, as the web's `round-active` does. */
 fun Modifier.panel(fill: Color, border: Color, shape: Shape, borderWidth: Dp = 1.dp): Modifier =

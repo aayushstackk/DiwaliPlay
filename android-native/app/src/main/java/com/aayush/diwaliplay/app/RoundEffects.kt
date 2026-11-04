@@ -46,8 +46,8 @@ internal class RoundEffects(
 ) : GameEffects {
     private val network = Channel<suspend () -> Unit>(Channel.UNLIMITED)
 
-    /** The id the last `startSession` returned. Only touched by the network worker. */
-    private var startedSessionId: String? = null
+    /** The id the last `startSession` returned. Written by the network worker. */
+    @Volatile private var startedSessionId: String? = null
 
     init {
         scope.launch {
@@ -68,18 +68,21 @@ internal class RoundEffects(
         network.close()
     }
 
-    /** An id issued before `startSession` returned can only be replaced once it has; the FIFO guarantees that. */
-    private fun serverId(id: String) = if (id.startsWith(GUEST_SESSION_PREFIX)) startedSessionId ?: id else id
+    /**
+     * [id] with a stand-in replaced by the server's id. For network effects the FIFO guarantees `startSession` has
+     * finished by then; any other caller gets [id] back unchanged (still `guest_…`) if it hasn't, or if it failed.
+     */
+    fun serverId(id: String) = if (id.startsWith(GUEST_SESSION_PREFIX)) startedSessionId ?: id else id
 
     override fun startSession(code: String) {
         network.trySend {
             startedSessionId = null
-            when (val r = api.startSession(code, KIOSK_ID)) {
-                is ApiResult.Success -> if (r.value.success) {
-                    startedSessionId = r.value.session.id
-                    controller().onSessionStarted(code, r.value.session.id)
-                }
-                else -> Log.w(TAG, "startSession failed: $r")
+            val r = api.startSession(code, KIOSK_ID)
+            if (r is ApiResult.Success && r.value.success) {
+                startedSessionId = r.value.session.id
+                controller().onSessionStarted(code, r.value.session.id)
+            } else {
+                Log.w(TAG, "startSession failed: $r")
             }
         }
     }

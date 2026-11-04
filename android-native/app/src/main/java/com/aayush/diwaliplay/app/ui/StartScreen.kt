@@ -2,6 +2,7 @@ package com.aayush.diwaliplay.app.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,7 +20,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -109,7 +109,6 @@ fun StartScreen(
 /** Spec §6: the state shown while the backend is unreachable. The trial code still works. */
 @Composable
 private fun ConnectingBadge(modifier: Modifier) {
-    val pulse by rememberPulse()
     Row(
         modifier
             .testTag(Tags.CONNECTING)
@@ -118,14 +117,13 @@ private fun ConnectingBadge(modifier: Modifier) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Box(Modifier.size(8.dp).alpha(pulse).background(Palette.Amber400, CircleShape))
+        Box(Modifier.size(8.dp).pulsing().background(Palette.Amber400, CircleShape))
         Label("Connecting to server…", 12.sp, Palette.Amber200, family = Fonts.Mono)
     }
 }
 
 @Composable
 private fun QrCard(url: String, modifier: Modifier) {
-    val pulse by rememberPulse()
     Column(
         modifier
             .panel(Palette.Neutral900.copy(alpha = 0.8f), Palette.Amber500.copy(alpha = 0.3f), RoundedCornerShape(24.dp))
@@ -148,7 +146,7 @@ private fun QrCard(url: String, modifier: Modifier) {
         Spacer(Modifier.height(16.dp))
         Centered(
             Modifier
-                .alpha(pulse)
+                .pulsing()
                 .panel(Palette.Amber500.copy(alpha = 0.25f), Palette.Amber400, RoundedCornerShape(100.dp), 2.dp)
                 .padding(horizontal = 24.dp, vertical = 8.dp),
         ) {
@@ -244,12 +242,12 @@ private fun Notice(text: String, fill: Color, border: Color, color: Color, tag: 
 
 @Composable
 private fun CodeBox(digit: Char?, isCurrent: Boolean, success: Boolean) {
-    val pulse by rememberPulse()
     val fill = if (success) Palette.Emerald950.copy(alpha = 0.9f) else Palette.Neutral950
+    val shape = RoundedCornerShape(12.dp)
     val (border, width) = when {
         success -> Palette.Emerald400 to 2.dp
         digit != null -> Palette.Amber400 to 2.dp
-        isCurrent -> Palette.Amber500.copy(alpha = pulse) to 2.dp
+        isCurrent -> Color.Transparent to 2.dp // drawn below, where it can pulse on its own layer
         else -> Palette.Neutral700 to 1.dp
     }
     val color = when {
@@ -258,7 +256,10 @@ private fun CodeBox(digit: Char?, isCurrent: Boolean, success: Boolean) {
         isCurrent -> Palette.Amber400
         else -> Palette.Neutral600
     }
-    Centered(Modifier.size(56.dp, 64.dp).panel(fill, border, RoundedCornerShape(12.dp), width)) {
+    Box(Modifier.size(56.dp, 64.dp).panel(fill, border, shape, width), contentAlignment = Alignment.Center) {
+        if (isCurrent && !success && digit == null) {
+            Box(Modifier.matchParentSize().pulsing().border(2.dp, Palette.Amber500, shape))
+        }
         Label((digit ?: '—').toString(), 30.sp, color, family = Fonts.Mono, weight = FontWeight.Black)
     }
 }

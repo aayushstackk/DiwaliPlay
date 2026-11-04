@@ -603,4 +603,75 @@ class GameViewModelTest {
         assertThat(r.tracking.running).isFalse()
         assertThat(r.audio.released).isTrue()
     }
+
+    // ---- round snapshot -----------------------------------------------------------------------------------
+
+    @Test
+    fun settingsChangedAfterAcceptanceWaitForTheNextRound() = runTest {
+        val r = Rig(this, SystemSettings(gameplayMode = "camera", targetScoreEnabled = false, wallpaperEnabled = true, rewardsEnabled = false))
+        r.acceptCode()
+        val snapshot = r.vm.round.value!!
+        assertThat(snapshot.settings.isTouchMode).isFalse()
+        assertThat(r.vm.backdrop.value).isEqualTo(BackdropKind.CameraStrongVignette)
+
+        r.branding.update {
+            it.copy(
+                settings = it.settings.copy(gameplayMode = "touch", wallpaperEnabled = false, targetScoreEnabled = true, wallpaperOpacity = 10.0),
+                currentWallpaperUrl = "other",
+            )
+        }
+        runCurrent()
+        assertThat(r.vm.round.value).isEqualTo(snapshot)
+        assertThat(r.vm.backdrop.value).isEqualTo(BackdropKind.CameraStrongVignette)
+        assertThat(r.tracking.running).isTrue()
+
+        r.playThroughCountdown()
+        runCurrent()
+        assertThat(r.vm.backdrop.value).isEqualTo(BackdropKind.Wallpaper) // the live setting would say camera
+    }
+
+    @Test
+    fun roundSnapshotClearsAtResetAndTheNextRoundTakesCurrentSettings() = runTest {
+        val r = Rig(this)
+        assertThat(r.vm.round.value).isNull()
+        r.acceptCode()
+        assertThat(r.vm.round.value).isNotNull()
+        r.vm.onInterrupted()
+        runCurrent()
+        assertThat(r.vm.round.value).isNull()
+
+        r.branding.update { it.copy(settings = it.settings.copy(gameplayMode = "touch")) }
+        r.acceptCode()
+        assertThat(r.vm.round.value!!.settings.isTouchMode).isTrue()
+    }
+
+    // ---- server session id --------------------------------------------------------------------------------
+
+    @Test
+    fun guestIdResolvesOnceStartSessionHasReturned() = runTest {
+        val r = Rig(this)
+        r.api.onStart = {
+            delay(60_000)
+            ApiResult.Success(
+                com.aayush.diwaliplay.model.StartSessionResponse(
+                    success = true, session = GameSession(id = "real_id", userId = "u1"), user = TEST_USER,
+                ),
+            )
+        }
+        r.acceptCode()
+        r.playThroughCountdown()
+        assertThat(r.vm.resolvedSessionId("guest_1_2")).isEqualTo("guest_1_2") // still in flight
+
+        advanceTimeBy(60_001)
+        runCurrent()
+        assertThat(r.vm.resolvedSessionId("guest_1_2")).isEqualTo("real_id")
+        assertThat(r.vm.resolvedSessionId("trial_session_8536")).isEqualTo("trial_session_8536")
+    }
+
+    // ---- http client --------------------------------------------------------------------------------------
+
+    @Test
+    fun httpClientWontFollowHttpsRedirectsToHttp() {
+        assertThat(kioskHttpClient().followSslRedirects).isFalse()
+    }
 }

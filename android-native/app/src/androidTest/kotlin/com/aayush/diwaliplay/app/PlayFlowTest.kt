@@ -45,6 +45,7 @@ class PlayFlowTest {
     private val api = FakeGameApi()
     private val tracking = FakeTrackingPipeline()
     private val results = FakeResultSink()
+    private lateinit var branding: FakeBrandingSource
     private var scenario: ActivityScenario<MainActivity>? = null
 
     @Before
@@ -62,13 +63,14 @@ class PlayFlowTest {
     private fun launch(settings: SystemSettings) {
         // One kind of bomb, worth points: a penalty bomb could take the score back to 0 mid-assert.
         val bomb = BombConfig(id = "b", name = "Red", points = 25, soundPreset = "pop")
-        val branding = BrandingState(
+        val state = BrandingState(
             settings = settings.normalizedForBranding(),
             bombs = ListBombsResponse(success = true, bombs = listOf(bomb), settings = DEFAULT_BOMB_SETTINGS),
             isLoading = false,
         )
+        branding = FakeBrandingSource(state)
         app.dependenciesOverride = AppDependencies(
-            api, results, FakeGameAudio(), tracking, FakeBrandingSource(branding),
+            api, results, FakeGameAudio(), tracking, branding,
             MutableStateFlow(true), publicWebUrl = { "https://kiosk.example" },
         )
         compose.mainClock.autoAdvance = false
@@ -176,6 +178,18 @@ class PlayFlowTest {
         }
         assertThat(api.totalCalls).isEqualTo(0) // the trial code stays off the network
         assertThat(viewModel().phase.value).isEqualTo(GamePhase.Playing)
+    }
+
+    @Test
+    fun settingsChangedMidRoundDontReachTheScreens() {
+        launch(SystemSettings(gameplayMode = "camera", rewardsEnabled = false))
+        enterCodeAndPlay("1234")
+        waitForTag(Tags.CALIBRATION)
+        branding.update { it.copy(settings = it.settings.copy(gameplayMode = "touch")) }
+        tracking.holdHandsInBoxes()
+        waitForTag(Tags.HUD_TIMER)
+        pump()
+        assertThat(hasTag(Tags.TOUCH_LAYER)).isFalse()
     }
 
     @Test

@@ -147,7 +147,7 @@ class BackdropSurfaceView(context: Context, private val frames: () -> CameraFram
     private fun drawCamera(canvas: Canvas, frame: CameraFrame?, vignette: Paint) {
         canvas.drawColor(BACKGROUND_COLOR)
         if (frame != null) {
-            mapFrame(frame, frameMatrix)
+            mapFrame(frame.bitmap.width, frame.bitmap.height, frame.rotationDegrees, frameMatrix)
             canvas.drawBitmap(frame.bitmap, frameMatrix, framePaint)
         }
         canvas.drawRect(0f, 0f, BACKDROP_WIDTH.toFloat(), BACKDROP_HEIGHT.toFloat(), vignette)
@@ -162,23 +162,27 @@ class BackdropSurfaceView(context: Context, private val frames: () -> CameraFram
     }
 
     private companion object {
-        const val BACKDROP_WIDTH = 1920
-        const val BACKDROP_HEIGHT = 1080
         const val BACKGROUND_COLOR = 0xFF0A0713.toInt()
-
-        /** `object-cover -scale-x-100`: upright, centre-cropped to the surface, mirrored like the still. */
-        fun mapFrame(frame: CameraFrame, m: Matrix) {
-            val bw = frame.bitmap.width.toFloat()
-            val bh = frame.bitmap.height.toFloat()
-            val rotated = frame.rotationDegrees % 180 != 0
-            val w = if (rotated) bh else bw
-            val h = if (rotated) bw else bh
-            val k = max(BACKDROP_WIDTH / w, BACKDROP_HEIGHT / h)
-            m.reset()
-            m.postTranslate(-bw / 2, -bh / 2)
-            m.postRotate(frame.rotationDegrees.toFloat())
-            m.postScale(-k, k)
-            m.postTranslate(BACKDROP_WIDTH / 2f, BACKDROP_HEIGHT / 2f)
-        }
     }
+}
+
+private const val BACKDROP_WIDTH = 1920
+private const val BACKDROP_HEIGHT = 1080
+
+/**
+ * `object-cover -scale-x-100`: sets [m] to take a [bitmapWidth] x [bitmapHeight] camera frame upright, centre-cropped
+ * to the surface, and mirrored like the still. Raw landmark x ends up where HandTracker puts it, at `(1 - x) * 1920`.
+ */
+internal fun mapFrame(bitmapWidth: Int, bitmapHeight: Int, rotationDegrees: Int, m: Matrix) {
+    val bw = bitmapWidth.toFloat()
+    val bh = bitmapHeight.toFloat()
+    val rotated = rotationDegrees % 180 != 0
+    val w = if (rotated) bh else bw
+    val h = if (rotated) bw else bh
+    val k = max(BACKDROP_WIDTH / w, BACKDROP_HEIGHT / h)
+    m.reset()
+    m.postTranslate(-bw / 2, -bh / 2)
+    m.postRotate(rotationDegrees.toFloat())
+    m.postScale(-k, k)
+    m.postTranslate(BACKDROP_WIDTH / 2f, BACKDROP_HEIGHT / 2f)
 }

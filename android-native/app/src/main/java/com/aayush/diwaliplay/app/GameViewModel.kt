@@ -69,6 +69,17 @@ data class StartUi(
     val welcomeName: String? = null,
 )
 
+/**
+ * What a round runs with, fixed at code acceptance until reset: admin changes that arrive meanwhile wait for the next
+ * round, so the screens can't disagree with the controller.
+ */
+data class ActiveRound(
+    val settings: RoundSettings,
+    val wallpaperEnabled: Boolean,
+    val wallpaperUrl: String,
+    val wallpaperOpacity: Double,
+)
+
 /** What the calibration screen shows, from [GameViewModel.sampleCalibration]. */
 data class CalibrationUi(val leftActive: Boolean = false, val rightActive: Boolean = false, val holdProgress: Double = 0.0)
 
@@ -123,15 +134,18 @@ class GameViewModel(
     private val _startUi = MutableStateFlow(StartUi())
     val startUi: StateFlow<StartUi> = _startUi.asStateFlow()
 
-    val backdrop: StateFlow<BackdropKind> = combine(controller.phase, deps.branding.state) { p, b ->
-        backdropFor(p, b.settings.gameplayMode == "touch", b.settings.wallpaperEnabled)
+    private val _round = MutableStateFlow<ActiveRound?>(null)
+
+    /** The current round's snapshot, from code acceptance until reset. */
+    val round: StateFlow<ActiveRound?> = _round.asStateFlow()
+
+    val backdrop: StateFlow<BackdropKind> = combine(controller.phase, _round) { p, r ->
+        if (r == null) BackdropKind.Dark else backdropFor(p, r.settings.isTouchMode, r.wallpaperEnabled)
     }.stateIn(scope, SharingStarted.Eagerly, BackdropKind.Dark)
 
     private var startJob: Job? = null
     private var previousPhase: GamePhase = GamePhase.Startup
     private var cameraOn = false
-    private var roundTouch = false
-    private var roundWallpaper = true
     private var lastAudioInput: AudioInput? = null
     private val calibrationHold = CalibrationHold()
 
@@ -233,9 +247,14 @@ class GameViewModel(
         withTimeoutOrNull(AUDIO_READY_TIMEOUT_MS) {
             while (!deps.audio.isReady()) delay(AUDIO_READY_POLL_MS)
         }
-        val settings = roundSettings(deps.branding.state.value)
-        roundTouch = settings.isTouchMode
-        roundWallpaper = deps.branding.state.value.settings.wallpaperEnabled
+        val branding = deps.branding.state.value
+        val settings = roundSettings(branding)
+        _round.value = ActiveRound(
+            settings,
+            branding.settings.wallpaperEnabled,
+            branding.currentWallpaperUrl,
+            branding.settings.wallpaperOpacity,
+        )
         frameStepper.prepareRound(settings.bombConfigs, settings.bombSettings)
         controller.onCodeAccepted(session, settings)
         syncToPhase(controller.phase.value)
@@ -293,6 +312,12 @@ class GameViewModel(
         syncToPhase(controller.phase.value)
     }
 
+    /**
+     * [sessionId] (say `GamePhase.Spin.sessionId`) with the server's id if `startSession` has returned one. It stays
+     * `guest_…` while that is still in flight, or if it failed. Any thread.
+     */
+    fun resolvedSessionId(sessionId: String): String = effects.serverId(sessionId)
+
     /** For the calibration screen's ring, polled at the web's 50 ms. */
     fun sampleCalibration(nowMs: Double = System.nanoTime() / 1e6): CalibrationUi {
         val hands = deps.tracking.snapshot().hands
@@ -306,7 +331,8 @@ class GameViewModel(
         deps.branding.setPollingPaused(pollingPausedIn(p))
         if (p == GamePhase.Playing) deps.audio.startBgm() else deps.audio.stopBgm()
 
-        val wanted = cameraWanted(p, roundTouch, roundWallpaper)
+        val round = _round.value
+        val wanted = round != null && cameraWanted(p, round.settings.isTouchMode, round.wallpaperEnabled)
         if (wanted && !cameraOn) {
             cameraOn = true
             deps.tracking.start()
@@ -316,7 +342,10 @@ class GameViewModel(
             deps.tracking.stop()
         }
 
-        if (p == GamePhase.Startup && previousPhase != GamePhase.Startup) deps.branding.advanceWallpaper()
+        if (p == GamePhase.Startup && previousPhase != GamePhase.Startup) {
+            _round.value = null
+            deps.branding.advanceWallpaper()
+        }
         previousPhase = p
     }
 
