@@ -1216,7 +1216,8 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
               'left',
               renderHistL.smoothedSpeed,
               renderHistL.vx,
-              renderHistL.vy
+              renderHistL.vy,
+              renderHistL.prevTime
             );
           }
           if (renderHistR.isDetected && renderHistR.prevPx > 0) {
@@ -1227,7 +1228,8 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
               'right',
               renderHistR.smoothedSpeed,
               renderHistR.vx,
-              renderHistR.vy
+              renderHistR.vy,
+              renderHistR.prevTime
             );
           }
         } else {

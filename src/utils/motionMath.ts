@@ -430,7 +430,26 @@ interface FlameTrackerState {
   alpha: number;
   initialized: boolean;
   lastSeenTime: number;
+  /** Velocity used for prediction, filtered once per detection (px/s). */
+  predVx: number;
+  predVy: number;
+  /** Capture time of the last detection folded into predVx/predVy. */
+  lastPoseTime: number;
 }
+
+// Flame prediction: detections arrive late and between camera frames, so the flame projects the
+// hand forward from its last known position by that detection's age.
+const FLAME_MAX_PREDICTION_MS = 90;
+const FLAME_MAX_PREDICTION_PX = 120;
+// Under 1 because the velocity estimate trails the hand: at full gain the flame overshoots
+// every time the hand changes direction.
+const FLAME_PREDICTION_GAIN = 0.65;
+// Below SLOW the hand is treated as still (no prediction, more smoothing, so it doesn't jitter).
+// At FAST and above it gets full prediction and the tightest follow.
+const FLAME_SLOW_SPEED_PX_S = 150;
+const FLAME_FAST_SPEED_PX_S = 600;
+const FLAME_FOLLOW_TAU_SLOW_MS = 30;
+const FLAME_FOLLOW_TAU_FAST_MS = 10;
 
 const flameParticles: { left: FlameParticle[]; right: FlameParticle[] } = {
   left: [],
@@ -438,8 +457,8 @@ const flameParticles: { left: FlameParticle[]; right: FlameParticle[] } = {
 };
 
 const flameTrackers: { left: FlameTrackerState; right: FlameTrackerState } = {
-  left: { x: 0, y: 0, vx: 0, vy: 0, tilt: 0, alpha: 0, initialized: false, lastSeenTime: 0 },
-  right: { x: 0, y: 0, vx: 0, vy: 0, tilt: 0, alpha: 0, initialized: false, lastSeenTime: 0 }
+  left: { x: 0, y: 0, vx: 0, vy: 0, tilt: 0, alpha: 0, initialized: false, lastSeenTime: 0, predVx: 0, predVy: 0, lastPoseTime: 0 },
+  right: { x: 0, y: 0, vx: 0, vy: 0, tilt: 0, alpha: 0, initialized: false, lastSeenTime: 0, predVx: 0, predVy: 0, lastPoseTime: 0 }
 };
 
 let particleIdCounter = 0;
@@ -563,7 +582,9 @@ export function renderHandFlame(
   side: 'left' | 'right',
   speed = 0,
   vx = 0,
-  vy = 0
+  vy = 0,
+  /** Capture time (performance.now) of the frame rawX/rawY came from. 0 disables prediction. */
+  poseTime = 0
 ) {
   const now = performance.now();
   const tracker = flameTrackers[side];
@@ -574,13 +595,40 @@ export function renderHandFlame(
     tracker.y = rawY;
     tracker.vx = vx;
     tracker.vy = vy;
+    tracker.predVx = vx;
+    tracker.predVy = vy;
+    tracker.lastPoseTime = poseTime;
     tracker.tilt = 0;
     tracker.alpha = 0.2;
     tracker.initialized = true;
   } else {
-    // 0.44 lerp factor delivers immediate responsive feel with silky noise rejection
-    tracker.x += (rawX - tracker.x) * 0.44;
-    tracker.y += (rawY - tracker.y) * 0.44;
+    if (poseTime !== tracker.lastPoseTime) {
+      tracker.lastPoseTime = poseTime;
+      tracker.predVx += (vx - tracker.predVx) * 0.75;
+      tracker.predVy += (vy - tracker.predVy) * 0.75;
+    }
+
+    const predSpeed = Math.hypot(tracker.predVx, tracker.predVy);
+    const motion = Math.max(
+      0,
+      Math.min(1, (predSpeed - FLAME_SLOW_SPEED_PX_S) / (FLAME_FAST_SPEED_PX_S - FLAME_SLOW_SPEED_PX_S))
+    );
+
+    // Where the hand should be now, not where it was when the frame was captured
+    let targetX = rawX;
+    let targetY = rawY;
+    if (poseTime > 0 && predSpeed > 0) {
+      const ageSec = Math.max(0, Math.min(FLAME_MAX_PREDICTION_MS, now - poseTime)) / 1000;
+      const lead = Math.min(predSpeed * ageSec * motion * FLAME_PREDICTION_GAIN, FLAME_MAX_PREDICTION_PX);
+      targetX += (tracker.predVx / predSpeed) * lead;
+      targetY += (tracker.predVy / predSpeed) * lead;
+    }
+
+    // Time-based follow, so lag doesn't grow when the kiosk draws fewer frames per second
+    const tau = FLAME_FOLLOW_TAU_SLOW_MS + (FLAME_FOLLOW_TAU_FAST_MS - FLAME_FOLLOW_TAU_SLOW_MS) * motion;
+    const follow = 1 - Math.exp(-(now - tracker.lastSeenTime) / tau);
+    tracker.x += (targetX - tracker.x) * follow;
+    tracker.y += (targetY - tracker.y) * follow;
     tracker.vx += (vx - tracker.vx) * 0.32;
     tracker.vy += (vy - tracker.vy) * 0.32;
 
