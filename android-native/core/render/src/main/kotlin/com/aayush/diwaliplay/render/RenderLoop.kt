@@ -14,10 +14,14 @@ import kotlinx.coroutines.flow.asStateFlow
  * `onFrame(dtSeconds, nowMs)` (which steps the game and returns the frame), then draws with
  * `lockHardwareCanvas()`.
  *
- * Lifecycle rules (all methods are safe to call repeatedly, from any thread):
+ * Lifecycle guarantees (all methods are safe to call repeatedly, from any thread):
  * - frames run only while [start]ed **and** a surface is available;
- * - [surfaceDestroyed] blocks until any in-flight draw has posted, and no draw starts after it returns;
- * - [shutdown] quits the thread; a later [start] or [surfaceCreated] makes a new one.
+ * - after [stop] returns, `onFrame` is not called again (an in-flight frame is waited out) until the next [start];
+ * - after [surfaceDestroyed] returns, nothing is drawn until [surfaceCreated] (an in-flight draw is waited out);
+ * - [shutdown] quits and joins the render thread; a later [start]/[resume]/[surfaceCreated] makes a new one.
+ *
+ * Each render thread is a [Generation] owning its own Choreographer, scheduling flag and timing, so state never
+ * leaks between threads: a stale generation's callbacks see they are no longer current and do nothing.
  *
  * `nowMs` is `frameTimeNanos / 1e6` (the `System.nanoTime` / uptime clock); step the sims with the same value.
  */
@@ -25,23 +29,15 @@ class RenderLoop(
     private val holder: SurfaceHolder,
     private val renderer: Renderer,
     private val monitor: FrameRateMonitor = FrameRateMonitor(),
-) : Choreographer.FrameCallback {
+) {
+    private val lock = Any()        // guards generation creation/teardown and onFrame assignment
+    /** Held for a whole frame (running check, onFrame, lock/draw/post); taken by stop()/surfaceDestroyed(). */
+    private val frameLock = Any()
 
-    private val lock = Any()            // guards thread/handler and the wanted-running flag
-    private val surfaceLock = Any()     // held for the whole lock/draw/post of a frame
-
-    private var thread: HandlerThread? = null
-    private var handler: Handler? = null
+    @Volatile private var current: Generation? = null
     @Volatile private var running = false
     @Volatile private var onFrame: ((Double, Double) -> RenderFrame)? = null
-    private var hasSurface = false      // guarded by surfaceLock
-
-    // Render-thread-only state.
-    private var choreographer: Choreographer? = null
-    private var scheduled = false
-    private var lastFrameNanos = 0L
-    private var fpsWindowStartNanos = 0L
-    private var fpsFrames = 0
+    @Volatile private var hasSurface = false
 
     private val _fps = MutableStateFlow(0f)
     /** Frames per second, updated twice a second while running. */
@@ -55,85 +51,102 @@ class RenderLoop(
         synchronized(lock) {
             this.onFrame = onFrame
             running = true
-            ensureThread().post(::scheduleIfNeeded)
+            ensureGeneration().requestSchedule()
         }
     }
 
+    /** After this returns, `onFrame` will not be called until the next [start]. */
     fun stop() {
-        synchronized(lock) {
-            running = false
-            handler?.post(::unschedule)
-        }
+        running = false
+        synchronized(frameLock) { }   // wait out a frame already past its running check
+        current?.requestUnschedule()
     }
 
     fun surfaceCreated() {
-        synchronized(surfaceLock) { hasSurface = true }
-        synchronized(lock) { if (running) ensureThread().post(::scheduleIfNeeded) }
+        hasSurface = true
+        synchronized(lock) { if (running) ensureGeneration().requestSchedule() }
     }
 
+    /** After this returns nothing more is drawn to the old surface. */
     fun surfaceDestroyed() {
-        // Waits for an in-flight draw (which holds surfaceLock) and blocks any new one.
-        synchronized(surfaceLock) { hasSurface = false }
-        synchronized(lock) { handler?.post(::unschedule) }
+        hasSurface = false
+        synchronized(frameLock) { }   // wait out an in-flight lock/draw/post
+        current?.requestUnschedule()
     }
 
-    /** Stops the thread (e.g. view detached). Keeps the started state so [start]/[surfaceCreated] resume. */
+    /** Quits and joins the render thread (e.g. view detached). Keeps the started state so [resume] continues. */
     fun shutdown() {
+        val old: Generation
         synchronized(lock) {
-            val h = handler ?: return
-            h.post {
-                unschedule()
-                choreographer = null // belongs to the old looper
-            }
-            thread?.quitSafely()
-            thread = null
-            handler = null
+            old = current ?: return
+            current = null
+            old.retire()
         }
+        // Join outside `lock`: the render thread never takes `lock`, so this can't deadlock.
+        if (Thread.currentThread() !== old.thread) old.thread.join(JOIN_TIMEOUT_MS)
     }
 
     /** Re-creates the thread after [shutdown] if the loop is still wanted. */
     fun resume() {
-        synchronized(lock) { if (running) ensureThread().post(::scheduleIfNeeded) }
+        synchronized(lock) { if (running) ensureGeneration().requestSchedule() }
     }
 
-    private fun ensureThread(): Handler {
-        handler?.let { return it }
-        val t = HandlerThread("DiwaliRender", Process.THREAD_PRIORITY_DISPLAY).apply { start() }
-        thread = t
-        return Handler(t.looper).also { handler = it }
-    }
+    private fun ensureGeneration(): Generation = current ?: Generation().also { current = it }
 
-    // ---- render thread ---------------------------------------------------------------------------------
+    /** One render thread and all state confined to it. */
+    private inner class Generation : Choreographer.FrameCallback {
+        val thread = HandlerThread("DiwaliRender", Process.THREAD_PRIORITY_DISPLAY).apply { start() }
+        private val handler = Handler(thread.looper)
+        @Volatile private var retired = false
 
-    private fun scheduleIfNeeded() {
-        if (scheduled || !running) return
-        val surface = synchronized(surfaceLock) { hasSurface }
-        if (!surface) return
-        val c = choreographer ?: Choreographer.getInstance().also { choreographer = it }
-        lastFrameNanos = 0L
-        fpsWindowStartNanos = 0L
-        scheduled = true
-        c.postFrameCallback(this)
-    }
+        // Confined to [thread].
+        private var choreographer: Choreographer? = null
+        private var scheduled = false
+        private var lastFrameNanos = 0L
+        private var fpsWindowStartNanos = 0L
+        private var fpsFrames = 0
 
-    private fun unschedule() {
-        if (!scheduled) return
-        choreographer?.removeFrameCallback(this)
-        scheduled = false
-    }
+        private val scheduleTask = Runnable { scheduleIfNeeded() }
+        private val unscheduleTask = Runnable { unschedule() }
 
-    override fun doFrame(frameTimeNanos: Long) {
-        scheduled = false
-        val callback = onFrame
-        if (!running || callback == null) return
+        fun requestSchedule() { handler.post(scheduleTask) }
+        fun requestUnschedule() { handler.post(unscheduleTask) }
 
-        val dtSeconds = if (lastFrameNanos == 0L) 1.0 / 60.0 else (frameTimeNanos - lastFrameNanos) / 1e9
-        if (lastFrameNanos != 0L && monitor.record(dtSeconds * 1000.0) && !_lowEnd.value) _lowEnd.value = true
-        lastFrameNanos = frameTimeNanos
-        updateFps(frameTimeNanos)
+        fun retire() {
+            retired = true
+            handler.post(unscheduleTask)
+            thread.quitSafely()
+        }
 
-        val surfaceStillThere = synchronized(surfaceLock) {
-            if (hasSurface) {
+        private fun isCurrent() = !retired && current === this
+
+        private fun scheduleIfNeeded() {
+            if (scheduled || !running || !hasSurface || !isCurrent()) return
+            val c = choreographer ?: Choreographer.getInstance().also { choreographer = it }
+            lastFrameNanos = 0L
+            fpsWindowStartNanos = 0L
+            scheduled = true
+            c.postFrameCallback(this)
+        }
+
+        private fun unschedule() {
+            // A stop/destroy request that lost a race with start/create must not kill a wanted loop.
+            if (!scheduled || (running && hasSurface && isCurrent())) return
+            choreographer?.removeFrameCallback(this)
+            scheduled = false
+        }
+
+        override fun doFrame(frameTimeNanos: Long) {
+            scheduled = false
+            synchronized(frameLock) {
+                val callback = onFrame
+                if (!running || !hasSurface || callback == null || !isCurrent()) return
+
+                val dtSeconds = if (lastFrameNanos == 0L) 1.0 / 60.0 else (frameTimeNanos - lastFrameNanos) / 1e9
+                if (lastFrameNanos != 0L && monitor.record(dtSeconds * 1000.0) && !_lowEnd.value) _lowEnd.value = true
+                lastFrameNanos = frameTimeNanos
+                updateFps(frameTimeNanos)
+
                 val frame = callback(dtSeconds, frameTimeNanos / 1_000_000.0)
                 val canvas = try {
                     holder.lockHardwareCanvas()
@@ -150,31 +163,31 @@ class RenderLoop(
                     }
                 }
             }
-            hasSurface
+            // Keep pacing on vsync; start()/surfaceCreated()/resume() re-arm if anything went away.
+            if (running && hasSurface && isCurrent()) {
+                scheduled = true
+                choreographer?.postFrameCallback(this)
+            }
         }
-        // Keep pacing on vsync; surfaceCreated()/start() re-arm if either went away.
-        if (running && surfaceStillThere) {
-            scheduled = true
-            choreographer?.postFrameCallback(this)
-        }
-    }
 
-    private fun updateFps(frameTimeNanos: Long) {
-        if (fpsWindowStartNanos == 0L) {
-            fpsWindowStartNanos = frameTimeNanos
-            fpsFrames = 0
-            return
-        }
-        fpsFrames++
-        val elapsed = frameTimeNanos - fpsWindowStartNanos
-        if (elapsed >= FPS_WINDOW_NANOS) {
-            _fps.value = (fpsFrames * 1e9 / elapsed).toFloat()
-            fpsWindowStartNanos = frameTimeNanos
-            fpsFrames = 0
+        private fun updateFps(frameTimeNanos: Long) {
+            if (fpsWindowStartNanos == 0L) {
+                fpsWindowStartNanos = frameTimeNanos
+                fpsFrames = 0
+                return
+            }
+            fpsFrames++
+            val elapsed = frameTimeNanos - fpsWindowStartNanos
+            if (elapsed >= FPS_WINDOW_NANOS) {
+                _fps.value = (fpsFrames * 1e9 / elapsed).toFloat()
+                fpsWindowStartNanos = frameTimeNanos
+                fpsFrames = 0
+            }
         }
     }
 
     private companion object {
         const val FPS_WINDOW_NANOS = 500_000_000L
+        const val JOIN_TIMEOUT_MS = 1000L
     }
 }

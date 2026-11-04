@@ -10,6 +10,11 @@ import com.aayush.diwaliplay.game.cracker.CrackerSim
 /**
  * Port of `CrackerEngine.render()` (src/utils/crackerEngine.ts): screen flash, shockwave rings and batched
  * sparks with additive blending ('lighter' -> PorterDuff ADD). Allocation-free per frame.
+ *
+ * Each batch is one `Canvas.drawLines` call instead of the web's single path `stroke()` (controller ruling:
+ * hardware-canvas path stroking rasterises a mask and is much slower on the Mali GPU). Known deviation: in a
+ * path stroke overlapping segments of one batch are painted once, while each `drawLines` segment is blended
+ * separately, so where streaks of the same batch overlap (dense burst centres) ADD makes them slightly brighter.
  */
 internal class CrackerRenderer(private val random: GameRandom) {
     private val batcher = SparkBatcher()

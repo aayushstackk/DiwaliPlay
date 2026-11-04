@@ -13,6 +13,7 @@ import com.aayush.diwaliplay.game.Mulberry32
 import com.aayush.diwaliplay.game.cracker.CrackerSim
 import com.aayush.diwaliplay.game.flow.GamePhase
 import com.google.common.truth.Truth.assertThat
+import com.google.common.truth.Truth.assertWithMessage
 import org.junit.After
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -106,5 +107,62 @@ class RenderLoopTest {
         Thread.sleep(500)
         assertThat(draws.get()).isGreaterThan(afterStop)
         assertThat(frames.get()).isAtLeast(draws.get())
+    }
+
+    @Test
+    fun noOnFrameAfterStopReturns() {
+        // A slow game step makes stop() very likely to land while a frame is in flight.
+        val inFlight = AtomicInteger()
+        val slowFrame: (Double, Double) -> RenderFrame = { dt, now ->
+            inFlight.incrementAndGet()
+            Thread.sleep(15)
+            onFrame(dt, now)
+        }
+        loop.surfaceCreated()
+        repeat(40) {
+            loop.start(slowFrame)
+            Thread.sleep(25)
+            loop.stop()
+            val afterStop = frames.get()
+            Thread.sleep(30)
+            assertThat(frames.get()).isEqualTo(afterStop)
+        }
+        assertThat(inFlight.get()).isGreaterThan(0)
+    }
+
+    @Test
+    fun survivesShutdownRestartAndSurfaceChurn() {
+        loop.surfaceCreated()
+        loop.start(onFrame)
+        repeat(8) { round ->
+            val churn = Thread {
+                repeat(80) { i ->
+                    when (i % 4) {
+                        0 -> { loop.shutdown(); loop.start(onFrame) }
+                        1 -> { loop.surfaceDestroyed(); loop.surfaceCreated() }
+                        2 -> { loop.shutdown(); loop.resume() }
+                        else -> { loop.stop(); loop.start(onFrame) }
+                    }
+                }
+            }
+            churn.start()
+            repeat(80) { i ->
+                if (i % 2 == 0) { loop.shutdown(); loop.start(onFrame) } else { loop.surfaceDestroyed(); loop.surfaceCreated() }
+            }
+            churn.join()
+            // Tight restart without letting the old thread clean up first.
+            repeat(50) { loop.shutdown(); loop.start(onFrame) }
+
+            // Whatever the interleaving, the loop must still be alive and pacing frames.
+            val before = draws.get()
+            Thread.sleep(400)
+            assertWithMessage("round $round").that(draws.get() - before).isGreaterThan(5)
+        }
+
+        // And a final destroy still stops drawing.
+        loop.surfaceDestroyed()
+        val afterDestroy = draws.get()
+        Thread.sleep(200)
+        assertThat(draws.get()).isEqualTo(afterDestroy)
     }
 }

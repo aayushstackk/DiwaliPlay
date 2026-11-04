@@ -49,7 +49,8 @@ class BombSprites(
             val e = entries[i]
             if ((e.config === config || e.config == config) && e.radius == radius) return e.sprite
         }
-        if (entries.size >= MAX_CACHED) entries.removeAt(0).sprite.bitmap.recycle()
+        // Evicted bitmaps are left to the GC: one may already be recorded in this frame's display list.
+        if (entries.size >= MAX_CACHED) entries.removeAt(0)
         val sprite = renderBomb(config, radius)
         entries.add(Entry(config, radius, sprite))
         return sprite
@@ -64,11 +65,12 @@ class BombSprites(
     /** Mortar tube bitmap: [MORTAR_W] x [MORTAR_H] logical px at [density]. */
     fun mortar(): Bitmap = mortarBitmap ?: renderMortar().also { mortarBitmap = it }
 
-    /** Drops every cached bitmap (e.g. after the admin changes a bomb image). */
+    /**
+     * Drops every cached bitmap (e.g. after the admin changes a bomb image). Bitmaps are not recycled (one may be
+     * referenced by a frame being drawn); the GC reclaims them.
+     */
     fun clear() {
-        for (e in entries) e.sprite.bitmap.recycle()
         entries.clear()
-        mortarBitmap?.recycle()
         mortarBitmap = null
     }
 
