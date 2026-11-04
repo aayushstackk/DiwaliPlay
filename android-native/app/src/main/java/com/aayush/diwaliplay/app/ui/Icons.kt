@@ -52,6 +52,30 @@ object Icons {
     )
     val Alert = LineIcon(listOf("m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3", "M12 9v4", "M12 17h.01"))
 
+    val Close = LineIcon(listOf("M18 6 6 18", "m6 6 12 12"))
+    val Download = LineIcon(listOf("M12 15V3", "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "m7 10 5 5 5-5"))
+    val Mail = LineIcon(
+        listOf(
+            "m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7",
+            "M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z",
+        ),
+    )
+    val Gift = LineIcon(
+        listOf(
+            "M3 8h18a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z",
+            "M12 8v13", "M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7",
+            "M7.5 8a2.5 2.5 0 0 1 0-5A4.8 8 0 0 1 12 8a4.8 8 0 0 1 4.5-5 2.5 2.5 0 0 1 0 5",
+        ),
+    )
+    val Copy = LineIcon(
+        listOf(
+            "M10 8h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2z",
+            "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2",
+        ),
+    )
+    val RotateCw = LineIcon(listOf("M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8", "M21 3v5h-5"))
+    val AlertCircle = LineIcon(listOf("M12 8v4", "M12 16h.01"), listOf(Triple(12f, 12f, 10f)))
+
     /** HandTargetBoxes' raised hand. */
     val Hand = LineIcon(
         listOf(

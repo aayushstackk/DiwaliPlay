@@ -17,6 +17,7 @@ import com.aayush.diwaliplay.game.flow.SessionInfo
 import com.aayush.diwaliplay.model.DiwaliJson
 import com.aayush.diwaliplay.model.GameFeedback
 import com.aayush.diwaliplay.model.RewardItem
+import com.aayush.diwaliplay.model.SpinWheelRequest
 import com.aayush.diwaliplay.model.User
 import com.aayush.diwaliplay.model.VerifyCodeResponse
 import com.aayush.diwaliplay.tracking.camera.TrackingStatus
@@ -47,7 +48,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 /** The code the web treats as a trial (`TRIAL_CODE`): handled here with no network and nothing persisted. */
 internal const val TRIAL_CODE = "8536"
 internal const val TRIAL_SESSION_ID = "trial_session_8536"
-private val TRIAL_USER = User(id = "trial_user_8536", name = "Trial Player", mobileNumber = "0000000000")
+private const val TRIAL_USER_ID = "trial_user_8536"
+private val TRIAL_USER = User(id = TRIAL_USER_ID, name = "Trial Player", mobileNumber = "0000000000")
 
 internal const val CANT_REACH_SERVER_MESSAGE = "Can't reach the server — try again"
 internal const val SERVER_ERROR_MESSAGE = "The server had a problem — try again"
@@ -59,6 +61,18 @@ private const val CODE_LENGTH = 4
 private const val WELCOME_MS = 800L
 private const val AUDIO_READY_TIMEOUT_MS = 2_000L
 private const val AUDIO_READY_POLL_MS = 50L
+
+/** GameOverModal AUTO_RETURN_SECONDS. */
+internal const val AUTO_RETURN_SECONDS = 20
+
+/**
+ * How long "Feedback recorded — Thank you!" shows. The web's bar sits on a screen that stays up anyway, so it has no
+ * such value; here the feedback step ends the round, and without this the thanks would never be seen.
+ */
+internal const val FEEDBACK_THANKS_MS = 1_500L
+
+/** Opening the wish envelope: App.tsx onPlayChime, playSound('FLOWER_POT'). */
+private const val ENVELOPE_CHIME = "FLOWER_POT"
 
 data class StartUi(
     val code: String = "",
@@ -78,6 +92,7 @@ data class ActiveRound(
     val wallpaperEnabled: Boolean,
     val wallpaperUrl: String,
     val wallpaperOpacity: Double,
+    val isTrial: Boolean = false,
 )
 
 /** What the calibration screen shows, from [GameViewModel.sampleCalibration]. */
@@ -143,6 +158,19 @@ class GameViewModel(
         if (r == null) BackdropKind.Dark else backdropFor(p, r.settings.isTouchMode, r.wallpaperEnabled)
     }.stateIn(scope, SharingStarted.Eagerly, BackdropKind.Dark)
 
+    private val _autoReturnSeconds = MutableStateFlow<Int?>(null)
+
+    /** The "Returning in Ns" count while the end-of-round auto-return runs. */
+    val autoReturnSeconds: StateFlow<Int?> = _autoReturnSeconds.asStateFlow()
+
+    private val _feedbackRecorded = MutableStateFlow<GameFeedback?>(null)
+
+    /** What the player just submitted, while the thanks shows. */
+    val feedbackRecorded: StateFlow<GameFeedback?> = _feedbackRecorded.asStateFlow()
+
+    @Volatile private var activePlayerName = "Player"
+    private var autoReturnJob: Job? = null
+    private var feedbackJob: Job? = null
     private var startJob: Job? = null
     private var previousPhase: GamePhase = GamePhase.Startup
     private var cameraOn = false
@@ -247,6 +275,7 @@ class GameViewModel(
         withTimeoutOrNull(AUDIO_READY_TIMEOUT_MS) {
             while (!deps.audio.isReady()) delay(AUDIO_READY_POLL_MS)
         }
+        activePlayerName = user.name.ifBlank { "Player" }
         val branding = deps.branding.state.value
         val settings = roundSettings(branding)
         _round.value = ActiveRound(
@@ -254,6 +283,7 @@ class GameViewModel(
             branding.settings.wallpaperEnabled,
             branding.currentWallpaperUrl,
             branding.settings.wallpaperOpacity,
+            session.isTrial,
         )
         frameStepper.prepareRound(settings.bombConfigs, settings.bombSettings)
         controller.onCodeAccepted(session, settings)
@@ -278,6 +308,9 @@ class GameViewModel(
 
     // ---- round -------------------------------------------------------------------------------------------
 
+    /** Who the photo screen addresses. */
+    fun playerName(): String = activePlayerName
+
     /** Touch-mode tap in 1920x1080 space. */
     fun onTouch(x: Double, y: Double) = controller.onTouch(x, y)
 
@@ -287,6 +320,107 @@ class GameViewModel(
 
     fun onFeedback(feedback: GameFeedback?) = controller.onFeedback(feedback)
 
+    /** Submit on the feedback bar: thanks the player, then sends it and ends the round. Main thread. */
+    fun submitFeedback(feedback: GameFeedback) {
+        if (controller.phase.value !is GamePhase.Feedback || _feedbackRecorded.value != null) return
+        autoReturnJob?.cancel()
+        _autoReturnSeconds.value = null
+        _feedbackRecorded.value = feedback
+        feedbackJob = scope.launch {
+            delay(FEEDBACK_THANKS_MS)
+            controller.onFeedback(feedback)
+        }
+    }
+
+    /**
+     * The × button and the auto-return (GameOverModal triggerExit), from any end-of-round screen. Whatever steps are
+     * left are skipped. Feedback already submitted still goes.
+     */
+    fun exitToStart() {
+        controller.onCardDone()
+        controller.onSpinDone(null)
+        controller.onFeedback(_feedbackRecorded.value)
+    }
+
+    /** PLAY AGAIN: a trial round starts over (App.tsx handlePlayAgain); any other goes home. Main thread. */
+    fun onPlayAgain() {
+        val round = _round.value
+        if (round?.isTrial != true) {
+            exitToStart()
+            return
+        }
+        cancelEndOfRound()
+        deps.branding.advanceWallpaper()
+        _round.value = round.copy(wallpaperUrl = deps.branding.state.value.currentWallpaperUrl)
+        controller.onPlayAgain()
+        syncToPhase(controller.phase.value)
+    }
+
+    /** Asks the server for the wheel's result. Every failure, including no usable session id, is [SpinOutcome.Failed]. */
+    suspend fun requestSpin(spin: GamePhase.Spin): SpinOutcome {
+        val trial = _round.value?.isTrial == true
+        var id = resolvedSessionId(spin.sessionId)
+        if (id.startsWith(GUEST_SESSION_PREFIX)) {
+            // A server-flagged trial never calls startSession. A real round's start hasn't answered: never send a guest id.
+            if (!trial) return SpinOutcome.Failed
+            id = TRIAL_SESSION_ID
+        }
+        val request = SpinWheelRequest(
+            userId = if (trial) TRIAL_USER_ID else null,
+            playerName = spin.playerName.ifBlank { if (trial) "Master Tester" else "Player" },
+            mobileNumber = spin.mobileNumber?.ifBlank { null },
+            sessionId = id,
+        )
+        val r = deps.api.spin(request) as? ApiResult.Success ?: return SpinOutcome.Failed
+        val reward = r.value.reward ?: return SpinOutcome.Failed
+        return if (r.value.success || (!trial && r.value.alreadySpun == true)) {
+            SpinOutcome.Won(reward, r.value.rewardIndex)
+        } else {
+            SpinOutcome.Failed
+        }
+    }
+
+    /**
+     * The wheel has given its answer and the voucher's zoom is over, or there's nothing left to do on it: the 20 s
+     * auto-return starts, as GameOverModal's does. Not for trial rounds.
+     */
+    fun onSpinSettled() = startAutoReturn()
+
+    fun playEnvelopeChime() {
+        effectsScope.launch { deps.audio.playCracker(ENVELOPE_CHIME) }
+    }
+
+    fun playSpinTick(speedRatio: Float) {
+        effectsScope.launch { deps.audio.playSpinTick(speedRatio) }
+    }
+
+    fun playVictoryChime() {
+        effectsScope.launch { deps.audio.playVictoryChime() }
+    }
+
+    /** One 20 s from its first trigger to the end of the round: on the web these steps are all one screen. */
+    private fun startAutoReturn() {
+        if (autoReturnJob?.isActive == true || _feedbackRecorded.value != null) return
+        if (_round.value?.isTrial != false) return // the master session never kicks the tester out
+        autoReturnJob = scope.launch {
+            for (left in AUTO_RETURN_SECONDS downTo 1) {
+                _autoReturnSeconds.value = left
+                delay(1_000)
+            }
+            _autoReturnSeconds.value = null
+            exitToStart()
+        }
+    }
+
+    private fun cancelEndOfRound() {
+        autoReturnJob?.cancel()
+        autoReturnJob = null
+        feedbackJob?.cancel()
+        feedbackJob = null
+        _autoReturnSeconds.value = null
+        _feedbackRecorded.value = null
+    }
+
     /**
      * The activity paused, the game surface went away, or the player backed out. Abandons a started round and returns
      * to the start screen. Surface loss counts too because the round clock is wall time: anything else would hand the
@@ -295,6 +429,8 @@ class GameViewModel(
     fun onInterrupted() {
         startJob?.cancel()
         startJob = null
+        // Submitted, and only waiting for the thanks to finish.
+        _feedbackRecorded.value?.let(controller::onFeedback)
         controller.onInterrupted()
         syncToPhase(controller.phase.value)
         _startUi.update { StartUi(serverReachable = it.serverReachable) }
@@ -342,6 +478,14 @@ class GameViewModel(
             deps.tracking.stop()
         }
 
+        when {
+            p == GamePhase.Startup -> cancelEndOfRound()
+            // GameOverModal: with rewards off the countdown starts with the card.
+            p is GamePhase.GameOver && round?.settings?.rewardsEnabled == false -> startAutoReturn()
+            // Every way to feedback leaves the kiosk on its way home.
+            p is GamePhase.Feedback -> startAutoReturn()
+        }
+
         if (p == GamePhase.Startup && previousPhase != GamePhase.Startup) {
             _round.value = null
             deps.branding.advanceWallpaper()
@@ -376,7 +520,8 @@ class GameViewModel(
     }
 
     override fun onCleared() {
-        // Report an unfinished round before the effects thread goes away.
+        // Report an unfinished round, and feedback waiting on its thanks, before the effects thread goes away.
+        _feedbackRecorded.value?.let(controller::onFeedback)
         controller.onInterrupted()
         release()
         scope.cancel()

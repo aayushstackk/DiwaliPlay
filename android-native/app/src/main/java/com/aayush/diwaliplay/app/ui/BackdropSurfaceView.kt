@@ -173,16 +173,23 @@ private const val BACKDROP_HEIGHT = 1080
  * `object-cover -scale-x-100`: sets [m] to take a [bitmapWidth] x [bitmapHeight] camera frame upright, centre-cropped
  * to the surface, and mirrored like the still. Raw landmark x ends up where HandTracker puts it, at `(1 - x) * 1920`.
  */
-internal fun mapFrame(bitmapWidth: Int, bitmapHeight: Int, rotationDegrees: Int, m: Matrix) {
+internal fun mapFrame(
+    bitmapWidth: Int,
+    bitmapHeight: Int,
+    rotationDegrees: Int,
+    m: Matrix,
+    surfaceWidth: Float = BACKDROP_WIDTH.toFloat(),
+    surfaceHeight: Float = BACKDROP_HEIGHT.toFloat(),
+) {
     val bw = bitmapWidth.toFloat()
     val bh = bitmapHeight.toFloat()
     val rotated = rotationDegrees % 180 != 0
     val w = if (rotated) bh else bw
     val h = if (rotated) bw else bh
-    val k = max(BACKDROP_WIDTH / w, BACKDROP_HEIGHT / h)
+    val k = max(surfaceWidth / w, surfaceHeight / h)
     m.reset()
     m.postTranslate(-bw / 2, -bh / 2)
     m.postRotate(rotationDegrees.toFloat())
     m.postScale(-k, k)
-    m.postTranslate(BACKDROP_WIDTH / 2f, BACKDROP_HEIGHT / 2f)
+    m.postTranslate(surfaceWidth / 2f, surfaceHeight / 2f)
 }

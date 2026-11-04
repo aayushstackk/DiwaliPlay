@@ -302,6 +302,15 @@ class SoundResolverTest {
         assertThat(order.takeLast(large.size).toSet()).isEqualTo(large.toSet())
     }
 
+    @Test fun victoryChimeFollowsMasterAndMute() {
+        val s = defaultAudioSettings()
+        val (source, volume) = resolver.victoryChime(s)
+        assertThat(source).isEqualTo(asset("chime_celebration"))
+        assertThat(volume).isGreaterThan(0f)
+        assertThat(resolver.victoryChime(s.copy(isMuted = true)).first).isEqualTo(SoundSource.None)
+        assertThat(resolver.preloadSources(s, none, emptyList())).contains(asset("chime_celebration"))
+    }
+
     @Test fun prioritiesHighForCountdownGameOverMegaBlastLowForCrackers() {
         val s = defaultAudioSettings()
         fun p(k: String) = resolver.forGameKey(k, s, none, emptyList()).priority

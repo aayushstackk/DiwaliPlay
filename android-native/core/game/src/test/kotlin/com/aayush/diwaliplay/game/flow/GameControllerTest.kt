@@ -80,6 +80,59 @@ class GameControllerTest {
         assertThat(c.phase.value).isEqualTo(GamePhase.Playing)
     }
 
+    /** Plays [s] through to the card. */
+    private fun toCard(s: SessionInfo, settings: RoundSettings = camera) {
+        toPlaying(s, settings)
+        run(35_100.0)
+        run(5_100.0)
+        c.onPhotoCaptured(null)
+        assertThat(c.phase.value).isInstanceOf(GamePhase.GameOver::class.java)
+    }
+
+    @Test
+    fun playAgainRestartsATrialRoundAtCalibrationWithNoCodeOrServerCalls() {
+        toCard(trial)
+        c.onCardDone()
+        c.onSpinDone(null)
+        c.onPlayAgain()
+        assertThat(c.phase.value).isEqualTo(GamePhase.Calibrating(ready = false))
+        assertThat(fx.serverCalls()).isEmpty()
+
+        // A whole second round runs, with a fresh score, and is still a trial.
+        run(0.0); c.onFrame(0.016, noHand, noHand, calibrated = true)
+        run(350.0)
+        run(3400.0)
+        assertThat(c.phase.value).isEqualTo(GamePhase.Playing)
+        assertThat(c.hud.value.score).isEqualTo(0)
+        run(35_100.0)
+        run(5_100.0)
+        c.onPhotoCaptured(null)
+        assertThat(c.phase.value).isInstanceOf(GamePhase.GameOver::class.java)
+        assertThat(fx.serverCalls()).isEmpty()
+    }
+
+    @Test
+    fun playAgainInTouchModeGoesStraightToTheCountdown() {
+        toCard(trial, touch)
+        c.onPlayAgain()
+        assertThat(c.phase.value).isEqualTo(GamePhase.Countdown(3))
+    }
+
+    @Test
+    fun playAgainOnARealRoundGoesHomeWithoutAbandoning() {
+        toCard(session)
+        c.onPlayAgain()
+        assertThat(c.phase.value).isEqualTo(GamePhase.Startup)
+        assertThat(fx.calls.filter { it.startsWith("abandon") }).isEmpty()
+    }
+
+    @Test
+    fun playAgainIsIgnoredMidRound() {
+        toPlaying(trial)
+        c.onPlayAgain()
+        assertThat(c.phase.value).isEqualTo(GamePhase.Playing)
+    }
+
     @Test
     fun fullCameraRoundReachesStartupWithOneCompleteCall() {
         c.onCodeAccepted(session, camera)

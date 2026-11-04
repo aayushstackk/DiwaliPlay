@@ -10,6 +10,8 @@ import com.aayush.diwaliplay.model.CompleteSessionResponse
 import com.aayush.diwaliplay.model.EarnedReward
 import com.aayush.diwaliplay.model.GameFeedback
 import com.aayush.diwaliplay.model.GameSession
+import com.aayush.diwaliplay.model.RewardItem
+import com.aayush.diwaliplay.model.SpinWheelResponse
 import com.aayush.diwaliplay.model.SystemSettings
 import com.aayush.diwaliplay.model.VerifyCodeResponse
 import com.aayush.diwaliplay.tracking.camera.TrackingStatus
@@ -94,6 +96,219 @@ class GameViewModelTest {
             frames(50)
             assertThat(vm.phase.value).isInstanceOf(GamePhase.GameOver::class.java)
         }
+    }
+
+    // ---- end of round ---------------------------------------------------------------------------------------
+
+    private val rewardsOn = SystemSettings(rewardsEnabled = true)
+    private val prize = RewardItem(id = "r1", name = "20% OFF", couponCode = "DIWALI20")
+
+    private fun TestScope.toSpin(r: Rig): GamePhase.Spin {
+        r.acceptCode()
+        r.playToCard()
+        r.vm.onCardDone()
+        runCurrent()
+        return r.vm.phase.value as GamePhase.Spin
+    }
+
+    @Test
+    fun spinSendsTheServerSessionAndPlayerWithNoUserId() = runTest {
+        val r = Rig(this, rewardsOn)
+        r.api.onSpin = { ApiResult.Success(SpinWheelResponse(success = true, reward = prize, rewardIndex = 2)) }
+        val spin = toSpin(r)
+        assertThat(r.vm.requestSpin(spin)).isEqualTo(SpinOutcome.Won(prize, 2))
+        val req = r.api.spins.single()
+        assertThat(req.sessionId).isEqualTo("server_session")
+        assertThat(req.playerName).isEqualTo("Asha")
+        assertThat(req.mobileNumber).isEqualTo("9990001111")
+        assertThat(req.userId).isNull()
+    }
+
+    @Test
+    fun trialSpinNamesTheTrialUserAndSession() = runTest {
+        val r = Rig(this, rewardsOn)
+        r.api.onSpin = { ApiResult.Success(SpinWheelResponse(success = true, reward = prize)) }
+        r.acceptCode("8536")
+        r.playToCard()
+        r.vm.onCardDone()
+        runCurrent()
+        r.vm.requestSpin(r.vm.phase.value as GamePhase.Spin)
+        val req = r.api.spins.single()
+        assertThat(req.userId).isEqualTo("trial_user_8536")
+        assertThat(req.sessionId).isEqualTo("trial_session_8536")
+    }
+
+    @Test
+    fun aGuestIdNeverReachesTheServer() = runTest {
+        val r = Rig(this, rewardsOn)
+        r.api.onStart = { ApiResult.NetworkError(IOException("down")) }
+        val spin = toSpin(r)
+        assertThat(spin.sessionId).startsWith("guest_")
+        assertThat(r.vm.requestSpin(spin)).isEqualTo(SpinOutcome.Failed)
+        assertThat(r.api.spins).isEmpty()
+    }
+
+    @Test
+    fun anySpinFailureIsFailed() = runTest {
+        val r = Rig(this, rewardsOn)
+        val spin = toSpin(r)
+        r.api.onSpin = { ApiResult.NetworkError(IOException("down")) }
+        assertThat(r.vm.requestSpin(spin)).isEqualTo(SpinOutcome.Failed)
+        r.api.onSpin = { ApiResult.HttpError(409, "{}") }
+        assertThat(r.vm.requestSpin(spin)).isEqualTo(SpinOutcome.Failed)
+        r.api.onSpin = { ApiResult.Success(SpinWheelResponse(success = false, message = "paused")) }
+        assertThat(r.vm.requestSpin(spin)).isEqualTo(SpinOutcome.Failed)
+    }
+
+    @Test
+    fun aSpinAlreadyTakenShowsItsPrize() = runTest {
+        val r = Rig(this, rewardsOn)
+        val spin = toSpin(r)
+        r.api.onSpin = { ApiResult.Success(SpinWheelResponse(success = false, alreadySpun = true, reward = prize, rewardIndex = 1)) }
+        assertThat(r.vm.requestSpin(spin)).isEqualTo(SpinOutcome.Won(prize, 1))
+    }
+
+    @Test
+    fun rewardsOffStartsTheTwentySecondsWithTheCardAndGoesHome() = runTest {
+        val r = Rig(this)
+        r.acceptCode()
+        r.playToCard()
+        runCurrent()
+        assertThat(r.vm.autoReturnSeconds.value).isEqualTo(20)
+        advanceTimeBy(19_000)
+        runCurrent()
+        assertThat(r.vm.autoReturnSeconds.value).isEqualTo(1)
+        assertThat(r.vm.phase.value).isInstanceOf(GamePhase.GameOver::class.java)
+        advanceTimeBy(1_100)
+        runCurrent()
+        assertThat(r.vm.phase.value).isEqualTo(GamePhase.Startup)
+        assertThat(r.vm.autoReturnSeconds.value).isNull()
+        assertThat(r.api.feedback).isEmpty()
+    }
+
+    @Test
+    fun theTimerRunsOnAcrossCardAndFeedback() = runTest {
+        val r = Rig(this)
+        r.acceptCode()
+        r.playToCard()
+        runCurrent()
+        advanceTimeBy(5_000)
+        r.vm.onCardDone()
+        runCurrent()
+        assertThat(r.vm.phase.value).isInstanceOf(GamePhase.Feedback::class.java)
+        assertThat(r.vm.autoReturnSeconds.value).isEqualTo(15)
+    }
+
+    @Test
+    fun rewardsOnWaitsForTheWheelBeforeCounting() = runTest {
+        val r = Rig(this, rewardsOn)
+        toSpin(r)
+        advanceTimeBy(60_000)
+        runCurrent()
+        assertThat(r.vm.autoReturnSeconds.value).isNull()
+        assertThat(r.vm.phase.value).isInstanceOf(GamePhase.Spin::class.java)
+        r.vm.onSpinSettled()
+        runCurrent()
+        assertThat(r.vm.autoReturnSeconds.value).isEqualTo(20)
+        advanceTimeBy(20_100)
+        runCurrent()
+        assertThat(r.vm.phase.value).isEqualTo(GamePhase.Startup)
+    }
+
+    @Test
+    fun aTrialRoundNeverAutoReturns() = runTest {
+        val r = Rig(this)
+        r.acceptCode("8536")
+        r.playToCard()
+        r.vm.onCardDone()
+        r.vm.onSpinSettled()
+        advanceTimeBy(60_000)
+        runCurrent()
+        assertThat(r.vm.autoReturnSeconds.value).isNull()
+        assertThat(r.vm.phase.value).isInstanceOf(GamePhase.Feedback::class.java)
+    }
+
+    @Test
+    fun submittedFeedbackThanksThenSendsAndGoesHome() = runTest {
+        val r = Rig(this)
+        r.acceptCode()
+        r.playToCard()
+        r.vm.onCardDone()
+        runCurrent()
+        r.vm.submitFeedback(GameFeedback.Excellent)
+        runCurrent()
+        assertThat(r.vm.feedbackRecorded.value).isEqualTo(GameFeedback.Excellent)
+        assertThat(r.vm.autoReturnSeconds.value).isNull()
+        assertThat(r.vm.phase.value).isInstanceOf(GamePhase.Feedback::class.java)
+        advanceTimeBy(FEEDBACK_THANKS_MS + 1)
+        runCurrent()
+        assertThat(r.vm.phase.value).isEqualTo(GamePhase.Startup)
+        assertThat(r.vm.feedbackRecorded.value).isNull()
+        assertThat(r.api.feedback.single()).isEqualTo("server_session" to GameFeedback.Excellent)
+    }
+
+    @Test
+    fun feedbackSubmittedJustBeforeAPauseStillGoes() = runTest {
+        val r = Rig(this)
+        r.acceptCode()
+        r.playToCard()
+        r.vm.onCardDone()
+        runCurrent()
+        r.vm.submitFeedback(GameFeedback.Good)
+        r.vm.onInterrupted()
+        runCurrent()
+        assertThat(r.api.feedback.single().second).isEqualTo(GameFeedback.Good)
+        assertThat(r.vm.phase.value).isEqualTo(GamePhase.Startup)
+    }
+
+    @Test
+    fun exitSkipsTheRemainingStepsAndSendsNoFeedback() = runTest {
+        val r = Rig(this, rewardsOn)
+        r.acceptCode()
+        r.playToCard()
+        r.vm.exitToStart()
+        runCurrent()
+        assertThat(r.vm.phase.value).isEqualTo(GamePhase.Startup)
+        assertThat(r.api.feedback).isEmpty()
+        assertThat(r.api.abandoned).isEmpty()
+        assertThat(r.tracking.running).isFalse()
+    }
+
+    @Test
+    fun playAgainOnATrialRestartsWithoutTheCode() = runTest {
+        val r = Rig(this)
+        r.acceptCode("8536")
+        r.playToCard()
+        r.vm.onPlayAgain()
+        runCurrent()
+        assertThat(r.vm.phase.value).isEqualTo(GamePhase.Calibrating(ready = false))
+        assertThat(r.vm.round.value).isNotNull()
+        assertThat(r.tracking.running).isTrue()
+        assertThat(r.branding.advances).isEqualTo(1)
+        assertThat(r.api.totalCalls).isEqualTo(0)
+    }
+
+    @Test
+    fun playAgainOnARealRoundGoesHome() = runTest {
+        val r = Rig(this)
+        r.acceptCode()
+        r.playToCard()
+        r.vm.onPlayAgain()
+        runCurrent()
+        assertThat(r.vm.phase.value).isEqualTo(GamePhase.Startup)
+        assertThat(r.vm.round.value).isNull()
+    }
+
+    @Test
+    fun envelopeAndWheelSoundsReachTheAudio() = runTest {
+        val r = Rig(this)
+        r.vm.playEnvelopeChime()
+        r.vm.playSpinTick(0.5f)
+        r.vm.playVictoryChime()
+        runCurrent()
+        assertThat(r.audio.crackers).contains("FLOWER_POT")
+        assertThat(r.audio.ticks).containsExactly(0.5f)
+        assertThat(r.audio.victories).isEqualTo(1)
     }
 
     // ---- brief's tests ------------------------------------------------------------------------------------
@@ -422,7 +637,7 @@ class GameViewModelTest {
 
     @Test
     fun earnedRewardReachesTheCard() = runTest {
-        val r = Rig(this)
+        val r = Rig(this, rewardsOn) // with rewards off, the long settle below would outlast the card's auto-return
         val reward = EarnedReward(id = "r1", name = "Mug", description = "", imageUrl = "", couponCode = "C")
         r.api.onComplete = { req ->
             ApiResult.Success(

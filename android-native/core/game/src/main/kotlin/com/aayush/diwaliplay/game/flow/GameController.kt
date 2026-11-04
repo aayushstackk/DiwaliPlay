@@ -83,6 +83,10 @@ class GameController(
     /** A verified code starts a round (KioskStartupScreen onCodeVerified). Ignored unless in [GamePhase.Startup]. */
     fun onCodeAccepted(session: SessionInfo, settings: RoundSettings) = locked {
         if (_phase.value != GamePhase.Startup) return@locked
+        beginRound(session, settings)
+    }
+
+    private fun beginRound(session: SessionInfo, settings: RoundSettings) {
         this.session = session
         this.settings = settings
         sessionId = session.sessionId
@@ -91,6 +95,24 @@ class GameController(
         _hud.value = hudFor(director, settings.effectiveDurationSeconds)
         // Touch mode: "Skip calibration, go directly to countdown!"
         if (settings.isTouchMode) startCountdown(clock()) else _phase.value = GamePhase.Calibrating(ready = false)
+    }
+
+    /**
+     * "PLAY AGAIN" on the end-of-round screens (App.tsx handlePlayAgain). A trial round starts over with the same
+     * session and settings, without re-entering the code; any other round goes back to [GamePhase.Startup]. Its result
+     * is already in, so there's nothing to abandon. Ignored outside those screens.
+     */
+    fun onPlayAgain() = locked {
+        val p = _phase.value
+        if (p !is GamePhase.GameOver && p !is GamePhase.Spin && p !is GamePhase.Feedback) return@locked
+        val s = session
+        val round = settings
+        if (s != null && s.isTrial) {
+            clearRound()
+            beginRound(s, round)
+        } else {
+            resetToStartup()
+        }
     }
 
     /**
@@ -371,6 +393,12 @@ class GameController(
     }
 
     private fun resetToStartup() {
+        clearRound()
+        _hud.value = HudState()
+        _phase.value = GamePhase.Startup
+    }
+
+    private fun clearRound() {
         session = null
         settings = RoundSettings()
         sessionId = ""
@@ -383,8 +411,6 @@ class GameController(
         cameraLost = false
         photoRequested = false
         simResetPending = true
-        _hud.value = HudState()
-        _phase.value = GamePhase.Startup
     }
 
     // ---------------------------------------------------------------------------------------------

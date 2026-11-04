@@ -35,4 +35,12 @@ object Palette {
     val Rose950 = Color(0xFF4C0519)
     val Orange600 = Color(0xFFEA580C)
     val Teal300 = Color(0xFF5EEAD4)
+    val Purple200 = Color(0xFFE9D5FF)
+    val Purple400 = Color(0xFFC084FC)
+    val Purple500 = Color(0xFFA855F7)
+    val Teal500 = Color(0xFF14B8A6)
+    val Yellow500 = Color(0xFFEAB308)
+
+    /** GameOverModal's and PhotoCaptureModal's panel. */
+    val CardPanel = Color(0xFF0E0A1A)
 }

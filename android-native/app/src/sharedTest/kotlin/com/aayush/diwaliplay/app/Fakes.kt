@@ -50,7 +50,10 @@ class FakeGameApi : GameApi {
         )
     }
 
-    val totalCalls: Int get() = verified.size + started.size + completed.size + abandoned.size + feedback.size
+    val spins = CopyOnWriteArrayList<SpinWheelRequest>()
+    var onSpin: suspend (SpinWheelRequest) -> ApiResult<SpinWheelResponse> = { offline() }
+
+    val totalCalls: Int get() = verified.size + started.size + completed.size + abandoned.size + feedback.size + spins.size
 
     override suspend fun verifyCode(code: String): ApiResult<VerifyCodeResponse> {
         verified += code
@@ -81,7 +84,10 @@ class FakeGameApi : GameApi {
     override suspend fun getSettings(): ApiResult<SettingsResponse> = offline()
     override suspend fun getBombs(): ApiResult<ListBombsResponse> = offline()
     override suspend fun getRewards(): ApiResult<RewardsInfo> = offline()
-    override suspend fun spin(req: SpinWheelRequest): ApiResult<SpinWheelResponse> = offline()
+    override suspend fun spin(req: SpinWheelRequest): ApiResult<SpinWheelResponse> {
+        spins += req
+        return onSpin(req)
+    }
 }
 
 class FakeResultSink : ResultSink {
@@ -94,6 +100,8 @@ class FakeGameAudio : GameAudio {
     val played = CopyOnWriteArrayList<String>()
     val crackers = CopyOnWriteArrayList<String>()
     val applied = CopyOnWriteArrayList<GameAudioSettings>()
+    val ticks = CopyOnWriteArrayList<Float>()
+    @Volatile var victories = 0
     @Volatile var ready = true
     @Volatile var bgmOn = false
     @Volatile var released = false
@@ -102,6 +110,8 @@ class FakeGameAudio : GameAudio {
     override fun isReady(): Boolean = ready
     override fun playGameKey(key: String) { played += key }
     override fun playCracker(type: String) { crackers += type }
+    override fun playSpinTick(speedRatio: Float) { ticks += speedRatio }
+    override fun playVictoryChime() { victories++ }
     override fun startBgm() { bgmOn = true }
     override fun stopBgm() { bgmOn = false }
     override fun release() { released = true }

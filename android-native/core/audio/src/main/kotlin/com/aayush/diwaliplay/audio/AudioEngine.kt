@@ -163,9 +163,15 @@ class AudioEngine(context: Context, private val resolver: SoundResolver) {
     /** Cracker sound with the web's random pitch/volume jitter. [pan] -1..1. Low priority (MEGA_BLAST high). */
     fun playCracker(type: String, pan: Float = 0f): Int = play(resolver.cracker(type, snapshot.settings), pan)
 
-    fun playSpinTick(liveGain: Float = 0.5f): Int {
+    /** [rate] is playPreRenderedTick's pitch, which follows the wheel's speed. */
+    fun playSpinTick(liveGain: Float = 0.5f, rate: Float = 1f): Int {
         val (source, volume) = resolver.spinTick(liveGain)
-        return play(source, volume, 0f, 1f, ResolvedSound.PRIORITY_LOW)
+        return play(source, volume, 0f, rate, ResolvedSound.PRIORITY_LOW)
+    }
+
+    fun playVictoryChime(): Int {
+        val (source, volume) = resolver.victoryChime(snapshot.settings)
+        return play(source, volume)
     }
 
     fun startBgm() = onMain {

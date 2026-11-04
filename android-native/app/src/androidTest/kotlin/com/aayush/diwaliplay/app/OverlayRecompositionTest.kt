@@ -6,16 +6,30 @@ import androidx.compose.runtime.InternalComposeTracingApi
 import androidx.compose.runtime.CompositionTracer
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.aayush.diwaliplay.app.ui.CalibrationScreen
 import com.aayush.diwaliplay.app.ui.CountdownOverlay
 import com.aayush.diwaliplay.app.ui.HudOverlay
 import com.aayush.diwaliplay.app.ui.RoundHeader
+import com.aayush.diwaliplay.app.ui.GreetingCardScreen
+import com.aayush.diwaliplay.app.ui.PhotoCountdownScreen
+import com.aayush.diwaliplay.app.ui.SpinWheelScreen
 import com.aayush.diwaliplay.app.ui.StartScreen
+import com.aayush.diwaliplay.app.ui.Tags
 import com.aayush.diwaliplay.branding.BrandingState
+import com.aayush.diwaliplay.game.FormattedPersonalizedWish
+import com.aayush.diwaliplay.game.PlayerAchievement
+import com.aayush.diwaliplay.game.flow.GamePhase
 import com.aayush.diwaliplay.game.flow.HudState
+import com.aayush.diwaliplay.game.flow.RoundCard
+import com.aayush.diwaliplay.model.GameScoreState
+import com.aayush.diwaliplay.model.RewardItem
+import com.aayush.diwaliplay.tracking.camera.TrackingStatus
 import com.google.common.truth.Truth.assertThat
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlinx.coroutines.awaitCancellation
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -82,6 +96,48 @@ class OverlayRecompositionTest {
     @Test
     fun startScreen() = assertAnimatesWithoutRecomposing {
         StartScreen(StartUi(), BrandingState(isLoading = false), "https://kiosk.example/register", {}, {}, {}, {})
+    }
+
+    private fun roundCard() = RoundCard(
+        "Asha", GameScoreState(score = 4321), PlayerAchievement("*", "Rocket Ace", "Sky Blasting Reflector"),
+        FormattedPersonalizedWish("HAPPY DIWALI, Asha!", listOf("A line."), "Warm wishes,\nItsSpotlight"), null, null, null,
+    )
+
+    @Test
+    fun photoCountdown() = assertAnimatesWithoutRecomposing {
+        PhotoCountdownScreen(GamePhase.PhotoCountdown(5), "Asha", TrackingStatus.Running("CPU", 5.0, 30.0)) { null }
+    }
+
+    @Test
+    fun scoreCountUp() = assertAnimatesWithoutRecomposing {
+        GreetingCardScreen(roundCard(), "ItsSpotlight", true, false, null, emptyMap(), {}, { true }, {}, {})
+    }
+
+    @Test
+    fun wheelSpinning() {
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            SpinWheelScreen(
+                rewards = listOf(RewardItem(id = "a", name = "20% OFF"), RewardItem(id = "b", name = "Free Mug")),
+                isTrial = false,
+                autoReturnSeconds = null,
+                localFiles = emptyMap(),
+                requestSpin = { awaitCancellation() },
+                onTick = {},
+                onVictory = {},
+                onSettled = {},
+                onContinue = {},
+                onClose = {},
+            )
+        }
+        compose.mainClock.advanceTimeBy(100)
+        compose.onNodeWithTag(Tags.SPIN_BUTTON).performClick()
+        compose.mainClock.advanceTimeBy(100)
+        assertThat(composed).isNotEmpty()
+        composed.clear()
+
+        compose.mainClock.advanceTimeBy(2_000) // still cruising: the server hasn't answered
+        assertThat(composed).isEmpty()
     }
 
     /** The debug override of network_security_config. Release's has no domain-config at all. */

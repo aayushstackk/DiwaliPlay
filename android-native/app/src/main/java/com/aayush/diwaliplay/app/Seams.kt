@@ -59,6 +59,9 @@ interface GameAudio {
     fun isReady(): Boolean
     fun playGameKey(key: String)
     fun playCracker(type: String)
+    /** A peg passing the wheel's pointer, at [speedRatio] of cruising speed. */
+    fun playSpinTick(speedRatio: Float)
+    fun playVictoryChime()
     fun startBgm()
     fun stopBgm()
     fun release()
@@ -98,6 +101,10 @@ class EngineGameAudio(private val lazyEngine: Lazy<AudioEngine>, private val aud
     override fun playGameKey(key: String) { engine.playGameKey(key) }
 
     override fun playCracker(type: String) { engine.playCracker(type) }
+
+    override fun playSpinTick(speedRatio: Float) { engine.playSpinTick(spinTickGain(speedRatio), spinTickPitch(speedRatio)) }
+
+    override fun playVictoryChime() { engine.playVictoryChime() }
 
     override fun startBgm() {
         if (bgmWanted) return
