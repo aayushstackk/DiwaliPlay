@@ -3,6 +3,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 android {
@@ -17,6 +18,11 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    testOptions { unitTests.isIncludeAndroidResources = true }
+
+    // Reuse the real server response fixtures owned by core:model.
+    sourceSets.getByName("test").resources.srcDir("../model/src/test/resources")
 }
 
 kotlin {
@@ -24,6 +30,14 @@ kotlin {
 }
 
 dependencies {
-    implementation(project(":core:api"))
-    implementation(project(":core:model"))
+    api(project(":core:api"))
+    api(project(":core:model"))
+    api(libs.kotlinx.coroutines.core)
+    api(libs.okhttp)
+    implementation(libs.kotlinx.serialization.json)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.okhttp.mockwebserver)
+    testImplementation(libs.junit)
+    testImplementation(libs.truth)
+    testImplementation(libs.robolectric)
 }
