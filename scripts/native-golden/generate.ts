@@ -20,6 +20,7 @@ import {
 } from '../../src/utils/motionMath';
 import { recognizeHandGesture } from '../../src/utils/gestureRecognition';
 import { CrackerEngine } from '../../src/utils/crackerEngine';
+import { DEFAULT_BOMB_CONFIGS, DEFAULT_BOMB_SETTINGS } from '../../src/utils/bombDefaults';
 import type { GameScoreState, HandGesture, LandmarkPoint } from '../../src/types/motion';
 import type { AchievementTier } from '../../src/types/backend';
 
@@ -296,6 +297,10 @@ export const generators: Record<string, Generator> = {
       maxParticles: 700,
       scenarios: [1, 2, 3, 4, 5].flatMap((seed) => [false, true].map((lowEnd) => crackerScenario(seed, lowEnd))),
     }),
+  },
+  bomb_defaults: {
+    target: 'game',
+    run: () => ({ settings: DEFAULT_BOMB_SETTINGS, configs: DEFAULT_BOMB_CONFIGS }),
   },
   motion_math: {
     target: 'tracking',
