@@ -6,7 +6,7 @@
 import React from 'react';
 import { BombConfig } from '../types/backend';
 import { resolveAssetUrl } from '../utils/assetUrl';
-import { isAndroidDevice } from '../utils/device';
+import { isAndroidDevice, isLowEndHardware } from '../utils/device';
 
 interface CartoonBombSvgProps {
   bomb: Partial<BombConfig>;
@@ -15,6 +15,7 @@ interface CartoonBombSvgProps {
   isBursting?: boolean;
   rotation?: number; // tilt/spin in degrees
   className?: string;
+  isLowEnd?: boolean;
 }
 
 // Utility to lighten/darken hex colors for 3D gradient stops
@@ -31,13 +32,14 @@ function adjustHex(hex: string, percent: number): string {
   return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
 }
 
-export const CartoonBombSvg: React.FC<CartoonBombSvgProps> = ({
+const CartoonBombSvgComponent: React.FC<CartoonBombSvgProps> = ({
   bomb,
   size = 96,
   showBadge = true,
   isBursting = false,
   rotation = 0,
-  className = ''
+  className = '',
+  isLowEnd: propIsLowEnd,
 }) => {
   const points = bomb.points ?? 100;
   const isPenalty = points < 0;
@@ -80,7 +82,7 @@ export const CartoonBombSvg: React.FC<CartoonBombSvgProps> = ({
     badgeShadow = 'rgba(59, 130, 246, 0.5)';
   }
 
-  const isAndroid = isAndroidDevice();
+  const isLowEnd = propIsLowEnd ?? (isAndroidDevice() || isLowEndHardware());
 
   return (
     <div
@@ -92,7 +94,7 @@ export const CartoonBombSvg: React.FC<CartoonBombSvgProps> = ({
         height: size,
         transform: rotation ? `rotate(${rotation}deg)` : undefined,
         transformOrigin: '50% 55%',
-        filter: isAndroid
+        filter: isLowEnd
           ? undefined
           : isPenalty
           ? 'drop-shadow(0 10px 18px rgba(239, 68, 68, 0.25))'
@@ -194,7 +196,7 @@ export const CartoonBombSvg: React.FC<CartoonBombSvgProps> = ({
           fill={`url(#${collarGradId})`}
           stroke="#451A03"
           strokeWidth="0.8"
-          filter={`url(#${badgeShadowId})`}
+          filter={isLowEnd ? undefined : `url(#${badgeShadowId})`}
         />
         {/* Top Rim Lip */}
         <ellipse cx="50" cy="15" rx="6.5" ry="1.8" fill="#FEF08A" />
@@ -495,7 +497,7 @@ export const CartoonBombSvg: React.FC<CartoonBombSvgProps> = ({
             borderColor: badgeBorder,
             color: '#FFFFFF',
             fontSize: Math.max(10, Math.round(size * 0.14)),
-            boxShadow: isAndroid
+            boxShadow: isLowEnd
               ? undefined
               : `0 4px 14px ${badgeShadow}, inset 0 1px 0 rgba(255, 255, 255, 0.45)`,
             textShadow: '0 1px 2px rgba(0, 0, 0, 0.8)',
@@ -507,3 +509,5 @@ export const CartoonBombSvg: React.FC<CartoonBombSvgProps> = ({
     </div>
   );
 };
+
+export const CartoonBombSvg = React.memo(CartoonBombSvgComponent);
