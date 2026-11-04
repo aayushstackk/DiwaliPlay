@@ -7,6 +7,7 @@ import com.aayush.diwaliplay.game.cracker.CrackerSim
 import com.aayush.diwaliplay.game.cracker.Palettes
 import com.aayush.diwaliplay.game.play.PlayDirector
 import com.aayush.diwaliplay.game.play.PlayEvent
+import com.aayush.diwaliplay.model.EarnedReward
 import com.aayush.diwaliplay.model.GameFeedback
 import com.aayush.diwaliplay.model.Point2D
 import com.aayush.diwaliplay.model.RewardItem
@@ -67,6 +68,7 @@ class GameController(
 
     private var sessionStarted = false
     private var completed = false
+    private var completedSessionId = ""
     private var cameraLost = false
     private var simResetPending = false
 
@@ -91,10 +93,25 @@ class GameController(
         if (settings.isTouchMode) startCountdown(clock()) else _phase.value = GamePhase.Calibrating(ready = false)
     }
 
-    /** The server's id from `startSession` (App.tsx sets activeSessionIdRef from the response). */
-    fun onSessionStarted(sessionId: String) = locked {
+    /**
+     * The server's id from `startSession(code)` (App.tsx sets activeSessionIdRef from the response). Keyed by
+     * [code]: ignored unless this round has issued startSession for the same code, so a late response from an
+     * interrupted earlier round can't overwrite the current round's id.
+     */
+    fun onSessionStarted(code: String, sessionId: String) = locked {
         val s = session ?: return@locked
-        if (!s.isTrial && sessionId.isNotBlank()) this.sessionId = sessionId
+        if (!s.isTrial && sessionStarted && code == s.code && sessionId.isNotBlank()) this.sessionId = sessionId
+    }
+
+    /**
+     * The completeSession response's `session.earnedReward` (App.tsx setEarnedReward). Keyed by [sessionId] (the
+     * id the request was sent with); applied to the card only while that round's [GamePhase.GameOver] is showing.
+     */
+    fun onRoundCompleted(sessionId: String, earnedReward: EarnedReward?) = locked {
+        val p = _phase.value as? GamePhase.GameOver ?: return@locked
+        if (completed && sessionId == completedSessionId && earnedReward != null) {
+            _phase.value = GamePhase.GameOver(p.card.withEarnedReward(earnedReward))
+        }
     }
 
     /** Touch-mode tap in 1920x1080 space; applied to the bombs on the next [onFrame]. */
@@ -126,16 +143,23 @@ class GameController(
         if (_phase.value is GamePhase.PhotoCountdown) finishRound(jpeg)
     }
 
-    /** The greeting card was dismissed: on to the wheel when rewards are on and the session isn't a trial. */
+    /**
+     * The greeting card was dismissed: on to the wheel when rewards are on (trial sessions spin too, as the web's
+     * master/test-mode wheel), else straight to feedback.
+     */
     fun onCardDone() = locked {
         if (_phase.value !is GamePhase.GameOver) return@locked
-        val trial = session?.isTrial ?: true
-        _phase.value = if (settings.rewardsEnabled && !trial) GamePhase.Spin else GamePhase.Feedback(null)
+        val s = session ?: return@locked
+        _phase.value = if (settings.rewardsEnabled) {
+            GamePhase.Spin(sessionId = sessionId, playerName = s.userName, mobileNumber = s.mobileNumber)
+        } else {
+            GamePhase.Feedback(null)
+        }
     }
 
     /** The wheel finished ([reward] null when none/failed). */
     fun onSpinDone(reward: RewardItem?) = locked {
-        if (_phase.value == GamePhase.Spin) _phase.value = GamePhase.Feedback(reward)
+        if (_phase.value is GamePhase.Spin) _phase.value = GamePhase.Feedback(reward)
     }
 
     /** Feedback chosen (null = skipped / auto-return); submits it unless trial, then resets to [GamePhase.Startup]. */
@@ -269,7 +293,8 @@ class GameController(
         for (hit in sim.drainHits()) {
             sound(FlowSoundKeys.bombBurst(hit.config))
             director.recordBombHit(hit.points, hit.isPenalty, now)
-            crackers.createBombBurst(hit.x, hit.y, parseBombColor(hit.config.color), hit.isPenalty)
+            // web triggerBombBurstParticles(x, y, color) never passes isPenalty: penalty bombs burst the same way
+            crackers.createBombBurst(hit.x, hit.y, parseBombColor(hit.config.color))
             handlePlayEvents()
         }
         _hud.value = hudFor(director, ceil(leftSec).toInt())
@@ -334,6 +359,7 @@ class GameController(
     private fun finishRound(jpeg: ByteArray?) {
         if (completed) return
         completed = true
+        completedSessionId = sessionId
         val s = session ?: return
         val score = director.score
         sound(FlowSoundKeys.GAME_OVER)
@@ -353,6 +379,7 @@ class GameController(
         touchCount = 0
         sessionStarted = false
         completed = false
+        completedSessionId = ""
         cameraLost = false
         photoRequested = false
         simResetPending = true

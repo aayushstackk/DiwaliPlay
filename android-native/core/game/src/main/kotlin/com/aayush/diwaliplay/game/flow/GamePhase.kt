@@ -37,8 +37,12 @@ sealed interface GamePhase {
     /** Greeting card. Leave with [GameController.onCardDone]. */
     data class GameOver(val card: RoundCard) : GamePhase
 
-    /** Spin wheel (rewards enabled and not a trial session). Leave with [GameController.onSpinDone]. */
-    data object Spin : GamePhase
+    /**
+     * Spin wheel (rewards enabled; trial sessions included, as the web's test-mode wheel). Carries what
+     * SpinWheelRequest needs: the current (server-updated) [sessionId], [playerName] and [mobileNumber].
+     * Leave with [GameController.onSpinDone].
+     */
+    data class Spin(val sessionId: String, val playerName: String, val mobileNumber: String?) : GamePhase
 
     /** Feedback step; [reward] is what the wheel gave, if anything. Leave with [GameController.onFeedback]. */
     data class Feedback(val reward: RewardItem?) : GamePhase

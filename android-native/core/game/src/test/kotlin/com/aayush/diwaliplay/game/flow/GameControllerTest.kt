@@ -3,6 +3,7 @@ package com.aayush.diwaliplay.game.flow
 import com.aayush.diwaliplay.game.Mulberry32
 import com.aayush.diwaliplay.game.bomb.DEFAULT_BOMB_CONFIGS
 import com.aayush.diwaliplay.game.calculateAchievement
+import com.aayush.diwaliplay.model.EarnedReward
 import com.aayush.diwaliplay.model.GameFeedback
 import com.aayush.diwaliplay.model.GameScoreState
 import com.aayush.diwaliplay.model.HandGesture
@@ -47,7 +48,7 @@ class GameControllerTest {
     private val fx = FakeEffects()
     private val c = GameController(clock = { now }, random = Mulberry32(11), effects = fx)
 
-    private val session = SessionInfo(sessionId = "sess_1", code = "1234", userName = "Asha", isTrial = false)
+    private val session = SessionInfo(sessionId = "sess_1", code = "1234", userName = "Asha", isTrial = false, mobileNumber = "9876543210")
     private val trial = SessionInfo(sessionId = "trial_session_8536", code = "8536", userName = "Trial Player", isTrial = true)
     private val camera = RoundSettings(gameDurationSeconds = 35, gameplayMode = "camera", targetScore = null, rewardsEnabled = true, tiers = null)
     private val touch = camera.copy(gameplayMode = "touch")
@@ -134,7 +135,7 @@ class GameControllerTest {
         assertThat(fx.completes[0].photoData).isEqualTo("data:image/jpeg;base64,AQID")
 
         c.onCardDone()
-        assertThat(c.phase.value).isEqualTo(GamePhase.Spin)
+        assertThat(c.phase.value).isEqualTo(GamePhase.Spin(sessionId = "sess_1", playerName = "Asha", mobileNumber = "9876543210"))
         c.onSpinDone(null)
         assertThat(c.phase.value).isEqualTo(GamePhase.Feedback(null))
         c.onFeedback(GameFeedback.Excellent)
@@ -167,7 +168,10 @@ class GameControllerTest {
         c.onPhotoCaptured(null)
         assertThat(c.phase.value).isInstanceOf(GamePhase.GameOver::class.java)
         c.onCardDone()
-        // Offline trial: no spin step even though rewards are enabled.
+        // Trial/master sessions still get the (test-mode) wheel: GameOverModal isMasterSession, App.tsx isTestMode.
+        // The spin request is the screen's job and is not one of the forbidden GameEffects calls.
+        assertThat(c.phase.value).isEqualTo(GamePhase.Spin("trial_session_8536", "Trial Player", null))
+        c.onSpinDone(null)
         assertThat(c.phase.value).isEqualTo(GamePhase.Feedback(null))
         c.onFeedback(GameFeedback.Good)
         assertThat(c.phase.value).isEqualTo(GamePhase.Startup)
@@ -290,10 +294,64 @@ class GameControllerTest {
     fun sessionIdFromStartSessionIsUsedForCompletion() {
         // App.tsx: activeSessionIdRef = res.session.id after startSession resolves.
         toPlaying(session.copy(sessionId = ""))
-        c.onSessionStarted("sess_new")
+        c.onSessionStarted("1234", "sess_new")
         run(40_000.0)
         c.onPhotoCaptured(null)
         assertThat(fx.completes.single().sessionId).isEqualTo("sess_new")
+        c.onCardDone()
+        // The wheel gets the server-updated id.
+        assertThat((c.phase.value as GamePhase.Spin).sessionId).isEqualTo("sess_new")
+    }
+
+    @Test
+    fun lateSessionStartFromPreviousRoundIsIgnored() {
+        // Round 1 (code 1111) is interrupted while its startSession is still in flight (Render cold start).
+        toPlaying(session.copy(sessionId = "sess_1", code = "1111"))
+        c.onInterrupted()
+        // Round 2: a late response for round 1 arrives before and after round 2's own startSession.
+        c.onCodeAccepted(session.copy(sessionId = "sess_2", code = "2222"), camera)
+        c.onSessionStarted("1111", "sess_old")
+        c.onFrame(0.016, noHand, noHand, calibrated = true); run(350.0); run(3400.0)
+        assertThat(c.phase.value).isEqualTo(GamePhase.Playing)
+        c.onSessionStarted("1111", "sess_old")
+        run(40_000.0)
+        c.onPhotoCaptured(null)
+        assertThat(fx.completes.single().sessionId).isEqualTo("sess_2")
+    }
+
+    @Test
+    fun earnedRewardFromCompletionIsMergedIntoTheCard() {
+        toPlaying()
+        run(40_000.0)
+        c.onPhotoCaptured(null)
+        val reward = EarnedReward(id = "r1", name = "Sweets", description = "", imageUrl = "", couponCode = "DIWALI")
+        c.onRoundCompleted("other_session", reward) // not this round: ignored
+        assertThat((c.phase.value as GamePhase.GameOver).card.earnedReward).isNull()
+        c.onRoundCompleted("sess_1", reward)
+        assertThat((c.phase.value as GamePhase.GameOver).card.earnedReward).isEqualTo(reward)
+        c.onCardDone()
+        c.onRoundCompleted("sess_1", reward) // card no longer shown: ignored, no crash
+        assertThat(c.phase.value).isInstanceOf(GamePhase.Spin::class.java)
+    }
+
+    @Test
+    fun penaltyBombBurstsLikeARewardBomb() {
+        // App.tsx onTriggerParticles → triggerBombBurstParticles(x, y, color) → createBombBurst(x, y, color):
+        // isPenalty is never passed, so a penalty bomb gets the normal burst: ring in the bomb's own colour
+        // (not the penalty red) and 36 sparks + 10 embers = 46 particles (penalty path would be 32 + 10 = 42).
+        val black = DEFAULT_BOMB_CONFIGS[3]
+        assertThat(black.points).isLessThan(0)
+        toPlaying(settings = touch.copy(bombConfigs = listOf(black)))
+        val bomb = findTouchableBomb()
+        assertThat(c.crackers.activeCount).isEqualTo(0) // touch mode: no hand sparkles
+        c.onTouch(bomb.first, bomb.second)
+        run(16.0)
+        assertThat(fx.sounds.last()).isEqualTo(FlowSoundKeys.bombBurst(black))
+        assertThat(c.crackers.activeCount).isEqualTo(46)
+        val ringColors = c.crackers.rings.filter { it.active }.map { it.color }
+        assertThat(ringColors).contains(0xFF1E293B.toInt())
+        assertThat(ringColors).doesNotContain(0xFFEF4444.toInt())
+        assertThat(c.hud.value.score).isEqualTo(0) // max(0, 0 - 150)
     }
 
     @Test

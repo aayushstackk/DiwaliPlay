@@ -9,11 +9,16 @@ import com.aayush.diwaliplay.model.GameFeedback
  * thread drove the transition (the render thread for timed ones, e.g. [playSound], [startSession],
  * [requestPhoto]), so implementations must not block: post network and audio work to their own executor.
  * Implementations may call back into the controller (e.g. [GameController.onSessionStarted]).
+ *
+ * Ordering: the caller (Task 18's implementation) must run every effect on one single-threaded executor, so
+ * calls execute in the order the controller issued them (startSession before completeSession before
+ * submitFeedback, countdown sounds in sequence), whichever thread issued them.
  */
 interface GameEffects {
-    /** `POST /api/session/start`; report the returned id with [GameController.onSessionStarted]. */
+    /** `POST /api/session/start`; report the returned id with [GameController.onSessionStarted] (same code). */
     fun startSession(code: String)
 
+    /** Report the response's `session.earnedReward` with [GameController.onRoundCompleted] (req.sessionId). */
     fun completeSession(req: CompleteSessionRequest)
 
     fun abandonSession(sessionId: String, reason: String)

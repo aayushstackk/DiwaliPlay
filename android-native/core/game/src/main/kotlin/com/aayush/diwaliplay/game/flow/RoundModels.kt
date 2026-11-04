@@ -11,10 +11,20 @@ import com.aayush.diwaliplay.game.bomb.DEFAULT_BOMB_SETTINGS
 import com.aayush.diwaliplay.model.AchievementTier
 import com.aayush.diwaliplay.model.BombConfig
 import com.aayush.diwaliplay.model.BombGameSettings
+import com.aayush.diwaliplay.model.EarnedReward
 import com.aayush.diwaliplay.model.GameScoreState
 
-/** The verified code's session (Ruling P5). Trial sessions never reach the server. */
-data class SessionInfo(val sessionId: String, val code: String, val userName: String, val isTrial: Boolean)
+/**
+ * The verified code's session (Ruling P5). Trial sessions never reach the server through [GameEffects].
+ * [mobileNumber] is the user's number for SpinWheelRequest (web passes currentUser.mobileNumber).
+ */
+data class SessionInfo(
+    val sessionId: String,
+    val code: String,
+    val userName: String,
+    val isTrial: Boolean,
+    val mobileNumber: String? = null,
+)
 
 /**
  * Per-round settings, read once at [GameController.onCodeAccepted] (the web fetches settings between rounds).
@@ -45,6 +55,7 @@ data class RoundSettings(
  * Everything the greeting card needs (GameOverModal props). Identity equality: [photoJpeg] is an array.
  *
  * @param targetAchieved null when no target score is set.
+ * @param earnedReward from the completeSession response, set via [GameController.onRoundCompleted].
  */
 class RoundCard(
     val playerName: String,
@@ -54,7 +65,11 @@ class RoundCard(
     val photoJpeg: ByteArray?,
     val targetScore: Int?,
     val targetAchieved: Boolean?,
-)
+    val earnedReward: EarnedReward? = null,
+) {
+    fun withEarnedReward(reward: EarnedReward?): RoundCard =
+        RoundCard(playerName, score, achievement, wish, photoJpeg, targetScore, targetAchieved, reward)
+}
 
 /**
  * GameOverModal's card data: achievement via calculateAchievement (with combosAwarded / crackersBurst, which
