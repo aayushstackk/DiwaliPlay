@@ -118,8 +118,8 @@ class BombSimTest {
     @Test fun bombFollowsBallisticArcWithDoubleGravity() = apexCheck(2.9)
 
     /** Runs ConstRandom sim until a bomb has flown >100ms (scale >= .8). */
-    private fun armed(configs: List<BombConfig>): Triple<BombSim, Clock, BombSlotView> {
-        val sim = BombSim(configs, settings(conc = 1, burst = 1), ConstRandom(0.5))
+    private fun armed(configs: List<BombConfig>, touch: Boolean = true): Triple<BombSim, Clock, BombSlotView> {
+        val sim = BombSim(configs, settings(conc = 1, burst = 1), ConstRandom(0.5)).also { it.touchMode = touch }
         val c = Clock()
         var b: BombSlotView? = null
         repeat(20) { sim.tick(c); b = sim.firstActive() }
@@ -128,7 +128,7 @@ class BombSimTest {
 
     @Test
     fun handInsideRadiusBurstsOnce() {
-        val (sim, c, b) = armed(listOf(cfg("a", 100)))
+        val (sim, c, b) = armed(listOf(cfg("a", 100)), touch = false)
         val hand = listOf(Point2D(b.x, b.y))
         repeat(30) { sim.tick(c, hand) }
         val hits = sim.drainHits()
@@ -142,10 +142,37 @@ class BombSimTest {
 
     @Test
     fun handOutsideRadiusDoesNotBurst() {
-        val (sim, c, b) = armed(listOf(cfg("a")))
-        // pad = radius 52 + hand 42 = 94; bomb moves ~33px/frame so stay > 150 px away horizontally.
+        val (sim, c, b) = armed(listOf(cfg("a")), touch = false)
+        // pad = radius 52 + hand 46 = 94; bomb moves ~33px/frame so stay > 150 px away horizontally.
         repeat(5) { sim.tick(c, listOf(Point2D(b.x + 400.0, b.y))) }
         assertThat(sim.drainHits()).isEmpty()
+    }
+
+    @Test
+    fun handHitRadiusIs46() {
+        // Mid mortar -> vx = 0, so the bomb's swept segment is vertical at x. Hand at the segment start, offset
+        // horizontally: hit iff offset <= pad = 52 (bomb) + 46 (hand) = 98. 97 hits only with 46 (42 would give 94).
+        val (sim, c, b) = armed(listOf(cfg("a")), touch = false)
+        val bombX = b.x
+        // vx = 0 (mid mortar), so x is constant; hand y on the bomb's next position segment.
+        sim.tick(c, listOf(Point2D(bombX + 97.0, b.y)))
+        assertThat(sim.drainHits()).hasSize(1)
+        val (sim2, c2, b2) = armed(listOf(cfg("a")), touch = false)
+        sim2.tick(c2, listOf(Point2D(b2.x + 99.0, b2.y)))
+        assertThat(sim2.drainHits()).isEmpty()
+    }
+
+    @Test
+    fun touchIgnoredOutsideTouchMode() {
+        val (sim, c, b) = armed(listOf(cfg("a")), touch = false)
+        sim.touch(b.x, b.y, c.nowMs)
+        assertThat(sim.drainHits()).isEmpty()
+    }
+
+    @Test
+    fun mortarAnglesMatchWeb() {
+        val sim = BombSim(listOf(cfg("a")), settings(), Mulberry32(1))
+        assertThat((0 until sim.mortarCount).map { sim.mortarAngleDeg(it) }).containsExactly(14.0, 7.0, 0.0, -7.0, -14.0).inOrder()
     }
 
     @Test

@@ -71,6 +71,8 @@ internal class BombSlot(defaultConfig: BombConfig) : BombSlotView {
     override var launchMs = 0.0
     override var burstStartMs = 0.0
     @JvmField var lastTrailMs = 0.0
+    /** Opaque ARGB of `config.color`, parsed once per launch. */
+    @JvmField var colorArgb = 0
 }
 
 internal class BombParticle : BombParticleView {

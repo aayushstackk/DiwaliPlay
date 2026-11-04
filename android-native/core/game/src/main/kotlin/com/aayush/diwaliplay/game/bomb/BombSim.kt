@@ -19,6 +19,9 @@ private const val MAX_SCORE_POPUPS = 8
 private const val MAX_PENDING_SHOTS = 8
 private const val BASE_GRAVITY = 2600.0
 
+/** Web flame touch-point radius, used while a hand is tracked (42 is only the no-flame fallback). */
+private const val HAND_HIT_RADIUS = 46.0
+
 private const val COLOR_SPARK_FALLBACK = 0xFFFDE047.toInt()
 private const val COLOR_WHITE = 0xFFFFFFFF.toInt()
 private const val COLOR_MUZZLE = 0xFFF59E0B.toInt()
@@ -26,12 +29,16 @@ private const val COLOR_SMOKE = 0xFFE2E8F0.toInt()
 
 /** Web `INITIAL_MORTARS.pctX`: the five launch tubes along the bottom edge. */
 private val MORTAR_PCT_X = doubleArrayOf(0.16, 0.33, 0.5, 0.67, 0.84)
+private val MORTAR_ANGLE_DEG = doubleArrayOf(14.0, 7.0, 0.0, -7.0, -14.0)
 
 /**
  * Logic-only port of `src/components/BombGameOverlay.tsx`: spawner, pending burst shots, launch, flight physics,
  * swept collision against hand points and touches, bursting state, canvas effects and score popups. DOM and
  * canvas drawing stay in the renderer, which reads [bombs], [effects] and [popups]. Allocation-free in
  * [step] except at a burst (score popup text, hit record) and on [drainHits].
+ *
+ * Not thread-safe: [step], [touch], [drainHits] and [reset] must be called from the same thread (GameController
+ * confines them); the renderer only reads the views.
  *
  * Hand positions are tracked palm pixels (1920x1080); the web's smoothed flame position is visual only.
  * The web's low-end tweaks (fewer embers/smoke) are not ported: embers 14 and smoke 5 always.
@@ -85,6 +92,8 @@ class BombSim(
 
     val mortarCount: Int get() = MORTAR_PCT_X.size
     fun mortarPctX(index: Int): Double = MORTAR_PCT_X[index]
+    /** Tube tilt in degrees (web INITIAL_MORTARS angleDeg: 14, 7, 0, -7, -14). */
+    fun mortarAngleDeg(index: Int): Double = MORTAR_ANGLE_DEG[index]
     /** Time of the mortar's last shot (0 = never); drives the renderer's recoil animation. */
     fun mortarLastFiredMs(index: Int): Double = mortarLastFired[index]
 
@@ -110,6 +119,7 @@ class BombSim(
 
     /** Direct touch/mouse hit test (web `tryBurstBombAt`): first live bomb within max(20, 1.25*radius). */
     fun touch(x: Double, y: Double, nowMs: Double) {
+        if (!touchMode) return  // web only reacts to pointer input in touch mode
         for (i in slots.indices) {
             val b = slots[i]
             if (!b.active || b.isBursting || b.scale < 0.5) continue
@@ -124,8 +134,9 @@ class BombSim(
     }
 
     /**
-     * One animation frame. [hands] are palm pixel positions (at most the first two are used); positions with
-     * x or y <= 0 are ignored like the web's `pixelX > 0 && pixelY > 0` check.
+     * One animation frame. [hands] are palm pixel positions of *detected* hands only (at most the first two are
+     * used). Omit undetected hands, or pass non-positive coordinates: x or y <= 0 is ignored like the web's
+     * `pixelX > 0 && pixelY > 0` check.
      */
     fun step(dtSeconds: Double, nowMs: Double, hands: List<Point2D>) {
         // Web: Math.max(0.001, Math.min(rawDt, 0.05)); NaN would poison the physics, so treat it as the minimum.
@@ -156,13 +167,13 @@ class BombSim(
             if (nowMs - lastSpawnMs >= effectiveDelay) scheduleBurst(nowMs)
         }
 
-        // 3. Collision points: hand palms (radius 42), none in touch mode.
+        // 3. Collision points: tracked hands (web flame radius 46; the 42 palm fallback only applies when no flame), none in touch mode.
         var touchCount = 0
         if (!touchMode) {
             for (i in 0 until min(2, hands.size)) {
                 val h = hands[i]
                 if (h.x > 0 && h.y > 0) {
-                    touchX[touchCount] = h.x; touchY[touchCount] = h.y; touchR[touchCount] = 42.0
+                    touchX[touchCount] = h.x; touchY[touchCount] = h.y; touchR[touchCount] = HAND_HIT_RADIUS
                     touchCount++
                 }
             }
@@ -194,7 +205,7 @@ class BombSim(
 
             if (bomb.vy < 0 && (bomb.lastTrailMs == 0.0 || nowMs - bomb.lastTrailMs >= 35)) {
                 bomb.lastTrailMs = nowMs
-                spawnAscentSpark(bomb.x, bomb.y + bomb.radius * 0.7, parseColor(bomb.config.color), nowMs)
+                spawnAscentSpark(bomb.x, bomb.y + bomb.radius * 0.7, bomb.colorArgb, nowMs)
             }
 
             if (bomb.x < bomb.radius + 15) {
@@ -355,6 +366,7 @@ class BombSim(
 
         bomb.active = true
         bomb.config = config
+        bomb.colorArgb = parseColor(config.color)  // once per launch, reused by sparks and burst
         bomb.x = originX; bomb.y = originY; bomb.prevX = originX; bomb.prevY = originY
         bomb.vx = baseVx + shot.vxAngleOffset
         bomb.vy = vy0
@@ -377,7 +389,7 @@ class BombSim(
         val cfg = bomb.config
         val isPenalty = cfg.points < 0
         hits.add(BombHit(cfg, bomb.x, bomb.y, isPenalty, cfg.points))
-        spawnExplosion(bomb.x, bomb.y, parseColor(cfg.color), now)
+        spawnExplosion(bomb.x, bomb.y, bomb.colorArgb, now)
 
         // Web: points > 0 ? `+${points}` : `${points} ${isPenalty ? 'OUCH!' : ''}` (trailing space when 0 kept).
         val text = if (cfg.points > 0) "+${cfg.points}" else "${cfg.points} ${if (isPenalty) "OUCH!" else ""}"
@@ -461,12 +473,15 @@ class BombSim(
     private fun orDefault(v: Int, fallback: Int) = if (v == 0) fallback else v
     private fun orDefault(v: Double?, fallback: Double) = if (v == null) fallback else orDefault(v, fallback)
 
-    /** `#RRGGBB` / `#RGB` to opaque ARGB; anything else falls back to the spark yellow. */
+    /**
+     * `#RRGGBB`, `#RGB` or `#RRGGBBAA` (alpha ignored) to opaque ARGB. Other CSS colour forms (names, rgb(),
+     * hsl()) fall back to the spark yellow.
+     */
     private fun parseColor(hex: String): Int {
         val h = hex.removePrefix("#")
         val full = if (h.length == 3) "" + h[0] + h[0] + h[1] + h[1] + h[2] + h[2] else h
-        if (full.length != 6) return COLOR_SPARK_FALLBACK
-        val v = full.toLongOrNull(16) ?: return COLOR_SPARK_FALLBACK
+        if (full.length != 6 && full.length != 8) return COLOR_SPARK_FALLBACK
+        val v = full.substring(0, 6).toLongOrNull(16) ?: return COLOR_SPARK_FALLBACK
         return (0xFF000000L or v).toInt()
     }
 
