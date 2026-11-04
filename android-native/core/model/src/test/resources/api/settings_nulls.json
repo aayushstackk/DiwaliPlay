@@ -1,0 +1,36 @@
+{
+  "success": true,
+  "futureField": 1,
+  "settings": {
+    "allowMultiplePlaysPerUser": null,
+    "codeExpirySeconds": null,
+    "gameDurationSeconds": null,
+    "gameplayMode": null,
+    "brandName": null,
+    "brandLogoUrl": null,
+    "brandingDisplayMode": null,
+    "wallpaperUrl": null,
+    "experienceTitle": null,
+    "connectorText": null,
+    "logoWidth": null,
+    "logoHeight": null,
+    "logoPosition": null,
+    "wallpaperOpacity": null,
+    "wallpaperEnabled": null,
+    "targetScoreEnabled": null,
+    "targetScore": null,
+    "rewardsEnabled": null,
+    "audioSettings": {
+      "activePresetId": null,
+      "masterVolume": null,
+      "isMuted": null,
+      "bgm": {"activeTrackId": "none", "activeTrackUrl": null, "volume": 10, "isMuted": null, "loop": null, "futureNested": {"a": 1}},
+      "combo": null,
+      "countdown": null,
+      "sfx": null,
+      "presets": null
+    },
+    "achievementTiers": null,
+    "futureField": 1
+  }
+}
