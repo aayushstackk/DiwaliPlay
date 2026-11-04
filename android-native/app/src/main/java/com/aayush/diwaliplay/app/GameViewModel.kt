@@ -1,0 +1,360 @@
+package com.aayush.diwaliplay.app
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.aayush.diwaliplay.api.ApiResult
+import com.aayush.diwaliplay.api.UndecodableResponseException
+import com.aayush.diwaliplay.audio.defaultAudioSettings
+import com.aayush.diwaliplay.branding.BrandingState
+import com.aayush.diwaliplay.game.GameRandom
+import com.aayush.diwaliplay.game.SystemRandom
+import com.aayush.diwaliplay.game.bomb.BombSim
+import com.aayush.diwaliplay.game.flow.GameController
+import com.aayush.diwaliplay.game.flow.GamePhase
+import com.aayush.diwaliplay.game.flow.HudState
+import com.aayush.diwaliplay.game.flow.RoundSettings
+import com.aayush.diwaliplay.game.flow.SessionInfo
+import com.aayush.diwaliplay.model.DiwaliJson
+import com.aayush.diwaliplay.model.GameFeedback
+import com.aayush.diwaliplay.model.RewardItem
+import com.aayush.diwaliplay.model.User
+import com.aayush.diwaliplay.model.VerifyCodeResponse
+import com.aayush.diwaliplay.tracking.camera.TrackingStatus
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
+import kotlin.random.Random
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+
+/** The code the web treats as a trial (`TRIAL_CODE`): handled here with no network and nothing persisted. */
+internal const val TRIAL_CODE = "8536"
+internal const val TRIAL_SESSION_ID = "trial_session_8536"
+private val TRIAL_USER = User(id = "trial_user_8536", name = "Trial Player", mobileNumber = "0000000000")
+
+internal const val CANT_REACH_SERVER_MESSAGE = "Can't reach the server — try again"
+internal const val SERVER_ERROR_MESSAGE = "The server had a problem — try again"
+private const val INVALID_CODE_MESSAGE = "Invalid 4-digit code"
+
+private const val CODE_LENGTH = 4
+
+/** KioskStartupScreen: "Welcome, name! Starting..." stays up this long. */
+private const val WELCOME_MS = 800L
+private const val AUDIO_READY_TIMEOUT_MS = 2_000L
+private const val AUDIO_READY_POLL_MS = 50L
+
+data class StartUi(
+    val code: String = "",
+    val busy: Boolean = false,
+    val error: String? = null,
+    val serverReachable: Boolean = false,
+    /** Set once a code is accepted, while the welcome shows. */
+    val welcomeName: String? = null,
+)
+
+/** What the calibration screen shows, from [GameViewModel.sampleCalibration]. */
+data class CalibrationUi(val leftActive: Boolean = false, val rightActive: Boolean = false, val holdProgress: Double = 0.0)
+
+/**
+ * Owns the round: [GameController], its [GameEffects], and the resources that follow the phase (camera, music,
+ * branding polling, audio loading).
+ *
+ * Threads:
+ * - main: the keypad, [onInterrupted], the phase/status collectors and the pipeline's start/stop.
+ * - render thread: [frameStepper] only.
+ * - effects thread: every [com.aayush.diwaliplay.game.flow.GameEffects] call, and `AudioEngine.apply`, so a `play`
+ *   never waits on a load. The render thread never touches audio.
+ */
+class GameViewModel(
+    private val deps: AppDependencies,
+    scopeOverride: CoroutineScope? = null,
+    effectsDispatcher: CoroutineDispatcher? = null,
+    private val clock: RoundClock = RoundClock(),
+    random: GameRandom = SystemRandom,
+) : ViewModel() {
+    private val scope: CoroutineScope = scopeOverride ?: viewModelScope
+
+    // One thread, which exits when idle: nothing to shut down, so effects issued during teardown still finish.
+    private val effectsScope = CoroutineScope(
+        SupervisorJob() + (
+            effectsDispatcher ?: ThreadPoolExecutor(1, 1, 5L, TimeUnit.SECONDS, LinkedBlockingQueue()) { Thread(it, "game-effects") }
+                .apply { allowCoreThreadTimeOut(true) }
+                .asCoroutineDispatcher()
+            ),
+    )
+    private val background: CoroutineDispatcher = effectsDispatcher ?: Dispatchers.Default
+
+    private val effects: RoundEffects =
+        RoundEffects(deps.api, deps.results, deps.audio, deps.tracking, effectsScope, background) { controller }
+    private val controller: GameController = GameController(clock::now, random, effects)
+
+    /** Render thread's entry point. */
+    val frameStepper = GameFrameStepper(controller, deps.tracking, clock)
+
+    val phase: StateFlow<GamePhase> get() = controller.phase
+    val hud: StateFlow<HudState> get() = controller.hud
+    val branding: StateFlow<BrandingState> get() = deps.branding.state
+    val cameraStatus: StateFlow<TrackingStatus> get() = deps.tracking.status
+    val tracking: TrackingSource get() = deps.tracking
+
+    /** The round's bombs, for tests to aim at. Written on the render thread. */
+    internal val bombs: BombSim? get() = controller.bombs
+
+    /** QR code content. */
+    val registrationUrl: String get() = "${deps.publicWebUrl()}/register"
+
+    private val _startUi = MutableStateFlow(StartUi())
+    val startUi: StateFlow<StartUi> = _startUi.asStateFlow()
+
+    val backdrop: StateFlow<BackdropKind> = combine(controller.phase, deps.branding.state) { p, b ->
+        backdropFor(p, b.settings.gameplayMode == "touch", b.settings.wallpaperEnabled)
+    }.stateIn(scope, SharingStarted.Eagerly, BackdropKind.Dark)
+
+    private var startJob: Job? = null
+    private var previousPhase: GamePhase = GamePhase.Startup
+    private var cameraOn = false
+    private var roundTouch = false
+    private var roundWallpaper = true
+    private var lastAudioInput: AudioInput? = null
+    private val calibrationHold = CalibrationHold()
+
+    private class AudioInput(val state: BrandingState) {
+        // Only what AudioEngine.apply reads; rotation and other settings must not reload sounds.
+        val key = Triple(state.settings.audioSettings, state.localFiles, state.bombs.bombs)
+        override fun equals(other: Any?) = other is AudioInput && other.key == key
+        override fun hashCode() = key.hashCode()
+    }
+
+    init {
+        deps.branding.start()
+        effectsScope.launch { withContext(background) { deps.results.start() } } // lists its directory
+        scope.launch { controller.phase.collect(::syncToPhase) }
+        scope.launch { deps.tracking.status.collect(::onTrackingStatus) }
+        scope.launch { deps.serverReachable.collect { r -> _startUi.update { it.copy(serverReachable = r) } } }
+        scope.launch {
+            combine(deps.branding.state.map(::AudioInput), controller.phase) { input, p -> input to p }
+                .collect { (input, p) -> applyAudio(input, p) }
+        }
+    }
+
+    // ---- keypad ------------------------------------------------------------------------------------------
+
+    private val keypadLocked: Boolean get() = _startUi.value.busy
+
+    fun onKeypad(digit: Char) {
+        if (keypadLocked || !digit.isDigit()) return
+        _startUi.update { if (it.code.length >= CODE_LENGTH) it else it.copy(code = it.code + digit, error = null) }
+    }
+
+    fun onBackspace() {
+        if (keypadLocked) return
+        _startUi.update { if (it.code.isEmpty()) it else it.copy(code = it.code.dropLast(1), error = null) }
+    }
+
+    fun onClear() {
+        if (keypadLocked) return
+        _startUi.update { it.copy(code = "", error = null) }
+    }
+
+    /** Ignored without four digits, or while a code is being checked or a round is starting. Main thread. */
+    fun onPlay() {
+        val ui = _startUi.value
+        if (ui.busy || ui.code.length != CODE_LENGTH || controller.phase.value != GamePhase.Startup) return
+        _startUi.value = ui.copy(busy = true, error = null)
+        val code = ui.code
+        startJob = scope.launch {
+            if (code == TRIAL_CODE) {
+                beginRound(TRIAL_USER, SessionInfo(TRIAL_SESSION_ID, code, TRIAL_USER.name, isTrial = true, TRIAL_USER.mobileNumber))
+            } else {
+                verify(code)
+            }
+        }
+    }
+
+    private suspend fun verify(code: String) {
+        when (val r = deps.api.verifyCode(code)) {
+            is ApiResult.Success -> {
+                val v = r.value
+                val user = v.user
+                if (v.success && v.valid && user != null) {
+                    // App.tsx: without a session from verify, a guest id until startSession returns the real one.
+                    val id = v.session?.id ?: "$GUEST_SESSION_PREFIX${System.currentTimeMillis()}_${Random.nextInt(0, Int.MAX_VALUE)}"
+                    beginRound(user, SessionInfo(id, code, user.name, v.isTrial == true, user.mobileNumber.ifBlank { null }))
+                } else {
+                    failVerify(v.message.ifBlank { INVALID_CODE_MESSAGE }, keepCode = false)
+                }
+            }
+            is ApiResult.HttpError -> {
+                val message = messageIn(r.body)
+                when {
+                    r.code >= 500 -> failVerify(message ?: SERVER_ERROR_MESSAGE, keepCode = true)
+                    else -> failVerify(message ?: INVALID_CODE_MESSAGE, keepCode = false)
+                }
+            }
+            is ApiResult.NetworkError -> failVerify(
+                if (r.cause is UndecodableResponseException) SERVER_ERROR_MESSAGE else CANT_REACH_SERVER_MESSAGE,
+                keepCode = true,
+            )
+        }
+    }
+
+    private fun messageIn(body: String): String? = try {
+        DiwaliJson.decodeFromString(VerifyCodeResponse.serializer(), body).message.ifBlank { null }
+    } catch (_: IllegalArgumentException) {
+        null
+    }
+
+    /** A rejected code is cleared, like the web; after a failure to get an answer, the same code can be retried. */
+    private fun failVerify(message: String, keepCode: Boolean) {
+        _startUi.update { it.copy(busy = false, error = message, code = if (keepCode) it.code else "") }
+    }
+
+    private suspend fun beginRound(user: User, session: SessionInfo) {
+        _startUi.update { it.copy(welcomeName = user.name) }
+        effectsScope.launch { deps.audio.playCracker(CHIME) }
+        delay(WELCOME_MS)
+        withTimeoutOrNull(AUDIO_READY_TIMEOUT_MS) {
+            while (!deps.audio.isReady()) delay(AUDIO_READY_POLL_MS)
+        }
+        val settings = roundSettings(deps.branding.state.value)
+        roundTouch = settings.isTouchMode
+        roundWallpaper = deps.branding.state.value.settings.wallpaperEnabled
+        frameStepper.prepareRound(settings.bombConfigs, settings.bombSettings)
+        controller.onCodeAccepted(session, settings)
+        syncToPhase(controller.phase.value)
+        _startUi.update { StartUi(serverReachable = it.serverReachable) }
+    }
+
+    private fun roundSettings(b: BrandingState): RoundSettings {
+        val s = b.settings
+        return RoundSettings(
+            gameDurationSeconds = s.gameDurationSeconds,
+            gameplayMode = s.gameplayMode,
+            targetScore = s.targetScore.takeIf { s.targetScoreEnabled && it > 0 },
+            // App.tsx reads this from GET /api/rewards; the setting stands in until that has answered.
+            rewardsEnabled = if (b.rewards.success) b.rewards.enabled else s.rewardsEnabled,
+            tiers = s.achievementTiers,
+            brandName = s.brandName,
+            bombConfigs = b.bombs.bombs,
+            bombSettings = b.bombs.settings,
+        )
+    }
+
+    // ---- round -------------------------------------------------------------------------------------------
+
+    /** Touch-mode tap in 1920x1080 space. */
+    fun onTouch(x: Double, y: Double) = controller.onTouch(x, y)
+
+    fun onCardDone() = controller.onCardDone()
+
+    fun onSpinDone(reward: RewardItem?) = controller.onSpinDone(reward)
+
+    fun onFeedback(feedback: GameFeedback?) = controller.onFeedback(feedback)
+
+    /**
+     * The activity paused, the game surface went away, or the player backed out. Abandons a started round and returns
+     * to the start screen. Surface loss counts too because the round clock is wall time: anything else would hand the
+     * sims a jump when frames resumed. Main thread.
+     */
+    fun onInterrupted() {
+        startJob?.cancel()
+        startJob = null
+        controller.onInterrupted()
+        syncToPhase(controller.phase.value)
+        _startUi.update { StartUi(serverReachable = it.serverReachable) }
+    }
+
+    /** The game surface went away. Harmless on the start screen, where the keypad state must survive. */
+    fun onSurfaceLost() {
+        if (controller.phase.value != GamePhase.Startup) onInterrupted()
+    }
+
+    /** "Grant & Start Camera". After a failure only stop-then-start restarts the pipeline. Main thread. */
+    fun retryCamera() {
+        deps.tracking.stop()
+        cameraOn = false
+        syncToPhase(controller.phase.value)
+    }
+
+    /** For the calibration screen's ring, polled at the web's 50 ms. */
+    fun sampleCalibration(nowMs: Double = System.nanoTime() / 1e6): CalibrationUi {
+        val hands = deps.tracking.snapshot().hands
+        val left = hands.left.detected && hands.left.inTargetArea
+        val right = hands.right.detected && hands.right.inTargetArea
+        return CalibrationUi(left, right, calibrationHold.update(left && right, nowMs))
+    }
+
+    /** Idempotent, so [onInterrupted] can bring everything in line at once rather than on the collector's next turn. */
+    private fun syncToPhase(p: GamePhase) {
+        deps.branding.setPollingPaused(pollingPausedIn(p))
+        if (p == GamePhase.Playing) deps.audio.startBgm() else deps.audio.stopBgm()
+
+        val wanted = cameraWanted(p, roundTouch, roundWallpaper)
+        if (wanted && !cameraOn) {
+            cameraOn = true
+            deps.tracking.start()
+            onTrackingStatus(deps.tracking.status.value) // a refused start may repeat the last status, which emits nothing
+        } else if (!wanted && cameraOn) {
+            cameraOn = false
+            deps.tracking.stop()
+        }
+
+        if (p == GamePhase.Startup && previousPhase != GamePhase.Startup) deps.branding.advanceWallpaper()
+        previousPhase = p
+    }
+
+    private fun onTrackingStatus(status: TrackingStatus) {
+        if (cameraOn && (status is TrackingStatus.Failed || status is TrackingStatus.CameraLost)) controller.onCameraLost()
+    }
+
+    /** Only in the lobby: mid-round, a `play` could block on the loading lock. Catches up on the return to Startup. */
+    private fun applyAudio(input: AudioInput, p: GamePhase) {
+        if (p != GamePhase.Startup || input == lastAudioInput) return
+        lastAudioInput = input
+        val s = input.state
+        effectsScope.launch {
+            deps.audio.apply(s.settings.audioSettings ?: defaultAudioSettings(), s.localFiles, s.bombs.bombs)
+        }
+    }
+
+    // ---- teardown ----------------------------------------------------------------------------------------
+
+    /** Main thread. */
+    internal fun release() {
+        startJob?.cancel()
+        deps.tracking.stop()
+        cameraOn = false
+        deps.audio.stopBgm()
+        effectsScope.launch { deps.audio.release() }
+        effects.close()
+    }
+
+    override fun onCleared() {
+        // Report an unfinished round before the effects thread goes away.
+        controller.onInterrupted()
+        release()
+        scope.cancel()
+    }
+
+    private companion object {
+        /** KioskStartupScreen onPlayChime: playSound('CHAKRI'). */
+        const val CHIME = "CHAKRI"
+    }
+}

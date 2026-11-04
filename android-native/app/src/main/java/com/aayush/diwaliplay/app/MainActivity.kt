@@ -1,15 +1,70 @@
 package com.aayush.diwaliplay.app
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.material3.Text
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
+import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
+import com.aayush.diwaliplay.app.ui.GameApp
 
 class MainActivity : ComponentActivity() {
+    private val viewModel: GameViewModel by viewModels {
+        viewModelFactory { initializer { GameViewModel((application as DiwaliApplication).newDependencies()) } }
+    }
+
+    /** The system's permission dialog pauses this activity; that pause mustn't end the round. */
+    private var permissionDialogShowing = false
+
+    private val requestCamera = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+        permissionDialogShowing = false
+        viewModel.retryCamera()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent {
-            Text("DiwaliPlay")
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        enterImmersive()
+        setContent { GameApp(viewModel, onRetryCamera = ::retryCamera) }
+        // Asked for up front: a dialog on the start screen interrupts nobody, unlike one mid-calibration.
+        if (savedInstanceState == null && !hasCameraPermission()) askForCamera()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) enterImmersive()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        if (!permissionDialogShowing) viewModel.onInterrupted()
+    }
+
+    private fun retryCamera() {
+        if (hasCameraPermission()) viewModel.retryCamera() else askForCamera()
+    }
+
+    private fun askForCamera() {
+        permissionDialogShowing = true
+        requestCamera.launch(Manifest.permission.CAMERA)
+    }
+
+    private fun hasCameraPermission() =
+        ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+
+    private fun enterImmersive() {
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            hide(WindowInsetsCompat.Type.systemBars())
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
     }
 }

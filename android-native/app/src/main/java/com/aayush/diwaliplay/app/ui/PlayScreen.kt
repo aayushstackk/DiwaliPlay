@@ -1,0 +1,123 @@
+package com.aayush.diwaliplay.app.ui
+
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.view.SurfaceHolder
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.viewinterop.AndroidView
+import com.aayush.diwaliplay.app.GameViewModel
+import com.aayush.diwaliplay.app.SpriteWarmer
+import com.aayush.diwaliplay.game.bomb.bombRadiusFor
+import com.aayush.diwaliplay.model.BombConfig
+import com.aayush.diwaliplay.model.BombGameSettings
+import com.aayush.diwaliplay.render.BombSprites
+import com.aayush.diwaliplay.render.CanvasRenderer
+import com.aayush.diwaliplay.render.GameSurfaceView
+import com.aayush.diwaliplay.render.LOGICAL_HEIGHT
+import com.aayush.diwaliplay.render.LOGICAL_WIDTH
+import java.io.File
+
+/** Custom bomb images need no more than this: sprites are at most about 400 px across. */
+private const val MAX_BOMB_IMAGE_PX = 512
+
+/**
+ * [GameSurfaceView] for the app's whole life, so a round's first frame doesn't wait on a new surface. The frame loop
+ * runs only while [active]; on the start screen the surface sits unused behind opaque UI.
+ */
+@Composable
+fun GameSurfaceLayer(vm: GameViewModel, active: Boolean) {
+    var view by remember { mutableStateOf<GameSurfaceView?>(null) }
+
+    AndroidView(
+        modifier = Modifier.fillMaxSize(),
+        factory = { context ->
+            val sprites = BombSprites(imageFor = { config -> decodeBombImage(vm, config) })
+            GameSurfaceView(context, renderer = CanvasRenderer(sprites)).also { surface ->
+                vm.frameStepper.spriteWarmer = BombSpriteWarmer(sprites)
+                vm.frameStepper.lowEndSource = { surface.lowEnd.value }
+                surface.holder.addCallback(object : SurfaceHolder.Callback {
+                    override fun surfaceCreated(holder: SurfaceHolder) = Unit
+                    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) = Unit
+                    // Frames stop with the surface while the round clock runs on: see onInterrupted.
+                    override fun surfaceDestroyed(holder: SurfaceHolder) = vm.onSurfaceLost()
+                })
+                view = surface
+            }
+        },
+    )
+
+    val surface = view
+    LaunchedEffect(surface, active) {
+        if (surface != null) {
+            if (active) surface.start(vm.frameStepper::step) else surface.stop()
+        }
+    }
+    DisposableEffect(surface) { onDispose { surface?.stop() } }
+}
+
+private fun decodeBombImage(vm: GameViewModel, config: BombConfig): Bitmap? {
+    val url = config.imageUrl ?: return null
+    val file = vm.branding.value.localFiles[url] ?: return null
+    return decodeBounded(file, MAX_BOMB_IMAGE_PX)
+}
+
+/** Decodes [file] scaled down by powers of two while its longer side stays at least [maxEdge]. Null when it won't decode. */
+internal fun decodeBounded(file: File, maxEdge: Int): Bitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(file.path, bounds)
+    var sample = 1
+    while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= maxEdge) sample *= 2
+    return BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inSampleSize = sample })
+}
+
+/** Rebuilds sprites when the round's bombs differ from the last round's, one per config at its own radius. */
+private class BombSpriteWarmer(private val sprites: BombSprites) : SpriteWarmer {
+    private var lastConfigs: List<BombConfig>? = null
+    private var lastSettings: BombGameSettings? = null
+
+    override fun warm(configs: List<BombConfig>, settings: BombGameSettings) {
+        if (configs != lastConfigs || settings != lastSettings) {
+            sprites.clear()
+            lastConfigs = configs
+            lastSettings = settings
+        }
+        for (config in configs) sprites.prewarm(listOf(config), bombRadiusFor(config, settings))
+    }
+}
+
+/** The surface's input in touch mode: every finger going down is a tap, in 1920x1080 game space. */
+@Composable
+fun TouchLayer(onTouch: (x: Double, y: Double) -> Unit) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .testTag(Tags.TOUCH_LAYER)
+            .pointerInput(Unit) {
+                val scaleX = LOGICAL_WIDTH.toDouble() / size.width
+                val scaleY = LOGICAL_HEIGHT.toDouble() / size.height
+                awaitEachGesture {
+                    val first = awaitFirstDown(requireUnconsumed = false)
+                    onTouch(first.position.x * scaleX, first.position.y * scaleY)
+                    do {
+                        val event = awaitPointerEvent()
+                        for (c in event.changes) {
+                            if (c.pressed && !c.previousPressed) onTouch(c.position.x * scaleX, c.position.y * scaleY)
+                        }
+                    } while (event.changes.any { it.pressed })
+                }
+            },
+    )
+}

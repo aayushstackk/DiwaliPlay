@@ -20,6 +20,13 @@ private const val MAX_SCORE_POPUPS = 8
 private const val MAX_PENDING_SHOTS = 8
 private const val BASE_GRAVITY = 2600.0
 
+/** The radius a bomb of [config] launches with; also what sprites are prewarmed at. */
+fun bombRadiusFor(config: BombConfig, settings: BombGameSettings): Double {
+    val base = settings.bombRadius.let { if (it == 0.0 || it.isNaN()) 52.0 else it }
+    val sizeMult = max(0.4, min(1.8, (config.sizePercent ?: 100.0) / 100.0))
+    return floor(base * sizeMult + 0.5)  // JS Math.round
+}
+
 /** Web flame touch-point radius, used while a hand is tracked (42 is only the no-flame fallback). */
 private const val HAND_HIT_RADIUS = 46.0
 
@@ -362,9 +369,6 @@ class BombSim(
         val vRot = (random.nextDouble() - 0.5) * 85
         val rot0 = (random.nextDouble() - 0.5) * 25
 
-        val baseRadius = orDefault(settings.bombRadius, 52.0)
-        val sizeMult = max(0.4, min(1.8, (config.sizePercent ?: 100.0) / 100.0))
-
         bomb.active = true
         bomb.config = config
         bomb.colorArgb = parseBombColor(config.color)  // once per launch, reused by sparks and burst
@@ -373,7 +377,7 @@ class BombSim(
         bomb.vy = vy0
         bomb.rot = rot0
         bomb.vRot = vRot
-        bomb.radius = floor(baseRadius * sizeMult + 0.5)  // JS Math.round
+        bomb.radius = bombRadiusFor(config, settings)
         bomb.scale = 0.65
         bomb.launchMs = now
         bomb.isBursting = false

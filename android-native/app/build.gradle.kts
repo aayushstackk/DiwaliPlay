@@ -41,6 +41,17 @@ android {
     buildFeatures {
         compose = true
     }
+
+    testOptions {
+        // JVM tests touch android.util.Log through the view model's effects.
+        unitTests.isReturnDefaultValues = true
+    }
+
+    // Fakes shared by the JVM tests and the instrumented PlayFlowTest.
+    sourceSets {
+        getByName("test").kotlin.srcDir("src/sharedTest/kotlin")
+        getByName("androidTest").kotlin.srcDir("src/sharedTest/kotlin")
+    }
 }
 
 kotlin {
@@ -63,8 +74,18 @@ dependencies {
     implementation(libs.compose.ui)
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.serialization.json)
+    implementation(libs.zxing.core)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.truth)
+    testImplementation(libs.kotlinx.coroutines.test)
 
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.truth)
+    androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation(libs.compose.ui.test.junit4)
+    debugImplementation(libs.compose.ui.test.manifest)
 }

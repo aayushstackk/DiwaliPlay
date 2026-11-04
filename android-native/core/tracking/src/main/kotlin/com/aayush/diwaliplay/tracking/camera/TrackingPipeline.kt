@@ -48,6 +48,12 @@ class MonotonicTimestamp {
 }
 
 /**
+ * One camera frame as the analysis stream delivered it: unmirrored, needing [rotationDegrees] to be upright.
+ * The bitmap is shared and must not be mutated or recycled.
+ */
+class CameraFrame(val bitmap: Bitmap, val rotationDegrees: Int)
+
+/**
  * Camera → MediaPipe (LIVE_STREAM) → [HandTracker] → [hands].
  *
  * Threading:
@@ -107,8 +113,7 @@ class TrackingPipeline(
     /** Delegate of the live landmarker, mirrored from the analysis thread for the result path. */
     @Volatile private var activeDelegate: String? = null
 
-    private class Still(val bitmap: Bitmap, val rotationDegrees: Int)
-    private val latestFrame = AtomicReference<Still?>(null)
+    private val latestFrame = AtomicReference<CameraFrame?>(null)
 
     // Analysis-thread state.
     private var landmarker: LandmarkerHost? = null
@@ -166,6 +171,12 @@ class TrackingPipeline(
         clearStill()
         analysisExecutor.execute { closeLandmarker() }
     }
+
+    /**
+     * Latest analysis frame for drawing a live background, or null when there is none. A new instance per frame,
+     * so comparing references tells whether it changed. Any thread.
+     */
+    fun latestFrame(): CameraFrame? = latestFrame.get()
 
     /** Mirrored JPEG (quality 92) of the latest analysis frame, upright; null if there is none or it fails. */
     fun captureStill(): ByteArray? {
@@ -234,7 +245,7 @@ class TrackingPipeline(
             beforeDetect?.invoke()
             val rotation = image.imageInfo.rotationDegrees
             val bitmap = image.toBitmap()
-            latestFrame.set(Still(bitmap, rotation))
+            latestFrame.set(CameraFrame(bitmap, rotation))
             if (rotation % 180 == 0) {
                 frameW = bitmap.width; frameH = bitmap.height
             } else {
