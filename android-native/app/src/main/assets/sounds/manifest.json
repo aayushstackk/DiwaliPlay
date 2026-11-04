@@ -1,0 +1,85 @@
+{
+  "sounds": {
+    "airhorn_power": "airhorn_power.flac",
+    "beep_classic": "beep_classic.flac",
+    "beep_digital": "beep_digital.flac",
+    "bell_chime": "bell_chime.flac",
+    "bomb_blast": "bomb_blast.flac",
+    "bomb_buzz": "bomb_buzz.flac",
+    "bomb_chime": "bomb_chime.flac",
+    "bomb_pop": "bomb_pop.flac",
+    "camera_click": "camera_click.flac",
+    "chime_celebration": "chime_celebration.flac",
+    "coin_ping": "coin_ping.flac",
+    "combo_arcade_bonus": "combo_arcade_bonus.flac",
+    "combo_dhol_roll": "combo_dhol_roll.flac",
+    "combo_ding": "combo_ding.flac",
+    "combo_energy_burst": "combo_energy_burst.flac",
+    "combo_stadium_cheer": "combo_stadium_cheer.flac",
+    "countdown_beep": "beep_classic.flac",
+    "countdown_beep_final": "countdown_beep_final.flac",
+    "drum_tick": "drum_tick.flac",
+    "energetic_pop": "energetic_pop.flac",
+    "explosion_bomb": "explosion_bomb.flac",
+    "explosion_ladi": "explosion_ladi.flac",
+    "explosion_mega": "explosion_mega.flac",
+    "fanfare_festive": "fanfare_festive.flac",
+    "fanfare_grand": "fanfare_triumph.flac",
+    "fanfare_triumph": "fanfare_triumph.flac",
+    "game_over_fanfare": "fanfare_triumph.flac",
+    "gong_impact": "gong_impact.flac",
+    "launch_screamer": "launch_screamer.flac",
+    "launch_sub_thump": "launch_sub_thump.flac",
+    "launch_whoosh": "launch_whoosh.flac",
+    "score_whoosh": "score_whoosh.flac",
+    "shutter_modern": "camera_click.flac",
+    "shutter_sparkle": "shutter_sparkle.flac",
+    "shutter_vintage": "camera_click.flac",
+    "sparkler_crackle": "sparkler_crackle.flac",
+    "sparkler_hiss": "sparkler_hiss.flac",
+    "sparkler_spinning": "sparkler_spinning.flac",
+    "whistle_blast": "whistle_blast.flac"
+  },
+  "crackers": {
+    "BIG_FIREWORK": "cracker_big_firework.flac",
+    "BOMB": "explosion_bomb.flac",
+    "CHAKRI": "sparkler_spinning.flac",
+    "FLOWER_POT": "sparkler_hiss.flac",
+    "LADI": "explosion_ladi.flac",
+    "MEGA_BLAST": "explosion_mega.flac",
+    "ROCKET": "cracker_rocket.flac",
+    "SMALL_CRACKER": "cracker_small_cracker.flac"
+  },
+  "bombPresets": {
+    "blast": "bomb_blast.flac",
+    "chime": "bomb_chime.flac",
+    "custom": "bomb_pop.flac",
+    "penalty_buzz": "bomb_buzz.flac",
+    "pop": "bomb_pop.flac",
+    "rocket": "cracker_rocket.flac",
+    "sparkle": "sparkler_hiss.flac"
+  },
+  "bgm": {
+    "bgm_ambient_diya": {
+      "file": "bgm_ambient_diya.flac",
+      "loop": true
+    },
+    "bgm_arcade_groove": {
+      "file": "bgm_arcade_groove.flac",
+      "loop": true
+    },
+    "bgm_celebration_brass": {
+      "file": "bgm_celebration_brass.flac",
+      "loop": true
+    },
+    "bgm_festive_rhythm": {
+      "file": "bgm_festive_rhythm.flac",
+      "loop": true
+    },
+    "bgm_temple_fusion": {
+      "file": "bgm_temple_fusion.flac",
+      "loop": true
+    }
+  },
+  "spinTick": "spin_tick.flac"
+}
