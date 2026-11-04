@@ -1,10 +1,7 @@
 package com.aayush.diwaliplay.tracking.camera
 
 import android.Manifest
-import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
-import android.hardware.camera2.CameraCharacteristics
-import android.hardware.camera2.CameraManager
 import android.util.Log
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -16,7 +13,6 @@ import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -31,21 +27,28 @@ class TrackingPipelineCameraTest {
         override fun getLifecycle(): Lifecycle = registry
     }
 
-    /** CameraX's CameraValidator aborts init if the device declares a lens facing it doesn't have. */
-    private fun featuresMatchCameras(): Boolean {
-        val context = instrumentation.targetContext
-        val cm = context.getSystemService(CameraManager::class.java)
-        val facings = cm.cameraIdList.map { cm.getCameraCharacteristics(it).get(CameraCharacteristics.LENS_FACING) }
-        val pm = context.packageManager
-        val front = !pm.hasSystemFeature(PackageManager.FEATURE_CAMERA_FRONT) ||
-            CameraCharacteristics.LENS_FACING_FRONT in facings
-        val back = !pm.hasSystemFeature(PackageManager.FEATURE_CAMERA) ||
-            CameraCharacteristics.LENS_FACING_BACK in facings
-        return facings.isNotEmpty() && front && back
-    }
-
     private fun awaitStatus(pipeline: TrackingPipeline, match: (TrackingStatus) -> Boolean): TrackingStatus = runBlocking {
         withTimeout(30_000) { pipeline.status.first { match(it) || it is TrackingStatus.Failed } }
+    }
+
+    /** Stills are cleared on the analysis thread, just after the status changes. */
+    private fun awaitNoStill(pipeline: TrackingPipeline) {
+        val deadline = System.currentTimeMillis() + 5_000
+        while (System.currentTimeMillis() < deadline && pipeline.captureStill() != null) Thread.sleep(20)
+        assertThat(pipeline.captureStill()).isNull()
+    }
+
+    private fun startedPipeline(owner: TestOwner): TrackingPipeline {
+        val context = instrumentation.targetContext
+        instrumentation.uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.CAMERA)
+        lateinit var pipeline: TrackingPipeline
+        instrumentation.runOnMainSync {
+            owner.registry.currentState = Lifecycle.State.RESUMED
+            pipeline = TrackingPipeline(context, owner, HandTracker())
+            pipeline.start(null)
+        }
+        assertThat(awaitStatus(pipeline) { it is TrackingStatus.Running }).isInstanceOf(TrackingStatus.Running::class.java)
+        return pipeline
     }
 
     private fun awaitNoHands(pipeline: TrackingPipeline) {
@@ -62,7 +65,6 @@ class TrackingPipelineCameraTest {
     fun startRunsCaptureStillAndStopIsIdempotent() {
         val context = instrumentation.targetContext
         instrumentation.uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.CAMERA)
-        assumeTrue("CameraX refuses to init: declared camera features don't match the cameras", featuresMatchCameras())
         val owner = TestOwner()
         lateinit var pipeline: TrackingPipeline
         instrumentation.runOnMainSync {
@@ -90,6 +92,7 @@ class TrackingPipelineCameraTest {
         Log.i("TrackingPipelineCameraTest", "lost=$lost")
         assertThat(lost).isInstanceOf(TrackingStatus.CameraLost::class.java)
         awaitNoHands(pipeline)
+        awaitNoStill(pipeline)
 
         // ...and tracking resumes when the camera comes back.
         instrumentation.runOnMainSync { owner.registry.currentState = Lifecycle.State.RESUMED }
@@ -109,5 +112,59 @@ class TrackingPipelineCameraTest {
             pipeline.stop()
             owner.registry.currentState = Lifecycle.State.DESTROYED
         }
+    }
+
+    @Test
+    fun analysisFailureGivesFailedEmptyHandsAndNoStillWithoutCrashing() {
+        val owner = TestOwner()
+        val pipeline = startedPipeline(owner)
+        pipeline.beforeDetect = { throw IllegalStateException("boom") }
+
+        val failed = awaitStatus(pipeline) { false }
+        assertThat(failed).isInstanceOf(TrackingStatus.Failed::class.java)
+        assertThat((failed as TrackingStatus.Failed).reason).contains("boom")
+        awaitNoHands(pipeline)
+        awaitNoStill(pipeline)
+
+        // Terminal until restarted; stop() then start() recovers.
+        pipeline.beforeDetect = null
+        instrumentation.runOnMainSync { pipeline.stop(); pipeline.start(null) }
+        assertThat(awaitStatus(pipeline) { it is TrackingStatus.Running }).isInstanceOf(TrackingStatus.Running::class.java)
+        instrumentation.runOnMainSync { pipeline.stop() }
+    }
+
+    @Test
+    fun missingPermissionGivesFailedAndALaterStartWorks() {
+        val context = instrumentation.targetContext
+        instrumentation.uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.CAMERA)
+        val owner = TestOwner()
+        lateinit var pipeline: TrackingPipeline
+        instrumentation.runOnMainSync {
+            owner.registry.currentState = Lifecycle.State.RESUMED
+            pipeline = TrackingPipeline(context, owner, HandTracker())
+            pipeline.hasCameraPermission = { false }
+            pipeline.start(null)
+        }
+        assertThat(pipeline.status.value).isEqualTo(TrackingStatus.Failed("camera permission denied"))
+
+        instrumentation.runOnMainSync {
+            pipeline.hasCameraPermission = { true }
+            pipeline.start(null)
+        }
+        assertThat(awaitStatus(pipeline) { it is TrackingStatus.Running }).isInstanceOf(TrackingStatus.Running::class.java)
+        instrumentation.runOnMainSync { pipeline.stop() }
+    }
+
+    @Test
+    fun ownerDestroyedWithoutStopStopsThePipeline() {
+        val owner = TestOwner()
+        val pipeline = startedPipeline(owner)
+        instrumentation.runOnMainSync { owner.registry.currentState = Lifecycle.State.DESTROYED }
+        awaitNoHands(pipeline)
+        awaitNoStill(pipeline)
+        // No camera left behind: a new owner can open it straight away.
+        val next = TestOwner()
+        val nextPipeline = startedPipeline(next)
+        instrumentation.runOnMainSync { nextPipeline.stop() }
     }
 }

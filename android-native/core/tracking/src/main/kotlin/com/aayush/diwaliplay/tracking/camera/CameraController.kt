@@ -7,12 +7,15 @@ import android.util.Log
 import android.util.Range
 import android.util.Size
 import androidx.annotation.MainThread
+import androidx.camera.camera2.Camera2Config
 import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.camera2.interop.Camera2Interop
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraInfo
+import androidx.camera.core.CameraSelector
 import androidx.camera.core.CameraState
+import androidx.camera.core.CameraXConfig
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.core.UseCase
@@ -25,6 +28,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.Observer
 import java.util.concurrent.Executor
+import java.util.concurrent.atomic.AtomicBoolean
 
 private const val TAG = "CameraController"
 
@@ -57,6 +61,7 @@ internal class CameraController(
         onFailure: (String) -> Unit,
     ) {
         val token = ++bindToken
+        configureCameraXOnce()
         val future = ProcessCameraProvider.getInstance(context)
         future.addListener({
             if (token != bindToken) return@addListener // unbind() ran first
@@ -161,5 +166,30 @@ internal class CameraController(
     @androidx.annotation.OptIn(ExperimentalCamera2Interop::class)
     private fun <T> setFpsRange(ext: Camera2Interop.Extender<T>, range: Pair<Int, Int>) {
         ext.setCaptureRequestOption(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(range.first, range.second))
+    }
+
+    private companion object {
+        private val cameraXConfigured = AtomicBoolean(false)
+
+        /**
+         * CameraX's CameraValidator aborts init when the device declares a camera feature it has no
+         * camera for. The WAF's one player-facing camera reports BACK and may declare camera.front;
+         * the TV AVD does exactly that, with no camera.back feature. A limiter with no lens facing
+         * makes the validator skip that check and filters no cameras.
+         *
+         * configureInstance throws IllegalStateException on a second call, hence once per process.
+         */
+        fun configureCameraXOnce() {
+            if (!cameraXConfigured.compareAndSet(false, true)) return
+            try {
+                ProcessCameraProvider.configureInstance(
+                    CameraXConfig.Builder.fromConfig(Camera2Config.defaultConfig())
+                        .setAvailableCamerasLimiter(CameraSelector.Builder().build())
+                        .build(),
+                )
+            } catch (e: IllegalStateException) {
+                Log.w(TAG, "CameraX was already configured elsewhere; validator hardening not applied", e)
+            }
+        }
     }
 }

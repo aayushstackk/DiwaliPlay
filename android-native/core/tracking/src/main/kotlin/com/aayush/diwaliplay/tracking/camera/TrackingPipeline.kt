@@ -1,6 +1,8 @@
 package com.aayush.diwaliplay.tracking.camera
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.os.Looper
@@ -9,46 +11,24 @@ import android.util.Log
 import androidx.annotation.MainThread
 import androidx.camera.core.ImageProxy
 import androidx.camera.view.PreviewView
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
-import com.aayush.diwaliplay.model.HandRender
 import com.aayush.diwaliplay.tracking.HandFrame
 import com.aayush.diwaliplay.tracking.HandTracker
-import com.aayush.diwaliplay.tracking.TrackedHands
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 
 private const val TAG = "TrackingPipeline"
-private const val STATUS_INTERVAL_MS = 500L
-private const val STILL_JPEG_QUALITY = 90
 
-sealed interface TrackingStatus {
-    data object Starting : TrackingStatus
-
-    /** [delegate] is [DELEGATE_GPU] or [DELEGATE_CPU]; values are averages over the last ~0.5 s / 1 s. */
-    data class Running(val delegate: String, val inferenceMs: Double, val cameraFps: Double) : TrackingStatus
-
-    data class CameraLost(val reason: String) : TrackingStatus
-    data class Failed(val reason: String) : TrackingStatus
-}
-
-/**
- * One immutable tracking result: the HandTracker output plus its renderHands() drawing data,
- * computed together on the result thread. The render/game threads read this and never touch
- * HandTracker.
- */
-data class TrackingSnapshot(
-    val hands: TrackedHands,
-    val render: List<HandRender>,
-    /** HandTracker.isCalibrated at this frame's timestamp. */
-    val calibrated: Boolean = false,
-)
+/** Same JPEG quality as the web's camera snapshot (src/App.tsx, toDataURL 0.92). */
+private const val STILL_JPEG_QUALITY = 92
 
 /** Strictly increasing timestamps: a value that doesn't increase becomes last + 1 (as the web does). */
 class MonotonicTimestamp {
@@ -65,46 +45,54 @@ class MonotonicTimestamp {
  * Camera → MediaPipe (LIVE_STREAM) → [HandTracker] → [hands].
  *
  * Threading:
- * - [start] / [stop]: main thread (CameraX binding). Both are idempotent.
+ * - [start] / [stop]: main thread (CameraX binding). Both are idempotent. The owner's ON_DESTROY
+ *   also stops the pipeline.
  * - analysis thread ("tracking-analysis"): CameraX analyzer, landmarker create / detectAsync / close.
  * - MediaPipe result thread: only hands the converted [HandFrame] to the result thread.
- * - result thread ("tracking-result"): the ONLY thread that calls [tracker] after construction. It
- *   runs HandTracker.update + renderHands + isCalibrated and publishes one [TrackingSnapshot].
+ * - result thread ("tracking-result"): the ONLY thread that calls [tracker] after construction. See
+ *   [TrackingPublisher].
  * - [captureStill]: any thread.
  *
  * Landmarks reach HandTracker raw (it mirrors x itself); only the preview and the still are
  * mirrored. Non-16:9 frames (the 640×480 fallback) go through [cropToSixteenNine]. Results that
- * arrive after [stop] (or from a previous start) are dropped.
+ * arrive after [stop] (or from a previous start) are dropped. Anything that goes wrong on these
+ * threads ends as [TrackingStatus.Failed] with empty hands, never an uncaught exception; call
+ * stop() then start() to retry.
  */
 class TrackingPipeline(
     context: Context,
-    lifecycleOwner: LifecycleOwner,
-    private val tracker: HandTracker,
+    private val lifecycleOwner: LifecycleOwner,
+    tracker: HandTracker,
     private val preferGpu: Boolean = true,
 ) {
     private val appContext = context.applicationContext
-
-    /** Latest snapshot. Renamed from the brief's AtomicReference<TrackedHands> (ruling 3). */
-    val hands: AtomicReference<TrackingSnapshot> = AtomicReference(emptySnapshot())
-
-    private val _status = MutableStateFlow<TrackingStatus>(TrackingStatus.Starting)
-
-    /** Stays at its last value after [stop]; the next [start] emits Starting. */
-    val status: StateFlow<TrackingStatus> = _status.asStateFlow()
-
-    private val camera = CameraController(appContext, lifecycleOwner, ::onCameraOpen, ::onCameraLost)
-
-    // Main-thread state.
-    private var running = false
 
     // One serial executor each for the pipeline's lifetime, so a stop() followed at once by start()
     // can't overlap old and new work on the landmarker or tracker. Idle threads exit on their own.
     private val analysisExecutor = serialExecutor("tracking-analysis")
     private val resultExecutor = serialExecutor("tracking-result")
 
-    /** Bumped on every start/stop; work tagged with an older value is ignored. */
-    @Volatile private var generation = 0
-    @Volatile private var cameraLost = false
+    private val publisher = TrackingPublisher(
+        tracker,
+        resultExecutor,
+        log = { message, t -> Log.e(TAG, message, t) },
+        clock = SystemClock::uptimeMillis,
+    )
+
+    /** Latest snapshot. Renamed from the brief's AtomicReference<TrackedHands> (ruling 3). */
+    val hands: AtomicReference<TrackingSnapshot> get() = publisher.hands
+
+    /** Stays at its last value after [stop]; the next [start] emits Starting. */
+    val status: StateFlow<TrackingStatus> get() = publisher.status
+
+    private val camera = CameraController(appContext, lifecycleOwner, publisher::onCameraOpen, ::onCameraLost)
+
+    // Main-thread state.
+    private var running = false
+    private val destroyObserver = LifecycleEventObserver { _, event ->
+        if (event == Lifecycle.Event.ON_DESTROY) stop()
+    }
+
     @Volatile private var frameW = 0
     @Volatile private var frameH = 0
     @Volatile private var cameraFps = 0.0
@@ -121,28 +109,34 @@ class TrackingPipeline(
     private var fpsWindowStart = 0L
     private var fpsWindowFrames = 0
 
-    // Result-thread state.
-    private var lastStatusAt = 0L
-    private var inferenceSum = 0.0
-    private var inferenceCount = 0
+    /** Test seam: can't revoke a permission from an instrumented test without killing its process. */
+    internal var hasCameraPermission: () -> Boolean = {
+        ContextCompat.checkSelfPermission(appContext, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+    }
 
+    /** Test seam: runs on the analysis thread just before each detect, to inject a failure. */
+    @Volatile internal var beforeDetect: (() -> Unit)? = null
+
+    /** Emits Failed("camera permission denied") and does not start when CAMERA isn't granted. */
     @MainThread
     fun start(showPreview: PreviewView?) {
         checkMain()
         if (running) return
+        if (!hasCameraPermission()) {
+            publisher.reject("camera permission denied")
+            return
+        }
         running = true
-        cameraLost = false
-        val gen = ++generation
-        _status.value = TrackingStatus.Starting
-
+        val gen = publisher.begin()
         cameraFps = 0.0
+        lifecycleOwner.lifecycle.addObserver(destroyObserver)
         analysisExecutor.execute {
             fpsWindowStart = 0L
             fpsWindowFrames = 0
             createLandmarker(gen)
         }
         camera.bind(showPreview, analysisExecutor, { image -> analyze(gen, image) }) { reason ->
-            if (gen == generation) _status.value = TrackingStatus.Failed(reason)
+            fail(gen, reason, null)
         }
     }
 
@@ -151,47 +145,64 @@ class TrackingPipeline(
         checkMain()
         if (!running) return
         running = false
-        generation++
+        lifecycleOwner.lifecycle.removeObserver(destroyObserver)
         camera.unbind()
-        latestFrame.set(null)
+        publisher.end()
+        clearStill()
         analysisExecutor.execute { closeLandmarker() }
-        resultExecutor.execute { publishEmpty() }
     }
 
-    /** Mirrored JPEG (quality 90) of the latest analysis frame, upright; null before the first frame. */
+    /** Mirrored JPEG (quality 92) of the latest analysis frame, upright; null if there is none or it fails. */
     fun captureStill(): ByteArray? {
         val still = latestFrame.get() ?: return null
-        val src = still.bitmap
-        val m = Matrix().apply {
-            postRotate(still.rotationDegrees.toFloat())
-            postScale(-1f, 1f)
+        return try {
+            val src = still.bitmap
+            val m = Matrix().apply {
+                postRotate(still.rotationDegrees.toFloat())
+                postScale(-1f, 1f)
+            }
+            val out = Bitmap.createBitmap(src, 0, 0, src.width, src.height, m, true)
+            ByteArrayOutputStream().use { bos ->
+                out.compress(Bitmap.CompressFormat.JPEG, STILL_JPEG_QUALITY, bos)
+                if (out !== src) out.recycle()
+                bos.toByteArray()
+            }
+        } catch (t: Throwable) {
+            Log.e(TAG, "captureStill failed", t)
+            null
         }
-        val out = Bitmap.createBitmap(src, 0, 0, src.width, src.height, m, true)
-        return ByteArrayOutputStream().use { bos ->
-            out.compress(Bitmap.CompressFormat.JPEG, STILL_JPEG_QUALITY, bos)
-            if (out !== src) out.recycle()
-            bos.toByteArray()
-        }
+    }
+
+    private fun fail(gen: Int, reason: String, cause: Throwable?) {
+        Log.e(TAG, reason, cause)
+        publisher.fail(gen, reason)
+        clearStill()
+    }
+
+    /** Now, and again after any frame already on the analysis thread (the frame gate then stops new ones). */
+    private fun clearStill() {
+        latestFrame.set(null)
+        analysisExecutor.execute { latestFrame.set(null) }
     }
 
     // ---- analysis thread ----
 
     private fun createLandmarker(gen: Int) {
-        if (gen != generation) return
+        if (!publisher.isCurrent(gen)) return
         closeLandmarker()
         try {
-            landmarker = LandmarkerHost.create(
+            val host = LandmarkerHost.create(
                 appContext,
                 RunningMode.LIVE_STREAM,
                 preferGpu = preferGpu,
                 listener = { frame, ts -> onLandmarkerResult(gen, frame, ts) },
-                onError = { e -> Log.e(TAG, "landmarker runtime error", e) },
+                onError = { e -> fail(gen, "landmarker failed: ${e.message}", e) },
             )
-            activeDelegate = landmarker?.delegate
-            Log.i(TAG, "landmarker ready on $activeDelegate")
-        } catch (e: Exception) {
-            Log.e(TAG, "landmarker init failed", e)
-            if (gen == generation) _status.value = TrackingStatus.Failed("landmarker init failed: ${e.message}")
+            landmarker = host
+            activeDelegate = host.delegate
+            Log.i(TAG, "landmarker ready on ${host.delegate}")
+        } catch (t: Throwable) {
+            fail(gen, "landmarker init failed: ${t.message ?: t.javaClass.simpleName}", t)
         }
     }
 
@@ -203,9 +214,10 @@ class TrackingPipeline(
 
     private fun analyze(gen: Int, image: ImageProxy) {
         try {
-            if (gen != generation) return
+            if (!publisher.acceptsFrames(gen)) return
             countFrame()
             val host = landmarker ?: return
+            beforeDetect?.invoke()
             val rotation = image.imageInfo.rotationDegrees
             val bitmap = image.toBitmap()
             latestFrame.set(Still(bitmap, rotation))
@@ -214,14 +226,10 @@ class TrackingPipeline(
             } else {
                 frameW = bitmap.height; frameH = bitmap.width
             }
-            val ts = timestamps.next(SystemClock.uptimeMillis())
-            try {
-                host.detectAsync(bitmap, ts, rotation) // falls back to CPU internally on GPU failure
-                activeDelegate = host.delegate
-            } catch (e: RuntimeException) {
-                Log.e(TAG, "detect failed", e)
-                if (gen == generation) _status.value = TrackingStatus.Failed("detect failed: ${e.message}")
-            }
+            host.detectAsync(bitmap, timestamps.next(SystemClock.uptimeMillis()), rotation)
+            activeDelegate = host.delegate // detectAsync may have fallen back to CPU
+        } catch (t: Throwable) {
+            fail(gen, "detect failed: ${t.message ?: t.javaClass.simpleName}", t)
         } finally {
             image.close()
         }
@@ -239,62 +247,20 @@ class TrackingPipeline(
         }
     }
 
-    // ---- MediaPipe result thread → result thread ----
+    // ---- MediaPipe result thread ----
 
     private fun onLandmarkerResult(gen: Int, frame: HandFrame, timestampMs: Long) {
-        if (gen != generation) return
         val delegate = activeDelegate ?: return
-        val w = frameW
-        val h = frameH
-        val inferenceMs = (SystemClock.uptimeMillis() - timestampMs).coerceAtLeast(0L).toDouble()
-        resultExecutor.execute {
-            if (gen != generation || cameraLost) return@execute
-            val cropped = if (w > 0 && h > 0) {
-                HandFrame(frame.hands.map { cropToSixteenNine(it, w, h) }, frame.handedness)
-            } else frame
-            val tracked = tracker.update(cropped, timestampMs.toDouble())
-            hands.set(TrackingSnapshot(tracked, tracker.renderHands(), tracker.isCalibrated(timestampMs.toDouble())))
-            reportRunning(gen, delegate, inferenceMs)
-        }
-    }
-
-    // ---- result thread ----
-
-    private fun reportRunning(gen: Int, delegate: String, inferenceMs: Double) {
-        inferenceSum += inferenceMs
-        inferenceCount++
-        val now = SystemClock.uptimeMillis()
-        if (lastStatusAt == 0L || now - lastStatusAt >= STATUS_INTERVAL_MS) {
-            val avg = inferenceSum / inferenceCount
-            inferenceSum = 0.0
-            inferenceCount = 0
-            lastStatusAt = now
-            if (gen == generation && !cameraLost) _status.value = TrackingStatus.Running(delegate, avg, cameraFps)
-        }
-    }
-
-    private fun publishEmpty() {
-        tracker.reset()
-        val tracked = tracker.update(HandFrame(emptyList(), emptyList()), 0.0)
-        hands.set(TrackingSnapshot(tracked, tracker.renderHands()))
-        lastStatusAt = 0L
-        inferenceSum = 0.0
-        inferenceCount = 0
+        publisher.onResult(gen, frame, timestampMs, delegate, frameW, frameH, cameraFps)
     }
 
     // ---- camera callbacks (main thread) ----
 
-    private fun onCameraOpen() {
-        if (!running) return
-        cameraLost = false
-    }
-
     private fun onCameraLost(reason: String) {
-        if (!running || cameraLost) return
+        if (!running) return
         Log.w(TAG, "camera lost: $reason")
-        cameraLost = true
-        _status.value = TrackingStatus.CameraLost(reason)
-        resultExecutor.execute { publishEmpty() }
+        publisher.onCameraLost(reason)
+        clearStill()
     }
 
     private fun checkMain() =
@@ -304,12 +270,5 @@ class TrackingPipeline(
         fun serialExecutor(name: String) = ThreadPoolExecutor(
             1, 1, 5L, TimeUnit.SECONDS, LinkedBlockingQueue(),
         ) { Thread(it, name) }.apply { allowCoreThreadTimeOut(true) }
-
-        /** All-not-detected snapshot from a throwaway tracker (the real one is result-thread only). */
-        fun emptySnapshot(): TrackingSnapshot {
-            val t = HandTracker()
-            val tracked = t.update(HandFrame(emptyList(), emptyList()), 0.0)
-            return TrackingSnapshot(tracked, t.renderHands())
-        }
     }
 }

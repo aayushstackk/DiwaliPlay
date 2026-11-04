@@ -153,8 +153,13 @@ class LandmarkerHost private constructor(
         runningMode,
         listener,
         onError = { e ->
-            if (delegate == Delegate.GPU) liveGpuError = true
-            onError?.invoke(e) ?: Log.e(TAG, "landmarker error", e)
+            // A GPU error is recovered on the next detectAsync; only unrecoverable ones go to the caller.
+            if (delegate == Delegate.GPU) {
+                Log.w(TAG, "GPU delegate reported an error", e)
+                liveGpuError = true
+            } else {
+                onError?.invoke(e) ?: Log.e(TAG, "landmarker error", e)
+            }
         },
     )
 
@@ -177,7 +182,11 @@ class LandmarkerHost private constructor(
             .setMinTrackingConfidence(CONFIDENCE)
         if (mode == RunningMode.LIVE_STREAM) {
             builder.setResultListener { result: HandLandmarkerResult, _ ->
-                listener!!.onResult(result.toHandFrame(), result.timestampMs())
+                try {
+                    listener!!.onResult(result.toHandFrame(), result.timestampMs())
+                } catch (e: RuntimeException) {
+                    onError?.invoke(e)
+                }
             }
             builder.setErrorListener { e -> onError?.invoke(e) }
         }
@@ -195,8 +204,9 @@ class LandmarkerHost private constructor(
 
         /**
          * Creates the landmarker, GPU first unless [preferGpu] is false, then CPU.
-         * [listener] is required for LIVE_STREAM; [onError] receives LIVE_STREAM runtime errors
-         * (GPU ones also trigger the CPU fallback). Throws if the CPU delegate fails too.
+         * [listener] is required for LIVE_STREAM; [onError] receives LIVE_STREAM runtime errors that
+         * the host can't recover from (GPU ones trigger the CPU fallback instead). Throws if the CPU
+         * delegate fails too.
          */
         fun create(
             context: Context,
