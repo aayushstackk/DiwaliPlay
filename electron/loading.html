@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DiwaliPlay - Loading</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+    body {
+      background: radial-gradient(circle at center, #231206 0%, #0c0602 100%);
+      color: #fef3c7;
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+      height: 100vh;
+      width: 100vw;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .container {
+      text-align: center;
+      max-width: 500px;
+      padding: 30px;
+      position: relative;
+    }
+    .diya-icon {
+      font-size: 64px;
+      margin-bottom: 20px;
+      animation: pulse 1.8s ease-in-out infinite;
+      filter: drop-shadow(0 0 25px rgba(245, 158, 11, 0.6));
+    }
+    h1 {
+      font-size: 32px;
+      font-weight: 900;
+      letter-spacing: 2px;
+      background: linear-gradient(135deg, #fef3c7 0%, #f59e0b 50%, #d97706 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+    }
+    .subtitle {
+      font-size: 14px;
+      color: rgba(254, 243, 199, 0.75);
+      letter-spacing: 1px;
+      margin-bottom: 28px;
+    }
+    .spinner-box {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+    .spinner {
+      width: 48px;
+      height: 48px;
+      border: 4px solid rgba(245, 158, 11, 0.2);
+      border-top-color: #f59e0b;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    .status-text {
+      font-size: 14px;
+      color: #fde68a;
+      letter-spacing: 0.5px;
+    }
+    .error-box {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      margin-top: 10px;
+    }
+    .error-desc {
+      font-size: 13px;
+      color: #fca5a5;
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.35);
+      padding: 10px 16px;
+      border-radius: 8px;
+      max-width: 400px;
+    }
+    .btn-retry {
+      background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+      color: #0c0704;
+      border: none;
+      font-weight: 800;
+      font-size: 14px;
+      letter-spacing: 1px;
+      padding: 12px 30px;
+      border-radius: 25px;
+      cursor: pointer;
+      text-transform: uppercase;
+      box-shadow: 0 0 20px rgba(245, 158, 11, 0.4);
+      transition: all 0.2s;
+    }
+    .btn-retry:hover {
+      transform: scale(1.05);
+      box-shadow: 0 0 28px rgba(245, 158, 11, 0.7);
+    }
+    .btn-retry:active {
+      transform: scale(0.97);
+    }
+    .shortcut-hint {
+      position: absolute;
+      bottom: 20px;
+      font-size: 11px;
+      color: rgba(254, 243, 199, 0.4);
+      letter-spacing: 0.5px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); filter: drop-shadow(0 0 20px rgba(245, 158, 11, 0.5)); }
+      50% { transform: scale(1.08); filter: drop-shadow(0 0 35px rgba(245, 158, 11, 0.85)); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="diya-icon">🪔</div>
+    <h1>DiwaliPlay</h1>
+    <div class="subtitle">Windows Interactive Edition</div>
+
+    <div id="loadingView" class="spinner-box">
+      <div class="spinner"></div>
+      <div id="statusText" class="status-text">Connecting to DiwaliPlay live servers...</div>
+    </div>
+
+    <div id="errorView" class="error-box">
+      <div id="errorMsg" class="error-desc">Unable to reach the live game server. Please check your internet connection.</div>
+      <button id="retryBtn" class="btn-retry">Retry Now (5s)</button>
+    </div>
+  </div>
+
+  <div class="shortcut-hint">
+    Press <strong>F5</strong> to reload &bull; Press <strong>F11</strong> to toggle kiosk mode &bull; Press <strong>Alt+F4</strong> to exit
+  </div>
+
+  <script>
+    let countdown = 5;
+    let countdownInterval = null;
+
+    function showError(message) {
+      document.getElementById('loadingView').style.display = 'none';
+      const errorView = document.getElementById('errorView');
+      errorView.style.display = 'flex';
+      if (message) {
+        document.getElementById('errorMsg').innerText = message;
+      }
+      startCountdown();
+    }
+
+    function showLoading(message) {
+      clearInterval(countdownInterval);
+      document.getElementById('errorView').style.display = 'none';
+      const loadingView = document.getElementById('loadingView');
+      loadingView.style.display = 'flex';
+      if (message) {
+        document.getElementById('statusText').innerText = message;
+      }
+    }
+
+    function startCountdown() {
+      clearInterval(countdownInterval);
+      countdown = 5;
+      const btn = document.getElementById('retryBtn');
+      btn.innerText = `Retry Now (${countdown}s)`;
+      countdownInterval = setInterval(() => {
+        countdown--;
+        if (countdown <= 0) {
+          clearInterval(countdownInterval);
+          retry();
+        } else {
+          btn.innerText = `Retry Now (${countdown}s)`;
+        }
+      }, 1000);
+    }
+
+    function retry() {
+      clearInterval(countdownInterval);
+      showLoading('Reconnecting to live servers...');
+      if (window.electronBridge && window.electronBridge.retryLoad) {
+        window.electronBridge.retryLoad();
+      } else {
+        window.location.reload();
+      }
+    }
+
+    document.getElementById('retryBtn').addEventListener('click', retry);
+
+    if (window.electronBridge) {
+      window.electronBridge.onConnectionError((err) => {
+        showError(err || 'Unable to connect to live frontend. Retrying automatically...');
+      });
+      window.electronBridge.onConnectionProgress((msg) => {
+        showLoading(msg);
+      });
+    }
+  </script>
+</body>
+</html>

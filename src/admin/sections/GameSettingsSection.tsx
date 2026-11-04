@@ -14,6 +14,7 @@ import {
   Save,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   Camera,
   Touchpad,
   Target,
@@ -22,16 +23,27 @@ import {
   Unlock,
   RefreshCw,
   Power,
-  Key
+  Key,
+  Link2
 } from 'lucide-react';
+
+const LOCAL_KIOSK_BRIDGE_URL = 'http://127.0.0.1:8537';
+const KIOSK_TOKEN_STORAGE_KEY = 'diwaliplay_kiosk_bridge_token';
 
 interface KioskStatusState {
   available: boolean;
+  connected: boolean;
+  paired: boolean;
+  isElectron: boolean;
   backProtection: boolean;
   autoLaunch: boolean;
+  watchdogRunning?: boolean;
+  guardianRunning?: boolean;
+  appRunning?: boolean;
   lastStateChange?: string;
   lastStateChangeReason?: string;
   loading: boolean;
+  mixedContentBlocked?: boolean;
 }
 
 interface GameSettingsSectionProps {
@@ -80,6 +92,9 @@ export const GameSettingsSection: React.FC<GameSettingsSectionProps> = ({
   // Windows Kiosk Subsystem State
   const [kioskStatus, setKioskStatus] = useState<KioskStatusState>({
     available: false,
+    connected: false,
+    paired: false,
+    isElectron: false,
     backProtection: false,
     autoLaunch: true,
     loading: true
@@ -90,13 +105,23 @@ export const GameSettingsSection: React.FC<GameSettingsSectionProps> = ({
   const [isKioskUpdating, setIsKioskUpdating] = useState(false);
   const [kioskFeedback, setKioskFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
+  // Pairing Modal State for Browser Admin Panel
+  const [showPairingModal, setShowPairingModal] = useState(false);
+  const [pairingPasscode, setPairingPasscode] = useState('');
+  const [pairingError, setPairingError] = useState<string | null>(null);
+  const [isPairing, setIsPairing] = useState(false);
+
   const fetchKioskStatus = async () => {
     try {
+      // 1. Electron IPC mode
       if (typeof window !== 'undefined' && (window as any).electronDesktop?.getKioskStatus) {
         const res = await (window as any).electronDesktop.getKioskStatus();
         if (res && res.success) {
           setKioskStatus({
             available: true,
+            connected: true,
+            paired: true,
+            isElectron: true,
             backProtection: Boolean(res.backProtection),
             autoLaunch: Boolean(res.autoLaunch),
             lastStateChange: res.lastStateChange,
@@ -107,30 +132,64 @@ export const GameSettingsSection: React.FC<GameSettingsSectionProps> = ({
         }
       }
 
-      if (
-        typeof window !== 'undefined' &&
-        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-      ) {
+      // 2. Browser Environment: Connect to local PC bridge on 127.0.0.1:8537
+      if (typeof window !== 'undefined') {
+        const storedToken = localStorage.getItem(KIOSK_TOKEN_STORAGE_KEY) || '';
         try {
-          const res = await fetch('http://127.0.0.1:8536/api/status');
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 3500);
+
+          const headers: Record<string, string> = {
+            'Content-Type': 'application/json'
+          };
+          if (storedToken) {
+            headers['X-Kiosk-Token'] = storedToken;
+          }
+
+          const res = await fetch(`${LOCAL_KIOSK_BRIDGE_URL}/api/kiosk/status`, {
+            method: 'GET',
+            headers,
+            signal: controller.signal
+          });
+          clearTimeout(timeoutId);
+
           if (res.ok) {
             const data = await res.json();
             setKioskStatus({
               available: true,
+              connected: true,
+              paired: Boolean(data.paired),
+              isElectron: false,
               backProtection: Boolean(data.backProtection),
               autoLaunch: Boolean(data.autoLaunch),
+              watchdogRunning: Boolean(data.watchdogRunning),
+              guardianRunning: Boolean(data.guardianRunning),
+              appRunning: Boolean(data.appRunning),
               lastStateChange: data.lastStateChange,
               lastStateChangeReason: data.lastStateChangeReason,
-              loading: false
+              loading: false,
+              mixedContentBlocked: false
             });
             return;
           }
-        } catch {}
+        } catch (fetchErr: any) {
+          const isHttps = window.location.protocol === 'https:';
+          setKioskStatus(prev => ({
+            ...prev,
+            available: false,
+            connected: false,
+            paired: false,
+            isElectron: false,
+            loading: false,
+            mixedContentBlocked: isHttps
+          }));
+          return;
+        }
       }
 
-      setKioskStatus(prev => ({ ...prev, available: false, loading: false }));
+      setKioskStatus(prev => ({ ...prev, available: false, connected: false, loading: false }));
     } catch {
-      setKioskStatus(prev => ({ ...prev, available: false, loading: false }));
+      setKioskStatus(prev => ({ ...prev, available: false, connected: false, loading: false }));
     }
   };
 
@@ -144,6 +203,13 @@ export const GameSettingsSection: React.FC<GameSettingsSectionProps> = ({
         type: 'error',
         message: 'Superadmin permissions are required to modify Kiosk Protection settings.'
       });
+      return;
+    }
+
+    if (!kioskStatus.isElectron && !kioskStatus.paired) {
+      setPairingPasscode('');
+      setPairingError(null);
+      setShowPairingModal(true);
       return;
     }
 
@@ -162,6 +228,7 @@ export const GameSettingsSection: React.FC<GameSettingsSectionProps> = ({
     setKioskFeedback(null);
 
     try {
+      // 1. Electron IPC mode
       if (typeof window !== 'undefined' && (window as any).electronDesktop?.setKioskProtection) {
         const res = await (window as any).electronDesktop.setKioskProtection({
           enabled: targetState,
@@ -189,21 +256,33 @@ export const GameSettingsSection: React.FC<GameSettingsSectionProps> = ({
         return;
       }
 
-      if (
-        typeof window !== 'undefined' &&
-        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-      ) {
-        const res = await fetch('http://127.0.0.1:8536/api/toggle', {
+      // 2. Browser HTTP Bridge mode
+      if (typeof window !== 'undefined') {
+        const storedToken = localStorage.getItem(KIOSK_TOKEN_STORAGE_KEY) || '';
+        if (!storedToken) {
+          setShowPairingModal(true);
+          throw new Error('Please pair this browser with your Windows PC before changing kiosk protection.');
+        }
+
+        const endpoint = targetState ? '/api/kiosk/enable' : '/api/kiosk/disable';
+        const bodyObj = targetState ? {} : { passcode: passcode || '' };
+
+        const res = await fetch(`${LOCAL_KIOSK_BRIDGE_URL}${endpoint}`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            state: targetState ? 'ON' : 'OFF',
-            passcode: passcode || ''
-          })
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Kiosk-Token': storedToken
+          },
+          body: JSON.stringify(bodyObj)
         });
 
         const data = await res.json();
         if (!res.ok || !data.success) {
+          if (res.status === 401 && data.message?.toLowerCase().includes('token')) {
+            localStorage.removeItem(KIOSK_TOKEN_STORAGE_KEY);
+            setShowPairingModal(true);
+            throw new Error('Bridge session expired or invalid. Please re-pair with admin passcode.');
+          }
           throw new Error(data.message || 'Failed to update kiosk protection.');
         }
 
@@ -224,7 +303,7 @@ export const GameSettingsSection: React.FC<GameSettingsSectionProps> = ({
         return;
       }
 
-      throw new Error('Kiosk control IPC bridge is only available in the Windows Electron application.');
+      throw new Error('No kiosk communication bridge available.');
     } catch (err: any) {
       if (showPasscodeModal) {
         setPasscodeError(err.message || 'Invalid passcode');
@@ -239,6 +318,41 @@ export const GameSettingsSection: React.FC<GameSettingsSectionProps> = ({
     }
   };
 
+  const handlePairBridge = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pairingPasscode.trim()) {
+      setPairingError('Please enter the admin passcode.');
+      return;
+    }
+
+    setIsPairing(true);
+    setPairingError(null);
+    try {
+      const res = await fetch(`${LOCAL_KIOSK_BRIDGE_URL}/api/kiosk/pair`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ passcode: pairingPasscode.trim() })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'Invalid passcode');
+      }
+
+      localStorage.setItem(KIOSK_TOKEN_STORAGE_KEY, data.token);
+      setShowPairingModal(false);
+      setPairingPasscode('');
+      setKioskFeedback({
+        type: 'success',
+        message: 'Browser paired successfully with Windows PC Kiosk Bridge!'
+      });
+      await fetchKioskStatus();
+    } catch (err: any) {
+      setPairingError(err.message || 'Failed to pair with bridge.');
+    } finally {
+      setIsPairing(false);
+    }
+  };
+
   const handleConfirmPasscode = (e: React.FormEvent) => {
     e.preventDefault();
     if (!enteredPasscode.trim()) {
@@ -248,9 +362,39 @@ export const GameSettingsSection: React.FC<GameSettingsSectionProps> = ({
     applyKioskState(false, enteredPasscode.trim());
   };
 
-  const handleTestExit = () => {
+  const handleTestExit = async () => {
     if (typeof window !== 'undefined' && (window as any).electronDesktop?.exit) {
       (window as any).electronDesktop.exit();
+      return;
+    }
+
+    try {
+      const storedToken = localStorage.getItem(KIOSK_TOKEN_STORAGE_KEY) || '';
+      if (!storedToken) {
+        setShowPairingModal(true);
+        return;
+      }
+      const res = await fetch(`${LOCAL_KIOSK_BRIDGE_URL}/api/kiosk/test-exit`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Kiosk-Token': storedToken
+        }
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setKioskFeedback({
+          type: 'success',
+          message: 'Test exit command delivered: DiwaliPlay application process closed.'
+        });
+      } else {
+        throw new Error(data.message || 'Failed to execute test exit.');
+      }
+    } catch (err: any) {
+      setKioskFeedback({
+        type: 'error',
+        message: err.message || 'Test exit failed.'
+      });
     }
   };
 
@@ -676,30 +820,62 @@ export const GameSettingsSection: React.FC<GameSettingsSectionProps> = ({
               </div>
 
               {/* Status Badge & Toggle Switch */}
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                 {/* Status Indicator */}
                 <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono font-bold border ${
-                  kioskStatus.backProtection
-                    ? 'bg-emerald-950/70 border-emerald-500/50 text-emerald-300'
-                    : isLight
-                      ? 'bg-[#FAF4E8] border-[#D8C7AE] text-[#806B58]'
-                      : 'bg-slate-900 border-slate-800 text-slate-400'
+                  !kioskStatus.connected
+                    ? 'bg-rose-950/60 border-rose-500/40 text-rose-300'
+                    : !kioskStatus.paired
+                      ? 'bg-amber-950/60 border-amber-500/40 text-amber-300'
+                      : kioskStatus.backProtection
+                        ? 'bg-emerald-950/70 border-emerald-500/50 text-emerald-300'
+                        : isLight
+                          ? 'bg-[#FAF4E8] border-[#D8C7AE] text-[#806B58]'
+                          : 'bg-slate-900 border-slate-800 text-slate-400'
                 }`}>
                   <span className={`w-2 h-2 rounded-full ${
-                    kioskStatus.backProtection ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'
+                    !kioskStatus.connected
+                      ? 'bg-rose-500'
+                      : !kioskStatus.paired
+                        ? 'bg-amber-400 animate-pulse'
+                        : kioskStatus.backProtection
+                          ? 'bg-emerald-400 animate-pulse'
+                          : 'bg-slate-500'
                   }`} />
                   <span>
-                    {kioskStatus.backProtection ? 'PROTECTED MODE' : 'NORMAL MODE'}
+                    {!kioskStatus.connected
+                      ? 'LOCAL PC NOT CONNECTED'
+                      : !kioskStatus.paired
+                        ? 'PAIRING REQUIRED'
+                        : kioskStatus.backProtection
+                          ? 'PROTECTED MODE'
+                          : 'NORMAL MODE'}
                   </span>
                 </div>
+
+                {/* Browser Pair Button */}
+                {kioskStatus.connected && !kioskStatus.paired && !kioskStatus.isElectron && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPairingPasscode('');
+                      setPairingError(null);
+                      setShowPairingModal(true);
+                    }}
+                    className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 transition-colors flex items-center gap-1 cursor-pointer shadow-sm"
+                  >
+                    <Link2 className="w-3 h-3" />
+                    <span>Pair with PC</span>
+                  </button>
+                )}
 
                 {/* ON / OFF Toggle Buttons */}
                 <div className={`inline-flex p-0.5 rounded-xl border ${cardSubBg}`}>
                   <button
                     type="button"
-                    disabled={isKioskUpdating}
+                    disabled={isKioskUpdating || !kioskStatus.connected}
                     onClick={() => handleToggleKiosk(true)}
-                    className={`px-3.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    className={`px-3.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
                       kioskStatus.backProtection
                         ? 'bg-emerald-600 text-white shadow-sm'
                         : isLight
@@ -711,9 +887,9 @@ export const GameSettingsSection: React.FC<GameSettingsSectionProps> = ({
                   </button>
                   <button
                     type="button"
-                    disabled={isKioskUpdating}
+                    disabled={isKioskUpdating || !kioskStatus.connected}
                     onClick={() => handleToggleKiosk(false)}
-                    className={`px-3.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    className={`px-3.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
                       !kioskStatus.backProtection
                         ? isLight
                           ? 'bg-[#76513D] text-[#FDF9F3] shadow-sm'
@@ -728,6 +904,54 @@ export const GameSettingsSection: React.FC<GameSettingsSectionProps> = ({
                 </div>
               </div>
             </div>
+
+            {/* Mixed Content / Chrome Insecure Content Guidance Banner */}
+            {!kioskStatus.connected && kioskStatus.mixedContentBlocked && (
+              <div className="mt-3 p-3 rounded-xl border bg-amber-950/40 border-amber-500/40 text-amber-200 text-xs space-y-2">
+                <div className="flex items-center gap-2 font-bold text-amber-300">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>Chrome Setting Required to Connect with Local Windows PC</span>
+                </div>
+                <p className="text-[11px] leading-relaxed text-amber-200/90">
+                  You are accessing the Admin Panel over HTTPS (<strong>{typeof window !== 'undefined' ? window.location.hostname : 'vercel.app'}</strong>).
+                  To allow Chrome to communicate with your local Windows PC Kiosk Bridge (<code>127.0.0.1:8537</code>), enable insecure content for this site:
+                </p>
+                <ol className="text-[11px] list-decimal list-inside space-y-1 text-amber-100 font-mono">
+                  <li>Click the tune/lock settings icon on the far left of Chrome's address bar.</li>
+                  <li>Click <strong>Site settings</strong>.</li>
+                  <li>Change <strong>Insecure content</strong> from <em>Block</em> to <strong>Allow</strong>.</li>
+                  <li>Return to this tab and click <strong>Retry Connection</strong>.</li>
+                </ol>
+                <div className="pt-1 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={fetchKioskStatus}
+                    className="px-3 py-1 rounded-lg bg-amber-500 text-slate-950 font-bold hover:bg-amber-400 transition-colors cursor-pointer text-xs"
+                  >
+                    Retry Connection
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Bridge Offline Info Banner */}
+            {!kioskStatus.connected && !kioskStatus.mixedContentBlocked && (
+              <div className="mt-3 p-2.5 rounded-xl border bg-slate-900/60 border-slate-700/60 text-slate-300 text-xs flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-slate-400 shrink-0" />
+                  <span className="text-[11px]">
+                    Local PC Kiosk Bridge (<code>127.0.0.1:8537</code>) is not responding. Ensure DiwaliPlay or <code>windows-kiosk\kiosk-bridge-runner.vbs</code> is running on this PC.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={fetchKioskStatus}
+                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-bold border border-slate-600 transition-colors cursor-pointer shrink-0"
+                >
+                  Retry
+                </button>
+              </div>
+            )}
 
             {/* Description & Operational Details */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
@@ -784,7 +1008,7 @@ export const GameSettingsSection: React.FC<GameSettingsSectionProps> = ({
             <div>
               <span>Engine: </span>
               <span className={`font-mono ${isLight ? 'text-[#76513D]' : 'text-cyan-400'}`}>
-                windows-kiosk (Watchdog + Guardian)
+                {kioskStatus.isElectron ? 'Electron IPC' : 'Windows Kiosk Bridge (127.0.0.1:8537)'}
               </span>
               {kioskStatus.lastStateChange && (
                 <span className="ml-2 font-mono text-[9px] opacity-75">
@@ -803,7 +1027,7 @@ export const GameSettingsSection: React.FC<GameSettingsSectionProps> = ({
                 <span>Refresh Status</span>
               </button>
 
-              {typeof window !== 'undefined' && (window as any).electronDesktop?.exit && (
+              {(kioskStatus.isElectron || (kioskStatus.connected && kioskStatus.paired)) && (
                 <button
                   type="button"
                   onClick={handleTestExit}
@@ -964,6 +1188,83 @@ export const GameSettingsSection: React.FC<GameSettingsSectionProps> = ({
                   className="px-4 py-2 rounded-xl font-bold text-xs bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-md cursor-pointer transition-all disabled:opacity-50"
                 >
                   {isKioskUpdating ? 'Verifying...' : 'Unlock & Turn OFF'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Pairing Modal for Browser Admin Panel */}
+      {showPairingModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className={`border rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4 ${
+            isLight
+              ? 'bg-[#FBF5EA] border-[#D8C7AE] text-[#493426] shadow-[0_20px_60px_rgba(73,52,38,0.3)]'
+              : 'bg-[#0F1B2E] border-amber-500/30 text-slate-100 shadow-2xl'
+          }`}>
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center shrink-0">
+                <Link2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className={`text-base font-bold ${primaryText}`}>
+                  Pair Browser with Local PC
+                </h3>
+                <p className={`text-xs mt-0.5 ${secondaryText}`}>
+                  Authenticate this Chrome tab with the local Windows PC bridge on <code className="font-mono">127.0.0.1:8537</code>.
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handlePairBridge} className="space-y-3">
+              <div>
+                <label className={`block text-xs font-semibold mb-1 ${primaryText}`}>
+                  Admin Passcode
+                </label>
+                <input
+                  type="password"
+                  autoFocus
+                  placeholder="Enter passcode (Default: 8536)"
+                  value={pairingPasscode}
+                  onChange={(e) => {
+                    setPairingPasscode(e.target.value);
+                    setPairingError(null);
+                  }}
+                  className={`w-full px-3 py-2 rounded-xl text-sm font-mono border outline-none transition-colors ${inputBg}`}
+                />
+                {pairingError && (
+                  <p className="text-[11px] text-rose-400 mt-1 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3 shrink-0" />
+                    <span>{pairingError}</span>
+                  </p>
+                )}
+              </div>
+
+              <div className={`flex items-center justify-end gap-2 pt-2 border-t ${
+                isLight ? 'border-[#D8C7AE]' : 'border-slate-800'
+              }`}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPairingModal(false);
+                    setPairingPasscode('');
+                    setPairingError(null);
+                  }}
+                  className={`px-4 py-2 rounded-xl border text-xs font-semibold cursor-pointer transition-colors ${
+                    isLight
+                      ? 'bg-[#FAF4E8] hover:bg-[#F1E8D9] border-[#D8C7AE] text-[#493426]'
+                      : 'bg-slate-900 border-slate-800 hover:border-slate-700 text-slate-300'
+                  }`}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isPairing}
+                  className="px-4 py-2 rounded-xl font-bold text-xs bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-md cursor-pointer transition-all disabled:opacity-50"
+                >
+                  {isPairing ? 'Pairing...' : 'Pair Browser'}
                 </button>
               </div>
             </form>

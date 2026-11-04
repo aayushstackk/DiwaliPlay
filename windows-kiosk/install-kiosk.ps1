@@ -16,12 +16,15 @@ param(
 $KioskDir = $PSScriptRoot
 $WatchdogRunner = Join-Path $KioskDir "watchdog-runner.vbs"
 $GuardianRunner = Join-Path $KioskDir "guardian-runner.vbs"
+$BridgeRunner = Join-Path $KioskDir "kiosk-bridge-runner.vbs"
 $WatchdogScript = Join-Path $KioskDir "watchdog.ps1"
 $GuardianScript = Join-Path $KioskDir "guardian-keys.ps1"
+$BridgeScript = Join-Path $KioskDir "kiosk-bridge.ps1"
 $ToggleBat = Join-Path $KioskDir "toggle-protection.bat"
 $ConfigPath = Join-Path $KioskDir "kiosk-config.json"
 $WatchdogTaskName = "DiwaliPlayKioskWatchdog"
 $GuardianTaskName = "DiwaliPlayKioskGuardian"
+$BridgeTaskName = "DiwaliPlayKioskBridge"
 
 Write-Host "`n=======================================================" -ForegroundColor Cyan
 Write-Host "     DIWALIPLAY WINDOWS KIOSK SYSTEM INSTALLER         " -ForegroundColor Yellow
@@ -72,7 +75,19 @@ try {
     Write-Host "  * Task registration failed for '$GuardianTaskName': $($_.Exception.Message)" -ForegroundColor Red
 }
 
-$taskRegistrationSuccess = ($watchdogTaskSuccess -and $guardianTaskSuccess)
+# 1c. Kiosk Bridge Task (Browser Admin Panel Control on 127.0.0.1:8537)
+$bridgeAction = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "`"$BridgeRunner`"" -WorkingDirectory $KioskDir
+$bridgeTaskSuccess = $false
+
+try {
+    Register-ScheduledTask -TaskName $BridgeTaskName -Action $bridgeAction -Trigger $trigger -Settings $settings -Description "DiwaliPlay Kiosk Local HTTP Bridge Service" -Force -ErrorAction Stop | Out-Null
+    $bridgeTaskSuccess = $true
+    Write-Host "  * Scheduled task '$BridgeTaskName' registered successfully." -ForegroundColor Green
+} catch {
+    Write-Host "  * Task registration failed for '$BridgeTaskName': $($_.Exception.Message)" -ForegroundColor Red
+}
+
+$taskRegistrationSuccess = ($watchdogTaskSuccess -and $guardianTaskSuccess -and $bridgeTaskSuccess)
 
 # -------------------------------------------------------------
 # 2. Resilient Startup Folder Shortcuts
@@ -102,6 +117,16 @@ try {
     $scGuardian.Description = "DiwaliPlay Kiosk Keyboard Guardian"
     $scGuardian.Save()
     Write-Host "  * Startup shortcut created: $guardianLnk" -ForegroundColor Green
+
+    # Bridge shortcut
+    $bridgeLnk = Join-Path $startupFolder "DiwaliPlayKioskBridge.lnk"
+    $scBridge = $wsh.CreateShortcut($bridgeLnk)
+    $scBridge.TargetPath = "wscript.exe"
+    $scBridge.Arguments = "`"$BridgeRunner`""
+    $scBridge.WorkingDirectory = $KioskDir
+    $scBridge.Description = "DiwaliPlay Kiosk HTTP Bridge"
+    $scBridge.Save()
+    Write-Host "  * Startup shortcut created: $bridgeLnk" -ForegroundColor Green
 } catch {
     Write-Host "  * Startup shortcuts warning: $_" -ForegroundColor Yellow
 }
@@ -166,6 +191,25 @@ if (-not $SkipStartServices) {
             Write-Host "  * Guardian service started successfully (PID: $($gProc.Id))." -ForegroundColor Green
         } catch {
             Write-Host "  * Failed to start Guardian service: $_" -ForegroundColor Red
+        }
+    }
+
+    # Check and start Bridge
+    $bridgeRunning = $false
+    try {
+        $existingBridge = Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe' or Name = 'pwsh.exe'" -ErrorAction Stop |
+            Where-Object { $_.CommandLine -and $_.CommandLine -match "kiosk-bridge\.ps1" }
+        if ($existingBridge) { $bridgeRunning = $true }
+    } catch {}
+
+    if ($bridgeRunning) {
+        Write-Host "  * Bridge service is already active. Duplicate prevented." -ForegroundColor Yellow
+    } else {
+        try {
+            $bProc = Start-Process "powershell.exe" -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", "`"$BridgeScript`"" -WorkingDirectory $KioskDir -PassThru
+            Write-Host "  * Bridge service started successfully (PID: $($bProc.Id))." -ForegroundColor Green
+        } catch {
+            Write-Host "  * Failed to start Bridge service: $_" -ForegroundColor Red
         }
     }
 } else {

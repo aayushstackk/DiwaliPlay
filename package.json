@@ -60,12 +60,22 @@
   "build": {
     "appId": "com.aayush.diwaliplay",
     "productName": "DiwaliPlay",
+    "npmRebuild": false,
     "directories": {
-      "output": "dist-electron"
+      "output": "D:/Ayush"
     },
     "files": [
       "electron/**/*",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "windows-kiosk",
+        "to": "windows-kiosk",
+        "filter": [
+          "**/*"
+        ]
+      }
     ],
     "win": {
       "target": [
@@ -83,7 +93,9 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "DiwaliPlay"
+      "shortcutName": "DiwaliPlay",
+      "include": "electron/installer.nsh"
     }
   }
 }
+

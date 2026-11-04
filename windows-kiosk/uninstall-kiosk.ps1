@@ -13,6 +13,7 @@ param()
 $KioskDir = $PSScriptRoot
 $WatchdogTaskName = "DiwaliPlayKioskWatchdog"
 $GuardianTaskName = "DiwaliPlayKioskGuardian"
+$BridgeTaskName = "DiwaliPlayKioskBridge"
 $LogFile = Join-Path $KioskDir "logs\kiosk-watchdog.log"
 
 function Write-KioskLog {
@@ -36,7 +37,7 @@ Write-Host "`n[1/4] Stopping active Watchdog, Guardian, and Server processes..."
 try {
     $wscriptProcs = Get-CimInstance Win32_Process -Filter "Name = 'wscript.exe'" -ErrorAction Stop
     foreach ($p in $wscriptProcs) {
-        if ($p.CommandLine -and ($p.CommandLine -match "watchdog-runner\.vbs" -or $p.CommandLine -match "guardian-runner\.vbs")) {
+        if ($p.CommandLine -and ($p.CommandLine -match "watchdog-runner\.vbs" -or $p.CommandLine -match "guardian-runner\.vbs" -or $p.CommandLine -match "kiosk-bridge-runner\.vbs")) {
             Write-Host "  * Terminating silent runner (PID: $($p.ProcessId))" -ForegroundColor Yellow
             Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
         }
@@ -47,7 +48,7 @@ try {
 try {
     $powershellProcs = Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe' or Name = 'pwsh.exe'" -ErrorAction Stop
     foreach ($p in $powershellProcs) {
-        if ($p.CommandLine -and ($p.CommandLine -match "watchdog\.ps1" -or $p.CommandLine -match "guardian-keys\.ps1" -or $p.CommandLine -match "admin-kiosk-server\.ps1")) {
+        if ($p.CommandLine -and ($p.CommandLine -match "watchdog\.ps1" -or $p.CommandLine -match "guardian-keys\.ps1" -or $p.CommandLine -match "kiosk-bridge\.ps1" -or $p.CommandLine -match "admin-kiosk-server\.ps1")) {
             # Make sure not to kill the uninstaller itself if invoked through one of these names
             if ($p.ProcessId -ne $PID) {
                 Write-Host "  * Terminating kiosk process (PID: $($p.ProcessId))" -ForegroundColor Yellow
@@ -64,7 +65,7 @@ Write-KioskLog "Terminated all active kiosk processes." "INFO"
 # -------------------------------------------------------------
 Write-Host "`n[2/4] Removing Scheduled Tasks..." -ForegroundColor Cyan
 
-$tasksToRemove = @($WatchdogTaskName, $GuardianTaskName)
+$tasksToRemove = @($WatchdogTaskName, $GuardianTaskName, $BridgeTaskName)
 foreach ($taskName in $tasksToRemove) {
     try {
         $existing = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
@@ -87,7 +88,8 @@ Write-Host "`n[3/4] Removing Startup & Desktop Shortcuts..." -ForegroundColor Cy
 $startupFolder = [Environment]::GetFolderPath("Startup")
 $startupShortcuts = @(
     (Join-Path $startupFolder "DiwaliPlayKioskWatchdog.lnk"),
-    (Join-Path $startupFolder "DiwaliPlayKioskGuardian.lnk")
+    (Join-Path $startupFolder "DiwaliPlayKioskGuardian.lnk"),
+    (Join-Path $startupFolder "DiwaliPlayKioskBridge.lnk")
 )
 
 foreach ($sc in $startupShortcuts) {

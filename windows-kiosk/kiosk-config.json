@@ -11,7 +11,6 @@
   "blockAltF4": true,
   "adminUnlockKeyCombo": "Ctrl+Alt+Shift+D",
   "adminPasscode": "8536",
-  "lastStateChange": "2026-11-04T11:55:48.026Z",
-  "lastStateChangeReason": "Admin Panel Test"
+  "lastStateChange": "2026-11-04T13:37:08.970Z",
+  "lastStateChangeReason": "Browser Admin Panel (Bridge API)"
 }
-

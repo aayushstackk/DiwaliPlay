@@ -125,17 +125,20 @@ function Resolve-ExecutablePath {
 
     $WorkspaceRoot = (Resolve-Path "$KioskDir\..").Path
     $candidatePaths = @(
-        # 1. Configured path relative to workspace
+        # 1. Packaged installation parent: <install_dir>\resources\windows-kiosk\..\..\DiwaliPlay.exe
+        (Join-Path $KioskDir "..\..\DiwaliPlay.exe"),
+        # 2. Configured path relative to workspace
         (Join-Path $WorkspaceRoot $Config.executablePath),
-        # 2. Configured path relative to kiosk folder
+        # 3. Configured path relative to kiosk folder
         (Join-Path $KioskDir $Config.executablePath),
-        # 3. Direct path if absolute
+        # 4. Direct path if absolute
         $Config.executablePath,
-        # 4. Standard unpacked electron build
+        # 5. Standard unpacked electron build
         (Join-Path $WorkspaceRoot "dist-electron\win-unpacked\DiwaliPlay.exe"),
-        # 5. Installed user location
+        # 6. Installed user location (case variations)
+        "$env:LOCALAPPDATA\Programs\DiwaliPlay\DiwaliPlay.exe",
         "$env:LOCALAPPDATA\Programs\diwaliplay\DiwaliPlay.exe",
-        # 6. Installed system location
+        # 7. Installed system location
         "$env:ProgramFiles\DiwaliPlay\DiwaliPlay.exe",
         "${env:ProgramFiles(x86)}\DiwaliPlay\DiwaliPlay.exe"
     )

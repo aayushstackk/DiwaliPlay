@@ -181,21 +181,42 @@ ipcMain.on('app:exit', () => {
 
 // Windows Kiosk Subsystem Integration Helpers
 function getKioskConfigInfo() {
-  const candidateDirs = [
-    path.join(__dirname, '..', 'windows-kiosk'),
-    path.join(process.cwd(), 'windows-kiosk'),
-    path.join(path.dirname(app.getPath('exe')), 'windows-kiosk'),
-    path.join(path.dirname(app.getPath('exe')), '..', '..', 'windows-kiosk')
-  ];
+  const candidateDirs = [];
+
+  // 1. Packaged Windows app resources folder (configured via extraResources)
+  if (app.isPackaged && process.resourcesPath) {
+    candidateDirs.push(path.join(process.resourcesPath, 'windows-kiosk'));
+  } else {
+    // 2. Development mode: project-root/windows-kiosk
+    candidateDirs.push(path.join(__dirname, '..', 'windows-kiosk'));
+  }
+
+  // 3. Fallback discovery candidates
+  if (process.resourcesPath) {
+    candidateDirs.push(path.join(process.resourcesPath, 'windows-kiosk'));
+  }
+  candidateDirs.push(path.join(__dirname, '..', 'windows-kiosk'));
+  candidateDirs.push(path.join(process.cwd(), 'windows-kiosk'));
+
+  try {
+    const exeDir = path.dirname(app.getPath('exe'));
+    candidateDirs.push(path.join(exeDir, 'resources', 'windows-kiosk'));
+    candidateDirs.push(path.join(exeDir, 'windows-kiosk'));
+  } catch {}
 
   for (const dir of candidateDirs) {
-    const configPath = path.join(dir, 'kiosk-config.json');
-    if (fs.existsSync(configPath)) {
-      return { configPath, kioskDir: dir };
+    if (dir) {
+      const configPath = path.join(dir, 'kiosk-config.json');
+      if (fs.existsSync(configPath)) {
+        return { configPath, kioskDir: dir };
+      }
     }
   }
 
-  const fallbackDir = path.join(__dirname, '..', 'windows-kiosk');
+  const fallbackDir = app.isPackaged && process.resourcesPath
+    ? path.join(process.resourcesPath, 'windows-kiosk')
+    : path.join(__dirname, '..', 'windows-kiosk');
+
   return {
     configPath: path.join(fallbackDir, 'kiosk-config.json'),
     kioskDir: fallbackDir
@@ -222,7 +243,13 @@ function startKioskServicesIfDown(kioskDir) {
 
   const watchdogRunner = path.join(kioskDir, 'watchdog-runner.vbs');
   const guardianRunner = path.join(kioskDir, 'guardian-runner.vbs');
+  const bridgeRunner = path.join(kioskDir, 'kiosk-bridge-runner.vbs');
 
+  if (fs.existsSync(bridgeRunner)) {
+    exec(`wscript.exe "${bridgeRunner}"`, { cwd: kioskDir }, (err) => {
+      if (err) console.warn('[Kiosk] Error starting bridge runner:', err.message);
+    });
+  }
   if (fs.existsSync(watchdogRunner)) {
     exec(`wscript.exe "${watchdogRunner}"`, { cwd: kioskDir }, (err) => {
       if (err) console.warn('[Kiosk] Error starting watchdog runner:', err.message);
@@ -232,6 +259,40 @@ function startKioskServicesIfDown(kioskDir) {
     exec(`wscript.exe "${guardianRunner}"`, { cwd: kioskDir }, (err) => {
       if (err) console.warn('[Kiosk] Error starting guardian runner:', err.message);
     });
+  }
+}
+
+function stopKioskServices(kioskDir) {
+  if (process.platform !== 'win32') return;
+
+  const psKillCmd = `
+    try {
+      $w = Get-CimInstance Win32_Process -Filter "Name = 'wscript.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -and ($_.CommandLine -match "watchdog-runner\\.vbs" -or $_.CommandLine -match "guardian-runner\\.vbs") }
+      if ($w) { $w | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } }
+
+      $p = Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe' or Name = 'pwsh.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -and ($_.CommandLine -match "watchdog\\.ps1" -or $_.CommandLine -match "guardian-keys\\.ps1") }
+      if ($p) { $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } }
+    } catch {}
+  `.replace(/\r?\n/g, ' ');
+
+  exec(`powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "${psKillCmd}"`, { cwd: kioskDir }, (err) => {
+    if (err) console.warn('[Kiosk] Error stopping background kiosk processes:', err.message);
+  });
+}
+
+function ensureStartupRegistration(kioskDir) {
+  if (process.platform !== 'win32') return;
+  const installScript = path.join(kioskDir, 'install-kiosk.ps1');
+  if (fs.existsSync(installScript)) {
+    exec(
+      `powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "${installScript}" -SkipStartServices`,
+      { cwd: kioskDir },
+      (err) => {
+        if (err) console.warn('[Kiosk] Startup registration notice:', err.message);
+      }
+    );
   }
 }
 
@@ -315,9 +376,13 @@ ipcMain.handle('kiosk:set-protection', async (_event, args) => {
       'INFO'
     );
 
-    // If turned ON, ensure background services are started
+    // If turned ON, ensure background services & startup registration are active
     if (targetState) {
       startKioskServicesIfDown(kioskDir);
+      ensureStartupRegistration(kioskDir);
+    } else {
+      // If turned OFF, terminate active background protection processes
+      stopKioskServices(kioskDir);
     }
 
     return {
@@ -338,6 +403,25 @@ ipcMain.handle('kiosk:set-protection', async (_event, args) => {
 app.whenReady().then(() => {
   setupPermissions();
   createWindow();
+
+  // On Windows startup, start Kiosk local bridge and check Back Protection state
+  try {
+    const { configPath, kioskDir } = getKioskConfigInfo();
+    const bridgeRunner = path.join(kioskDir, 'kiosk-bridge-runner.vbs');
+    if (fs.existsSync(bridgeRunner)) {
+      exec(`wscript.exe "${bridgeRunner}"`, { cwd: kioskDir }, (err) => {
+        if (err) console.warn('[Kiosk] Error starting bridge runner on launch:', err.message);
+      });
+    }
+    if (fs.existsSync(configPath)) {
+      const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      if (cfg.backProtection) {
+        startKioskServicesIfDown(kioskDir);
+      }
+    }
+  } catch (err) {
+    console.warn('[Kiosk] Startup check notice:', err.message);
+  }
 
   // Register administrative keyboard shortcuts for kiosk display
   globalShortcut.register('F5', () => {

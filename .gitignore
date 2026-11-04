@@ -35,8 +35,14 @@ temp/
 # Build artifacts and dependencies
 node_modules/
 dist/
+dist-electron/
 build/
 coverage/
+
+# Kiosk runtime logs and tokens
+windows-kiosk/logs/
+windows-kiosk/.bridge-token
+.bridge-token
 
 # Signing keys and certificates
 *.keystore
