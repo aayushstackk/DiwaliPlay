@@ -1,0 +1,208 @@
+package com.aayush.diwaliplay.api
+
+import com.aayush.diwaliplay.model.*
+import com.google.common.truth.Truth.assertThat
+import java.io.File
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.currentTime
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class ResultQueueTest {
+    @get:Rule val tmp = TemporaryFolder()
+
+    private fun req(id: String) = CompleteSessionRequest(id, 10, 1, 1.0, 0, 0)
+
+    private val okResp = CompleteSessionResponse(true, GameSession("s", "u"), User("u"))
+
+    private class FakeApi(var handler: suspend (CompleteSessionRequest) -> ApiResult<CompleteSessionResponse>) : GameApi {
+        val calls = mutableListOf<Pair<String, Long>>()
+        var now: () -> Long = { 0 }
+        override suspend fun completeSession(req: CompleteSessionRequest): ApiResult<CompleteSessionResponse> {
+            calls += req.sessionId to now()
+            return handler(req)
+        }
+        private fun nope(): Nothing = error("unused")
+        override suspend fun verifyCode(code: String) = nope()
+        override suspend fun startSession(code: String, kioskId: String?) = nope()
+        override suspend fun abandonSession(req: AbandonSessionRequest) = nope()
+        override suspend fun submitFeedback(sessionId: String, feedback: GameFeedback) = nope()
+        override suspend fun getSettings() = nope()
+        override suspend fun getBombs() = nope()
+        override suspend fun getRewards() = nope()
+        override suspend fun spin(req: SpinWheelRequest) = nope()
+    }
+
+    private fun TestScope.fake(h: suspend (CompleteSessionRequest) -> ApiResult<CompleteSessionResponse>) =
+        FakeApi(h).also { it.now = { currentTime } }
+
+    private fun files(dir: File) = dir.listFiles().orEmpty().filter { it.isFile }
+
+    @Test fun removesFileOnSuccess() = runTest {
+        val dir = tmp.newFolder()
+        val api = fake { ApiResult.Success(okResp) }
+        val q = ResultQueue(dir, api, backgroundScope)
+        q.enqueue(req("a"))
+        assertThat(q.pending.value).isEqualTo(1)
+        assertThat(files(dir)).hasSize(1)
+        q.start()
+        runCurrent()
+        assertThat(api.calls.map { it.first }).containsExactly("a")
+        assertThat(files(dir)).isEmpty()
+        assertThat(q.pending.value).isEqualTo(0)
+    }
+
+    @Test fun persistsAcrossInstances() = runTest {
+        val dir = tmp.newFolder()
+        val q1 = ResultQueue(dir, fake { ApiResult.NetworkError(RuntimeException()) }, backgroundScope)
+        q1.enqueue(req("a")); q1.enqueue(req("b"))
+        assertThat(files(dir).none { it.name.endsWith(".tmp") }).isTrue()
+
+        val api2 = fake { ApiResult.Success(okResp) }
+        val q2 = ResultQueue(dir, api2, backgroundScope)
+        assertThat(q2.pending.value).isEqualTo(2)
+        q2.start()
+        runCurrent()
+        assertThat(api2.calls.map { it.first }).containsExactly("a", "b").inOrder()
+        assertThat(q2.pending.value).isEqualTo(0)
+    }
+
+    @Test fun retriesOnNetworkErrorWithBackoff() = runTest {
+        val dir = tmp.newFolder()
+        val api = fake { ApiResult.NetworkError(RuntimeException("down")) }
+        val q = ResultQueue(dir, api, backgroundScope)
+        q.enqueue(req("a"))
+        q.start()
+        runCurrent()
+        // 5s, 10s, 20s, 40s, 80s, 160s, 300s (cap), 300s
+        advanceTimeBy(5_000 + 10_000 + 20_000 + 40_000 + 80_000 + 160_000 + 300_000 + 300_000 + 1)
+        runCurrent()
+        assertThat(api.calls.map { it.second }).containsExactly(
+            0L, 5_000L, 15_000L, 35_000L, 75_000L, 155_000L, 315_000L, 615_000L, 915_000L,
+        ).inOrder()
+        assertThat(files(dir)).hasSize(1)
+        // recovers, then backoff resets for the next failure
+        api.handler = { ApiResult.Success(okResp) }
+        advanceTimeBy(300_000)
+        runCurrent()
+        assertThat(files(dir)).isEmpty()
+    }
+
+    @Test fun retriesOn5xx408And429() = runTest {
+        for (code in listOf(500, 502, 503, 408, 429)) {
+            val dir = tmp.newFolder()
+            val api = fake { ApiResult.HttpError(code, "x") }
+            val q = ResultQueue(dir, api, backgroundScope)
+            q.enqueue(req("a"))
+            q.start()
+            runCurrent()
+            advanceTimeBy(5_001)
+            assertThat(api.calls).hasSize(2)
+            assertThat(files(dir)).hasSize(1)
+        }
+    }
+
+    @Test fun dropsOnAlreadyCompleted4xx() = runTest {
+        for ((code, body) in listOf(
+            409 to """{"success":false,"message":"Session already completed."}""",
+            400 to """{"success":false,"message":"already completed"}""",
+            404 to """{"success":false,"message":"Game session s not found."}""",
+            403 to "forbidden",
+        )) {
+            val dir = tmp.newFolder()
+            val api = fake { ApiResult.HttpError(code, body) }
+            val q = ResultQueue(dir, api, backgroundScope)
+            q.enqueue(req("a"))
+            q.start()
+            runCurrent()
+            assertThat(api.calls).hasSize(1)
+            assertThat(files(dir)).isEmpty()
+            assertThat(q.pending.value).isEqualTo(0)
+            advanceTimeBy(600_000)
+            assertThat(api.calls).hasSize(1)
+        }
+    }
+
+    @Test fun droppedFileDoesNotBlockNext() = runTest {
+        val dir = tmp.newFolder()
+        val api = fake { if (it.sessionId == "a") ApiResult.HttpError(409, "already") else ApiResult.Success(okResp) }
+        val q = ResultQueue(dir, api, backgroundScope)
+        q.enqueue(req("a")); q.enqueue(req("b"))
+        q.start()
+        runCurrent()
+        assertThat(api.calls.map { it.first }).containsExactly("a", "b").inOrder()
+        assertThat(files(dir)).isEmpty()
+    }
+
+    @Test fun corruptFileIsDropped() = runTest {
+        val dir = tmp.newFolder()
+        File(dir, "0000_bad.json").writeText("{not json")
+        val api = fake { ApiResult.Success(okResp) }
+        val q = ResultQueue(dir, api, backgroundScope)
+        q.start()
+        runCurrent()
+        assertThat(api.calls).isEmpty()
+        assertThat(files(dir)).isEmpty()
+    }
+
+    @Test fun neverSendsSameFileConcurrently() = runTest {
+        val dir = tmp.newFolder()
+        var inFlight = 0
+        var maxInFlight = 0
+        val api = fake {
+            inFlight++; maxInFlight = maxOf(maxInFlight, inFlight)
+            delay(10_000)
+            inFlight--
+            ApiResult.Success(okResp)
+        }
+        val q = ResultQueue(dir, api, backgroundScope)
+        q.enqueue(req("a"))
+        q.start(); q.start() // idempotent
+        runCurrent()
+        q.enqueue(req("b")) // wakes worker while "a" is in flight
+        advanceTimeBy(5_000)
+        q.enqueue(req("a2"))
+        advanceTimeBy(60_000)
+        runCurrent()
+        assertThat(maxInFlight).isEqualTo(1)
+        assertThat(api.calls.map { it.first }).containsExactly("a", "b", "a2").inOrder()
+        assertThat(files(dir)).isEmpty()
+    }
+
+    @Test fun enqueueAfterIdleWakesWorker() = runTest {
+        val dir = tmp.newFolder()
+        val api = fake { ApiResult.Success(okResp) }
+        val q = ResultQueue(dir, api, backgroundScope)
+        q.start()
+        runCurrent()
+        q.enqueue(req("late"))
+        runCurrent()
+        assertThat(api.calls.map { it.first }).containsExactly("late")
+    }
+
+    @Test fun queuedFileRoundTripsRequest() = runTest {
+        val dir = tmp.newFolder()
+        val gate = CompletableDeferred<Unit>()
+        val api = fake { gate.await(); ApiResult.Success(okResp) }
+        var seen: CompleteSessionRequest? = null
+        val api2 = object : GameApi by api {
+            override suspend fun completeSession(req: CompleteSessionRequest): ApiResult<CompleteSessionResponse> {
+                seen = req; return ApiResult.Success(okResp)
+            }
+        }
+        val full = CompleteSessionRequest("s9", 500, 12, 4.5, 3, 2, photoData = "data:image/jpeg;base64,AAA",
+            wishTitle = "t", feedback = GameFeedback.Good, targetAchieved = true)
+        ResultQueue(dir, api, backgroundScope).enqueue(full)
+        ResultQueue(dir, api2, backgroundScope).also { it.start() }
+        runCurrent()
+        assertThat(seen).isEqualTo(full)
+    }
+}

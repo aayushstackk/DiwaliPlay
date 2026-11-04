@@ -108,4 +108,26 @@ class DecodeTest {
         )
         assertThat(k.platform).isNull()
     }
+
+    @Test
+    fun decodesSettingsResponseWithPlaylist() {
+        val r = DiwaliJson.decodeFromString<SettingsResponse>(fixture("settings.json"))
+        assertThat(r.success).isTrue()
+        assertThat(r.settings.brandName).isEqualTo("ItsSpotlight")
+        assertThat(r.wallpaperPlaylist).isEmpty()
+        val withItems = DiwaliJson.decodeFromString<SettingsResponse>(
+            """{"success":true,"settings":{},"wallpaperPlaylist":[{"id":"w1","url":"u","displayName":"A","order":2},{"id":"w2","url":"v"}]}""",
+        )
+        assertThat(withItems.wallpaperPlaylist.map { it.id }).containsExactly("w1", "w2").inOrder()
+        assertThat(withItems.wallpaperPlaylist[0].order).isEqualTo(2)
+        assertThat(withItems.wallpaperPlaylist[1].displayName).isNull()
+        assertThat(DiwaliJson.decodeFromString<SettingsResponse>(fixture("settings_minimal.json")).wallpaperPlaylist).isEmpty()
+    }
+
+    @Test
+    fun decodesRewardsInfo() {
+        val r = DiwaliJson.decodeFromString<RewardsInfo>(fixture("rewards.json"))
+        assertThat(r.enabled).isTrue()
+        assertThat(r.rewards[0].couponCode).isEqualTo("FREEGIFT")
+    }
 }

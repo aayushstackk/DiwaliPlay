@@ -15,9 +15,15 @@ kotlin {
 }
 
 dependencies {
-    implementation(project(":core:model"))
+    api(project(":core:model"))
+    api(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.okhttp)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.junit)
     testImplementation(libs.truth)
 }
+
+// Reuse the real server response fixtures owned by core:model.
+sourceSets.test { resources.srcDir("../model/src/test/resources") }

@@ -386,3 +386,31 @@ data class KioskDeviceStatus(
     val lastStateChangeReason: String? = null,
     val platform: String? = null,
 )
+
+// ---------------------------------------------------------------------------
+// Settings / rewards envelopes (src/services/api.ts getSettings / getRewards)
+// ---------------------------------------------------------------------------
+
+@Serializable
+data class WallpaperItem(
+    val id: String,
+    val url: String,
+    val displayName: String? = null,
+    val order: Int? = null,
+)
+
+/** `GET /api/settings`. */
+@Serializable
+data class SettingsResponse(
+    val success: Boolean = false,
+    val settings: SystemSettings,
+    val wallpaperPlaylist: List<WallpaperItem> = emptyList(),
+)
+
+/** `GET /api/rewards`. */
+@Serializable
+data class RewardsInfo(
+    val success: Boolean = false,
+    val enabled: Boolean = false,
+    val rewards: List<RewardItem> = emptyList(),
+)
