@@ -480,18 +480,52 @@ export const PhotoCaptureModal: React.FC<PhotoCaptureModalProps> = ({
             </div>
           )}
 
-          {/* Animated Countdown Overlay (5, 4, 3, 2, 1) */}
+          {/* Compact Top-Right Countdown Timer (Unobtrusive & Face-Safe) */}
           {isCameraReady && !cameraError && !isCaptured && countdown > 0 && !isClickPhase && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-20">
+            <div className="absolute top-2.5 right-2.5 sm:top-3 sm:right-3 z-20 pointer-events-none">
               <div
                 key={countdown}
-                className="w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-gradient-to-b from-neutral-950/85 to-[#1c1233]/90 border-2 border-amber-400 shadow-[0_0_40px_rgba(245,158,11,0.7)] flex flex-col items-center justify-center animate-in zoom-in-75 duration-200"
+                className="relative w-11 h-11 sm:w-13 sm:h-13 rounded-full bg-neutral-950/80 backdrop-blur-md border border-amber-400/80 shadow-[0_0_20px_rgba(245,158,11,0.55)] flex items-center justify-center animate-in zoom-in-90 duration-200"
               >
-                <span className="text-4xl sm:text-5xl font-black font-mono text-transparent bg-clip-text bg-gradient-to-r from-amber-100 via-amber-300 to-yellow-200 drop-shadow-[0_0_15px_rgba(251,191,36,0.85)] leading-none">
+                {/* SVG Progress Ring */}
+                <svg className="absolute inset-0 w-full h-full -rotate-90 pointer-events-none" viewBox="0 0 48 48">
+                  <defs>
+                    <linearGradient id="timerGoldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#F59E0B" />
+                      <stop offset="50%" stopColor="#FBBF24" />
+                      <stop offset="100%" stopColor="#FDE047" />
+                    </linearGradient>
+                  </defs>
+                  {/* Subtle track ring */}
+                  <circle
+                    cx="24"
+                    cy="24"
+                    r="20"
+                    fill="none"
+                    stroke="rgba(245, 158, 11, 0.25)"
+                    strokeWidth="2.5"
+                  />
+                  {/* Dynamic remaining arc */}
+                  <circle
+                    cx="24"
+                    cy="24"
+                    r="20"
+                    fill="none"
+                    stroke="url(#timerGoldGrad)"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeDasharray={125.66}
+                    strokeDashoffset={125.66 * (1 - countdown / 5)}
+                    className="transition-all duration-300 ease-out"
+                  />
+                </svg>
+
+                {/* Subtle pulsing tick aura */}
+                <div className="absolute inset-0 rounded-full border border-amber-400/30 animate-ping opacity-40 pointer-events-none" />
+
+                {/* Countdown Number */}
+                <span className="relative z-10 text-xl sm:text-2xl font-black font-mono text-transparent bg-clip-text bg-gradient-to-r from-amber-100 via-amber-300 to-yellow-200 drop-shadow-[0_0_8px_rgba(251,191,36,0.9)] leading-none select-none">
                   {countdown}
-                </span>
-                <span className="text-[10px] font-bold tracking-wider text-amber-300 uppercase mt-0.5 font-['Plus_Jakarta_Sans',sans-serif]">
-                  SMILE! 🪔
                 </span>
               </div>
             </div>
