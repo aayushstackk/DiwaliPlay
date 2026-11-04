@@ -19,6 +19,7 @@ import {
   calculateMovementDirection, extrapolateLandmarks, evaluateGameMapping,
 } from '../../src/utils/motionMath';
 import { recognizeHandGesture } from '../../src/utils/gestureRecognition';
+import { CrackerEngine } from '../../src/utils/crackerEngine';
 import type { GameScoreState, HandGesture, LandmarkPoint } from '../../src/types/motion';
 import type { AchievementTier } from '../../src/types/backend';
 
@@ -148,6 +149,98 @@ function motionHandSets() {
 
 const GESTURE_LIST: HandGesture[] = ['OPEN_PALM', 'FIST', 'THUMBS_UP', 'POINTING', 'PEACE', 'UNKNOWN'];
 
+
+// ---- cracker_engine -------------------------------------------------------
+type CrackerAction = { name: string; run: (e: CrackerEngine) => void };
+
+const CRACKER_ACTIONS: CrackerAction[] = [
+  { name: 'sparkBurst', run: (e) => e.createSparkBurst(960, 540, 1) },
+  { name: 'sparkBurst_big', run: (e) => e.createSparkBurst(300, 400, 3.5) },
+  { name: 'anarFlowerpot', run: (e) => e.createAnarFlowerpot(500, 900, 1) },
+  { name: 'radialBomb', run: (e) => e.createRadialBomb(1200, 500, 1.4) },
+  { name: 'bombBurst', run: (e) => e.createBombBurst(800, 300, '#38BDF8', false) },
+  { name: 'bombBurst_default', run: (e) => e.createBombBurst(820, 320) },
+  { name: 'bombBurst_penalty', run: (e) => e.createBombBurst(900, 600, '#F59E0B', true) },
+  { name: 'punchBlast', run: (e) => e.createPunchBlast(1500, 700, 1.2) },
+  { name: 'punchBlast_big', run: (e) => e.createPunchBlast(1500, 700, 3.7) },
+  { name: 'chakriSpin', run: (e) => e.createChakriSpin(400, 300, 1.1) },
+  { name: 'rocketBurst', run: (e) => e.createRocketBurst(1000, 200, 0.9) },
+  { name: 'goldenShower', run: (e) => e.createGoldenShower(700, 100, 1.3) },
+  { name: 'colorfulFirework', run: (e) => e.createColorfulFirework(1300, 400, 1) },
+  { name: 'ladPoppers', run: (e) => e.createLadPoppers(200, 800, 1.5) },
+  { name: 'megaComboBlast', run: (e) => e.createMegaComboBlast(600, 500, 1400, 620) },
+  ...GESTURES.flatMap((g): CrackerAction[] =>
+    ([[30, false], [300, false], [600, true]] as [number, boolean][]).map(([speed, combo]) => ({
+      name: `trigger_${g}_${speed}_${combo}`,
+      run: (e) => e.triggerCracker(960 + speed / 3, 540 - speed / 5, speed, g, combo),
+    })),
+  ),
+  { name: 'motionSparkles_left_fast', run: (e) => e.addMotionSparkles(300, 300, 'left', 300) },
+  { name: 'motionSparkles_right_slow', run: (e) => e.addMotionSparkles(1600, 300, 'right', 100) },
+  { name: 'motionSparkles_idle', run: (e) => e.addMotionSparkles(900, 300, 'left', 20) },
+];
+
+/** Reads engine internals (private in TS) for the golden snapshot. Full double precision, sampled. */
+function crackerSnapshot(e: CrackerEngine, frame: number) {
+  const eng = e as unknown as {
+    particles: Record<string, any>[];
+    rings: Record<string, any>[];
+  };
+  const act: number[] = [];
+  eng.particles.forEach((p, i) => { if (p.active) act.push(i); });
+  const sum = (key: string) => act.reduce((acc, i) => acc + eng.particles[i][key], 0);
+  const sample = (i: number) => {
+    const p = eng.particles[i];
+    return { i, x: p.x, y: p.y, tx: p.trailX, ty: p.trailY, vx: p.vx, vy: p.vy, a: p.alpha, s: p.size, c: p.color, f: p.flicker };
+  };
+  const ringAct = eng.rings.filter((r) => r.active);
+  const firstRingIdx = eng.rings.findIndex((r) => r.active);
+  return {
+    frame,
+    activeCount: e.activeCount,
+    totalBursts: e.totalBursts,
+    lastStyle: e.lastStyle,
+    flash: e.flashIntensity,
+    nActive: act.length,
+    idxSum: act.reduce((a, b) => a + b, 0),
+    sumX: sum('x'), sumY: sum('y'), sumTX: sum('trailX'), sumTY: sum('trailY'), sumAlpha: sum('alpha'), sumSize: sum('size'),
+    samples: act.length === 0 ? [] : [act[0], act[act.length >> 1], act[act.length - 1]].filter((v, k, a) => a.indexOf(v) === k).map(sample),
+    nRings: ringAct.length,
+    ringRadiusSum: ringAct.reduce((a, r) => a + r.radius, 0),
+    ringAlphaSum: ringAct.reduce((a, r) => a + r.alpha, 0),
+    ring: firstRingIdx < 0 ? null : (() => { const r = eng.rings[firstRingIdx]; return { i: firstRingIdx, x: r.x, y: r.y, radius: r.radius, maxRadius: r.maxRadius, alpha: r.alpha, speed: r.speed, color: r.color }; })(),
+  };
+}
+
+const CRACKER_SNAP_FRAMES = [20, 60];
+
+function crackerScenario(seed: number, lowEnd: boolean) {
+  return withSeededRandom(seed, () => {
+    const e = new CrackerEngine(700);
+    e.setLowEndMode(lowEnd);
+    const runUpdates = (frames: number[], total: number) => {
+      const out: ReturnType<typeof crackerSnapshot>[] = [];
+      for (let f = 1; f <= total; f++) {
+        e.update();
+        if (frames.includes(f)) out.push(crackerSnapshot(e, f));
+      }
+      return out;
+    };
+    const actions = CRACKER_ACTIONS.map((a) => {
+      a.run(e);
+      const spawned = crackerSnapshot(e, 0);
+      return { name: a.name, snapshots: [spawned, ...runUpdates(CRACKER_SNAP_FRAMES, 90)] };
+    });
+    // Stress: everything fired with no update in between (hits the pool / ring caps), then decay.
+    for (const a of CRACKER_ACTIONS) a.run(e);
+    const stress = [crackerSnapshot(e, 0), ...runUpdates([1, 2, 10, 30, 60, 90], 90)];
+    // reset, then a final random draw proves identical Math.random consumption.
+    e.reset();
+    const afterReset = crackerSnapshot(e, 0);
+    return { seed, lowEnd, actions, stress, afterReset, nextRandom: Math.random() };
+  });
+}
+
 export const generators: Record<string, Generator> = {
   score_system: {
     target: 'game',
@@ -195,6 +288,13 @@ export const generators: Record<string, Generator> = {
         { seed: 42, values: sequence(42, 1000) },
         { seed: -7, values: sequence(-7, 1000) },
       ],
+    }),
+  },
+  cracker_engine: {
+    target: 'game',
+    run: () => ({
+      maxParticles: 700,
+      scenarios: [1, 2, 3, 4, 5].flatMap((seed) => [false, true].map((lowEnd) => crackerScenario(seed, lowEnd))),
     }),
   },
   motion_math: {
