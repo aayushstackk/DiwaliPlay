@@ -665,6 +665,12 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
           })
           .finally(() => {
             isInferringRef.current = false;
+            // A camera frame that arrived during this detection was skipped. Start on the
+            // newest frame now: waiting for the next one halves the detection rate whenever
+            // inference outlasts a camera frame, and MediaPipe then loses fast-moving hands.
+            if (!isCancelled) {
+              runInference(performance.now());
+            }
           });
         return;
       }
