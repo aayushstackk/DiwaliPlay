@@ -35,6 +35,11 @@ import java.util.concurrent.ConcurrentHashMap
  * than a missing one. A source that was not preloaded (e.g. a custom file cached after [apply]) is started loading
  * by that first [play] call, so the next one plays.
  *
+ * Failed loads are remembered and not retried by [play]; they are retried on the next [apply]. [isReady] turns true
+ * once the [SoundResolver.criticalSources] (countdown, shutter, combo, game over) are loaded (or definitively failed),
+ * so the app can gate the round start on it. The engine does not watch `BrandingState.localFiles`: **the caller must
+ * call [apply] again whenever the cached custom files (or the audio settings) change.**
+ *
  * Loops: ExoPlayer `REPEAT_MODE_ONE` over the baked FLAC; the loops end in digital silence (Task 15), so any
  * re-prepare gap on the seam falls into that silence.
  */
@@ -52,12 +57,22 @@ class AudioEngine(context: Context, private val resolver: SoundResolver) {
         )
         .build()
 
+    /** Guards every mutation of [sampleIds] / [failed] together with the matching SoundPool load/unload. */
+    private val loadLock = Any()
     private val sampleIds = ConcurrentHashMap<SoundSource, Int>()
     private val loadedSamples: MutableSet<Int> = ConcurrentHashMap.newKeySet()
+    private val failed: MutableSet<SoundSource> = ConcurrentHashMap.newKeySet()
+    private val loggedDrops: MutableSet<SoundSource> = ConcurrentHashMap.newKeySet()
 
-    @Volatile private var settings: GameAudioSettings = defaultAudioSettings()
-    @Volatile private var files: Map<String, File> = emptyMap()
-    @Volatile private var bombs: List<BombConfig> = emptyList()
+    /** Immutable settings snapshot, swapped atomically by [apply]. */
+    private class Snapshot(
+        val settings: GameAudioSettings,
+        val files: Map<String, File>,
+        val bombs: List<BombConfig>,
+        val critical: Set<SoundSource>,
+    )
+
+    @Volatile private var snapshot = Snapshot(defaultAudioSettings(), emptyMap(), emptyList(), emptySet())
     @Volatile private var released = false
 
     // Main-looper-only state.
@@ -70,8 +85,14 @@ class AudioEngine(context: Context, private val resolver: SoundResolver) {
             if (status == 0) {
                 loadedSamples += sampleId
             } else {
-                Log.w(TAG, "sample $sampleId failed to load (status $status)")
-                sampleIds.entries.removeAll { it.value == sampleId }
+                synchronized(loadLock) {
+                    Log.w(TAG, "sample $sampleId failed to load (status $status)")
+                    sampleIds.entries.filter { it.value == sampleId }.forEach {
+                        failed += it.key
+                        sampleIds.remove(it.key)
+                    }
+                    soundPool.unload(sampleId)
+                }
             }
         }
     }
@@ -82,52 +103,69 @@ class AudioEngine(context: Context, private val resolver: SoundResolver) {
      */
     fun apply(settings: GameAudioSettings, files: Map<String, File>, bombs: List<BombConfig> = emptyList()) {
         if (released) return
-        this.settings = settings
-        this.files = files
-        this.bombs = bombs
         val wanted = resolver.preloadSources(settings, files, bombs)
-        wanted.forEach { ensureLoaded(it) }
-        sampleIds.keys.filter { it !in wanted }.forEach { stale ->
-            sampleIds.remove(stale)?.let { loadedSamples.remove(it); soundPool.unload(it) }
+        snapshot = Snapshot(settings, files, bombs, resolver.criticalSources(settings, files))
+        synchronized(loadLock) {
+            failed.clear() // a new apply retries everything that failed before
+            loggedDrops.clear()
+            wanted.forEach { loadLocked(it) } // criticality order
+            sampleIds.keys.filter { it !in wanted }.forEach { stale ->
+                sampleIds.remove(stale)?.let { loadedSamples.remove(it); soundPool.unload(it) }
+            }
         }
         onMain { if (bgmWanted) refreshBgm() }
     }
 
-    /** Non-blocking; see the class doc for the not-yet-loaded rule. [rate] is SoundPool's 0.5..2.0 playback rate. */
-    fun play(source: SoundSource, volume: Float, pan: Float = 0f, rate: Float = 1f) {
-        if (released || source == SoundSource.None || volume <= 0f) return
+    /** True once every critical effect (countdown, shutter, combo, game over) is loaded or has definitively failed. */
+    fun isReady(): Boolean = snapshot.critical.all { isLoaded(it) || it in failed }
+
+    fun isLoaded(source: SoundSource): Boolean = sampleIds[source]?.let { it in loadedSamples } == true
+
+    fun hasFailed(source: SoundSource): Boolean = source in failed
+
+    /**
+     * Non-blocking; see the class doc for the not-yet-loaded rule. [rate] is SoundPool's 0.5..2.0 playback rate,
+     * [priority] its stream priority. Returns the SoundPool stream id, or 0 when nothing was started.
+     */
+    fun play(source: SoundSource, volume: Float, pan: Float = 0f, rate: Float = 1f, priority: Int = ResolvedSound.PRIORITY_NORMAL): Int {
+        if (released || source == SoundSource.None || volume <= 0f || source in failed) return 0
         val id = sampleIds[source]
         if (id == null) {
-            ensureLoaded(source)
-            Log.d(TAG, "dropped $source: not loaded yet")
-            return
+            synchronized(loadLock) { loadLocked(source) } // lazily, once; failures are remembered until the next apply
+            logDrop(source, "not loaded yet")
+            return 0
         }
         if (id !in loadedSamples) {
-            Log.d(TAG, "dropped $source: still loading")
-            return
+            logDrop(source, "still loading")
+            return 0
         }
         val p = pan.coerceIn(-1f, 1f)
         val left = volume * (1f - maxOf(0f, p))
         val right = volume * (1f + minOf(0f, p))
-        soundPool.play(id, left, right, 1, 0, rate.coerceIn(0.5f, 2f))
+        return soundPool.play(id, left, right, priority, 0, rate.coerceIn(0.5f, 2f))
     }
 
-    fun play(sound: ResolvedSound, pan: Float = 0f) = play(sound.source, sound.volume, pan, sound.rate)
+    fun play(sound: ResolvedSound, pan: Float = 0f): Int = play(sound.source, sound.volume, pan, sound.rate, sound.priority)
 
     /** Plays a key emitted by core:game's `GameEffects.playSound`. */
-    fun playGameKey(key: String) = play(resolver.forGameKey(key, settings, files, bombs))
-
-    fun playSfx(key: SfxKey, pan: Float = 0f) {
-        val (source, volume) = resolver.sfx(key, settings, files)
-        play(source, volume, pan)
+    fun playGameKey(key: String): Int {
+        val s = snapshot
+        return play(resolver.forGameKey(key, s.settings, s.files, s.bombs))
     }
 
-    /** Cracker sound with the web's random pitch/volume jitter. [pan] -1..1. */
-    fun playCracker(type: String, pan: Float = 0f) = play(resolver.cracker(type, settings), pan)
+    fun playSfx(key: SfxKey, pan: Float = 0f): Int {
+        val s = snapshot
+        val (source, volume) = resolver.sfx(key, s.settings, s.files)
+        val priority = if (key == SfxKey.GAME_OVER) ResolvedSound.PRIORITY_HIGH else ResolvedSound.PRIORITY_NORMAL
+        return play(source, volume, pan, 1f, priority)
+    }
 
-    fun playSpinTick(liveGain: Float = 0.5f) {
+    /** Cracker sound with the web's random pitch/volume jitter. [pan] -1..1. Low priority (MEGA_BLAST high). */
+    fun playCracker(type: String, pan: Float = 0f): Int = play(resolver.cracker(type, snapshot.settings), pan)
+
+    fun playSpinTick(liveGain: Float = 0.5f): Int {
         val (source, volume) = resolver.spinTick(liveGain)
-        play(source, volume)
+        return play(source, volume, 0f, 1f, ResolvedSound.PRIORITY_LOW)
     }
 
     fun startBgm() = onMain {
@@ -144,9 +182,11 @@ class AudioEngine(context: Context, private val resolver: SoundResolver) {
     /** Frees the SoundPool and the player. The engine is unusable afterwards. */
     fun release() {
         released = true
-        soundPool.release()
-        sampleIds.clear()
-        loadedSamples.clear()
+        synchronized(loadLock) {
+            soundPool.release()
+            sampleIds.clear()
+            loadedSamples.clear()
+        }
         onMain {
             bgmWanted = false
             player?.release()
@@ -156,8 +196,9 @@ class AudioEngine(context: Context, private val resolver: SoundResolver) {
 
     // ---- internals -----------------------------------------------------------------------------------------
 
-    private fun ensureLoaded(source: SoundSource) {
-        if (released || sampleIds.containsKey(source)) return
+    /** Must hold [loadLock]. Starts one load per source; a failure is recorded in [failed]. */
+    private fun loadLocked(source: SoundSource) {
+        if (released || source in failed || sampleIds.containsKey(source)) return
         val id = try {
             when (source) {
                 is SoundSource.Asset -> appContext.assets.openFd(source.path).use { soundPool.load(it, 1) }
@@ -166,13 +207,18 @@ class AudioEngine(context: Context, private val resolver: SoundResolver) {
             }
         } catch (e: Exception) {
             Log.w(TAG, "cannot load $source", e)
+            failed += source
             return
         }
-        if (id != 0) sampleIds.putIfAbsent(source, id)
+        if (id != 0) sampleIds[source] = id else failed += source
+    }
+
+    private fun logDrop(source: SoundSource, why: String) {
+        if (loggedDrops.add(source)) Log.d(TAG, "dropped $source: $why")
     }
 
     private fun refreshBgm() {
-        val choice = resolver.bgm(settings, files)
+        val choice = snapshot.let { resolver.bgm(it.settings, it.files) }
         if (choice.source == bgmSource && choice.source != SoundSource.None) {
             player?.volume = choice.volume
             player?.repeatMode = repeatMode(choice)
@@ -182,7 +228,7 @@ class AudioEngine(context: Context, private val resolver: SoundResolver) {
     }
 
     private fun startBgmNow() {
-        val choice = resolver.bgm(settings, files)
+        val choice = snapshot.let { resolver.bgm(it.settings, it.files) }
         if (choice.source == SoundSource.None) {
             stopBgmNow()
             return

@@ -16,6 +16,13 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    // SoundPool loads assets through AssetFileDescriptor (openFd), which fails on compressed assets.
+    // FLAC is already compressed, so keep it stored uncompressed in the APK.
+    androidResources {
+        noCompress += "flac"
     }
 
     buildTypes {
@@ -54,4 +61,8 @@ dependencies {
     implementation(libs.compose.ui)
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
+
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.truth)
 }

@@ -94,6 +94,7 @@ class SoundResolver(
             SoundSource.Asset(SoundManifest.assetPath(file)),
             gain(master(settings) * vol * effectChannel),
             pitch,
+            if (type == "MEGA_BLAST") ResolvedSound.PRIORITY_HIGH else ResolvedSound.PRIORITY_LOW,
         )
     }
 
@@ -128,14 +129,16 @@ class SoundResolver(
      * Unknown keys are silent.
      */
     fun forGameKey(key: String, settings: GameAudioSettings, files: Map<String, File>, bombs: List<BombConfig>): ResolvedSound {
-        fun pair(p: Pair<SoundSource, Float>) = ResolvedSound(p.first, p.second)
+        fun pair(p: Pair<SoundSource, Float>, priority: Int = ResolvedSound.PRIORITY_NORMAL) =
+            ResolvedSound(p.first, p.second, priority = priority)
+        val high = ResolvedSound.PRIORITY_HIGH
         return when {
-            key == "countdown_3" -> pair(countdown(CountdownStep.THREE, settings, files))
-            key == "countdown_2" -> pair(countdown(CountdownStep.TWO, settings, files))
-            key == "countdown_1" -> pair(countdown(CountdownStep.ONE, settings, files))
-            key == "countdown_go" -> pair(countdown(CountdownStep.GO, settings, files))
+            key == "countdown_3" -> pair(countdown(CountdownStep.THREE, settings, files), high)
+            key == "countdown_2" -> pair(countdown(CountdownStep.TWO, settings, files), high)
+            key == "countdown_1" -> pair(countdown(CountdownStep.ONE, settings, files), high)
+            key == "countdown_go" -> pair(countdown(CountdownStep.GO, settings, files), high)
             key == "photo_shutter" -> pair(sfx(SfxKey.PHOTO_SHUTTER, settings, files))
-            key == "game_over" -> pair(sfx(SfxKey.GAME_OVER, settings, files))
+            key == "game_over" -> pair(sfx(SfxKey.GAME_OVER, settings, files), high)
             key == "combo_ding" -> pair(combo(settings, files))
             key == "MEGA_BLAST" -> cracker("MEGA_BLAST", settings)
             key.startsWith("bomb_burst:") -> {
@@ -147,21 +150,41 @@ class SoundResolver(
     }
 
     /**
+     * Sources whose absence would make the round start audibly broken: the four countdown sounds, the shutter, the
+     * combo sound and the game-over sound. [AudioEngine.isReady] is true once all of these have loaded.
+     */
+    fun criticalSources(settings: GameAudioSettings, files: Map<String, File>): Set<SoundSource> {
+        val s = settings.copy(isMuted = false)
+        val out = LinkedHashSet<SoundSource>()
+        CountdownStep.entries.forEach { out += countdown(it, s, files).first }
+        out += sfx(SfxKey.PHOTO_SHUTTER, s, files).first
+        out += combo(s, files).first
+        out += sfx(SfxKey.GAME_OVER, s, files).first
+        out.remove(SoundSource.None)
+        return out
+    }
+
+    /**
      * Every source [forGameKey], [sfx], [countdown], [combo], [cracker], [bombBurst] and [spinTick] can produce for
-     * these settings (computed as if unmuted), so [AudioEngine.apply] can preload them.
+     * these settings (computed as if unmuted), in load order: [criticalSources] first, then the remaining effects,
+     * crackers and bombs, and the large launch / mega-explosion / rocket files last.
      */
     fun preloadSources(settings: GameAudioSettings, files: Map<String, File>, bombs: List<BombConfig>): Set<SoundSource> {
         val s = settings.copy(isMuted = false)
-        val out = LinkedHashSet<SoundSource>()
-        SfxKey.entries.forEach { out += sfx(it, s, files).first }
-        CountdownStep.entries.forEach { out += countdown(it, s, files).first }
-        out += combo(s, files).first
-        manifest.crackers.keys.forEach { out += cracker(it, s).source }
-        manifest.bombPresets.keys.forEach { out += bombBurst(it, null, s, files).first }
-        bombs.forEach { out += bombBurst(it.soundPreset, it.soundUrl, s, files).first }
-        out += spinTick().first
-        out.remove(SoundSource.None)
-        return out
+        val rest = LinkedHashSet<SoundSource>()
+        SfxKey.entries.forEach { rest += sfx(it, s, files).first }
+        manifest.crackers.keys.forEach { rest += cracker(it, s).source }
+        manifest.bombPresets.keys.forEach { rest += bombBurst(it, null, s, files).first }
+        bombs.forEach { rest += bombBurst(it.soundPreset, it.soundUrl, s, files).first }
+        rest += spinTick().first
+        val critical = criticalSources(settings, files)
+        val (large, normal) = (rest - critical - SoundSource.None).partition { isLarge(it) }
+        return LinkedHashSet<SoundSource>().apply { addAll(critical); addAll(normal); addAll(large) }
+    }
+
+    private fun isLarge(source: SoundSource): Boolean {
+        val name = (source as? SoundSource.Asset)?.path?.substringAfterLast('/') ?: return false
+        return LARGE_FILE_PREFIXES.any { name.startsWith(it) }
     }
 
     // ------------------------------------------------------------------------------------------------------
@@ -209,6 +232,9 @@ class SoundResolver(
 
         /** playExternalBuffer 1.25 x effect bus (0.95 x 1.3) x master stage 1.35, per unit of master x perSound. */
         private const val CUSTOM_BUS_GAIN = 1.25 * 0.95 * 1.3 * 1.35
+
+        /** The 7.7 s launch / rocket / mega-explosion renders (Task 15): loaded last. */
+        private val LARGE_FILE_PREFIXES = listOf("launch_", "explosion_mega", "cracker_rocket")
 
         /** playBuiltIn cases that never forward `vol` to the synth (they call it with defaults). */
         private val IDS_IGNORING_VOLUME = setOf("bomb_buzz", "fanfare_triumph", "fanfare_grand", "game_over_fanfare")

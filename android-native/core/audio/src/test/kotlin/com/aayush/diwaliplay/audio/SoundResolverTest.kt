@@ -289,4 +289,28 @@ class SoundResolverTest {
             SoundSource.Asset("sounds/spin_tick.flac"), SoundSource.Asset("sounds/chime_celebration.flac"),
         )
     }
+
+    @Test fun preloadOrdersCriticalFirstAndLargeFilesLast() {
+        val s = defaultAudioSettings()
+        val order = resolver.preloadSources(s, none, emptyList()).toList()
+        val critical = resolver.criticalSources(s, none)
+        assertThat(critical).containsAtLeast(
+            asset("beep_classic"), asset("chime_celebration"), asset("camera_click"), asset("combo_ding"), asset("fanfare_triumph"),
+        )
+        assertThat(order.take(critical.size).toSet()).isEqualTo(critical)
+        val large = setOf("launch_whoosh", "explosion_mega", "cracker_rocket").map { asset(it).path.let(SoundSource::Asset) }
+        assertThat(order.takeLast(large.size).toSet()).isEqualTo(large.toSet())
+    }
+
+    @Test fun prioritiesHighForCountdownGameOverMegaBlastLowForCrackers() {
+        val s = defaultAudioSettings()
+        fun p(k: String) = resolver.forGameKey(k, s, none, emptyList()).priority
+        assertThat(p("countdown_3")).isEqualTo(ResolvedSound.PRIORITY_HIGH)
+        assertThat(p("countdown_go")).isEqualTo(ResolvedSound.PRIORITY_HIGH)
+        assertThat(p("game_over")).isEqualTo(ResolvedSound.PRIORITY_HIGH)
+        assertThat(p("MEGA_BLAST")).isEqualTo(ResolvedSound.PRIORITY_HIGH)
+        assertThat(p("bomb_burst:x")).isEqualTo(ResolvedSound.PRIORITY_NORMAL)
+        assertThat(p("combo_ding")).isEqualTo(ResolvedSound.PRIORITY_NORMAL)
+        assertThat(resolver.cracker("BOMB", s).priority).isEqualTo(ResolvedSound.PRIORITY_LOW)
+    }
 }
