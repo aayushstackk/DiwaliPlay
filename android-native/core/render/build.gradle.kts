@@ -11,6 +11,7 @@ android {
 
     defaultConfig {
         minSdk = 26
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     compileOptions {
@@ -24,6 +25,12 @@ kotlin {
 }
 
 dependencies {
-    implementation(project(":core:game"))
-    implementation(project(":core:model"))
+    // CrackerSim, BombSim, GamePhase (core:game) and HandRender/BombConfig (core:model) appear in RenderFrame.
+    api(project(":core:game"))
+    api(project(":core:model"))
+    testImplementation(libs.junit)
+    testImplementation(libs.truth)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.truth)
 }
