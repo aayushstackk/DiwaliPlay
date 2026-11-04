@@ -23,6 +23,8 @@ android {
     // FLAC is already compressed, so keep it stored uncompressed in the APK.
     androidResources {
         noCompress += "flac"
+        // MediaPipe memory-maps models/hand_landmarker.task, which needs it stored uncompressed.
+        noCompress += "task"
     }
 
     buildTypes {
