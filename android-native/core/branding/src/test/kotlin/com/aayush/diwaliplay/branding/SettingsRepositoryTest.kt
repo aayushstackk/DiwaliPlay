@@ -11,6 +11,9 @@ import com.aayush.diwaliplay.model.CompleteSessionResponse
 import com.aayush.diwaliplay.model.ComboAudioConfig
 import com.aayush.diwaliplay.model.CountdownAudioConfig
 import com.aayush.diwaliplay.model.CountdownCustomUrls
+import com.aayush.diwaliplay.model.AchievementTier
+import com.aayush.diwaliplay.model.DEFAULT_BOMB_CONFIGS
+import com.aayush.diwaliplay.model.DEFAULT_BOMB_SETTINGS
 import com.aayush.diwaliplay.model.DiwaliJson
 import com.aayush.diwaliplay.model.GameAudioSettings
 import com.aayush.diwaliplay.model.GameFeedback
@@ -33,6 +36,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -63,9 +67,11 @@ private class FakeApi : GameApi {
     var bombsCalls = 0
     var rewardsCalls = 0
     var settingsDelayMs = 0L
+    var throwOnSettingsCalls = 0
 
     override suspend fun getSettings(): ApiResult<SettingsResponse> {
         settingsCalls++
+        if (settingsCalls <= throwOnSettingsCalls) throw IllegalStateException("api blew up")
         if (settingsDelayMs > 0) delay(settingsDelayMs)
         return settings
     }
@@ -262,6 +268,81 @@ class SettingsRepositoryTest {
         assertThat(r.state.value.currentWallpaperUrl).isEqualTo("http://x/a.png")
         r.advanceWallpaper()
         assertThat(r.state.value.currentWallpaperUrl).isEqualTo("http://x/b.png")
+    }
+
+    @Test fun throwingApiDoesNotKillPolling() = runTest {
+        val api = FakeApi().apply { throwOnSettingsCalls = 1 }
+        val r = repo(api)
+        r.start()
+        runCurrent()
+        assertThat(api.settingsCalls).isEqualTo(1)
+        assertThat(backgroundScope.isActive).isTrue()
+        advanceTimeBy(8_000)
+        runCurrent()
+        assertThat(api.settingsCalls).isEqualTo(2)
+        assertThat(r.state.value.rewards.rewards).isNotEmpty()
+        assertThat(r.state.value.isLoading).isFalse()
+        // refreshNow after a throwing flight also works and does not throw.
+        api.throwOnSettingsCalls = api.settingsCalls + 1
+        r.refreshNow()
+    }
+
+    @Test fun offlineFirstInstallHasDefaultBombs() = runTest {
+        val api = FakeApi().apply {
+            settings = ApiResult.NetworkError(java.io.IOException())
+            bombs = ApiResult.NetworkError(java.io.IOException())
+        }
+        val r = repo(api)
+        assertThat(r.state.value.bombs.bombs).isEqualTo(DEFAULT_BOMB_CONFIGS)
+        assertThat(r.state.value.bombs.settings).isEqualTo(DEFAULT_BOMB_SETTINGS)
+        r.refreshNow()
+        assertThat(r.state.value.bombs.bombs).isEqualTo(DEFAULT_BOMB_CONFIGS)
+    }
+
+    @Test fun keepsAudioSettingsAndTiersWhenResponseOmitsThem() = runTest {
+        val api = FakeApi()
+        val base = (api.settings as ApiResult.Success).value.settings
+        val tiers = listOf(AchievementTier(id = "t1", title = "Gold", minScore = 10))
+        api.settings = settingsOf(base.copy(achievementTiers = tiers))
+        val r = repo(api)
+        r.refreshNow()
+        val audio = r.state.value.settings.audioSettings
+        assertThat(audio).isNotNull()
+        assertThat(r.state.value.settings.achievementTiers).isEqualTo(tiers)
+        api.settings = settingsOf(base.copy(audioSettings = null, achievementTiers = null, brandName = "Later"))
+        r.refreshNow()
+        assertThat(r.state.value.settings.brandName).isEqualTo("Later")
+        assertThat(r.state.value.settings.audioSettings).isEqualTo(audio)
+        assertThat(r.state.value.settings.achievementTiers).isEqualTo(tiers)
+    }
+
+    @Test fun bombsOnlySuccessDoesNotPersistDefaultSettingsAsLastGood() = runTest {
+        val api = FakeApi().apply {
+            settings = ApiResult.NetworkError(java.io.IOException())
+            rewards = ApiResult.NetworkError(java.io.IOException())
+        }
+        val store = File(tmp.root, "branding.json")
+        repo(api, store).refreshNow()
+        val json = store.readText()
+        assertThat(json).contains("bombs")
+        assertThat(json).doesNotContain("\"settings\":{\"success\"")
+        assertThat(json).doesNotContain("ItsSpotlight")
+        assertThat(json).doesNotContain("rewards\":{")
+        // A later cold start therefore still treats settings as not loaded.
+        val cold = repo(FakeApi().apply { settings = ApiResult.NetworkError(java.io.IOException()) }, store)
+        assertThat(cold.state.value.isLoading).isTrue()
+        assertThat(cold.state.value.bombs.bombs).isNotEmpty()
+    }
+
+    @Test fun nothingFetchedWritesNoStoreFile() = runTest {
+        val api = FakeApi().apply {
+            settings = ApiResult.HttpError(500, "")
+            bombs = ApiResult.HttpError(500, "")
+            rewards = ApiResult.HttpError(500, "")
+        }
+        val store = File(tmp.root, "branding.json")
+        repo(api, store).refreshNow()
+        assertThat(store.exists()).isFalse()
     }
 
     @Test fun collectsLogoWallpapersBombImagesAndCustomSounds() {

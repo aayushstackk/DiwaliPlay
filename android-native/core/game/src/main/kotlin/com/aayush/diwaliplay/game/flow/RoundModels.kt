@@ -6,8 +6,8 @@ import com.aayush.diwaliplay.game.GameRandom
 import com.aayush.diwaliplay.game.PlayerAchievement
 import com.aayush.diwaliplay.game.calculateAchievement
 import com.aayush.diwaliplay.game.getPersonalizedWish
-import com.aayush.diwaliplay.game.bomb.DEFAULT_BOMB_CONFIGS
-import com.aayush.diwaliplay.game.bomb.DEFAULT_BOMB_SETTINGS
+import com.aayush.diwaliplay.model.DEFAULT_BOMB_CONFIGS
+import com.aayush.diwaliplay.model.DEFAULT_BOMB_SETTINGS
 import com.aayush.diwaliplay.model.AchievementTier
 import com.aayush.diwaliplay.model.BombConfig
 import com.aayush.diwaliplay.model.BombGameSettings

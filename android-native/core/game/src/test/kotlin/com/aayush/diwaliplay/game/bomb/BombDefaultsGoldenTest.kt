@@ -2,6 +2,8 @@ package com.aayush.diwaliplay.game.bomb
 
 import com.aayush.diwaliplay.game.golden.loadGolden
 import com.aayush.diwaliplay.model.BombConfig
+import com.aayush.diwaliplay.model.DEFAULT_BOMB_CONFIGS
+import com.aayush.diwaliplay.model.DEFAULT_BOMB_SETTINGS
 import com.aayush.diwaliplay.model.BombGameSettings
 import com.google.common.truth.Truth.assertThat
 import kotlinx.serialization.json.Json

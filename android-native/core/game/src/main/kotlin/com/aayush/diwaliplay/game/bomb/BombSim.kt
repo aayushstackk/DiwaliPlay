@@ -3,6 +3,7 @@ package com.aayush.diwaliplay.game.bomb
 import com.aayush.diwaliplay.game.GameRandom
 import com.aayush.diwaliplay.model.BombConfig
 import com.aayush.diwaliplay.model.BombGameSettings
+import com.aayush.diwaliplay.model.DEFAULT_BOMB_CONFIGS
 import com.aayush.diwaliplay.model.Point2D
 import kotlin.math.PI
 import kotlin.math.cos

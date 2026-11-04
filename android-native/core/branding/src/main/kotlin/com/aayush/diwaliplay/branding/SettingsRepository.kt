@@ -60,6 +60,10 @@ class SettingsRepository(
     private var inFlight: Deferred<Unit>? = null
     private var pollJob: Job? = null
     @Volatile private var paused = false
+    // Only data that really came from the server (or the disk copy) is written back as "last good".
+    @Volatile private var settingsLoaded = false
+    @Volatile private var bombsLoaded = false
+    @Volatile private var rewardsLoaded = false
 
     init {
         loadFromDisk()
@@ -102,7 +106,7 @@ class SettingsRepository(
      */
     suspend fun refreshNow() {
         val flight = flightLock.withLock {
-            inFlight?.takeIf { it.isActive } ?: scope.async { doRefresh() }.also { inFlight = it }
+            inFlight?.takeIf { it.isActive } ?: scope.async { guardedRefresh() }.also { inFlight = it }
         }
         flight.await()
     }
@@ -117,6 +121,17 @@ class SettingsRepository(
         }
     }
 
+    /** A failing refresh (throwing api, disk error, ...) keeps the last good state and must never cancel [scope]. */
+    private suspend fun guardedRefresh() {
+        try {
+            doRefresh()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            _state.update { it.copy(isLoading = false) }
+        }
+    }
+
     private suspend fun doRefresh() {
         val (settings, bombs, rewards) = coroutineScope {
             val s = async { api.getSettings() }
@@ -128,12 +143,20 @@ class SettingsRepository(
         val okBombs = (bombs as? ApiResult.Success)?.value?.takeIf { it.success }
         val okRewards = (rewards as? ApiResult.Success)?.value?.takeIf { it.success }
 
+        if (okSettings != null) settingsLoaded = true
+        if (okBombs != null) bombsLoaded = true
+        if (okRewards != null) rewardsLoaded = true
         _state.update { s ->
             var n = s.copy(isLoading = false)
             if (okSettings != null) {
                 val new = okSettings.settings.normalizedForBranding()
                 val activeChanged = new.wallpaperUrl != s.settings.wallpaperUrl
-                n = n.copy(settings = new, playlist = okSettings.wallpaperPlaylist)
+                // Like the web, audio settings and tiers are only overwritten when the response carries them.
+                val merged = new.copy(
+                    audioSettings = new.audioSettings ?: s.settings.audioSettings,
+                    achievementTiers = new.achievementTiers ?: s.settings.achievementTiers,
+                )
+                n = n.copy(settings = merged, playlist = okSettings.wallpaperPlaylist)
                 if (activeChanged || n.currentWallpaperUrl.isEmpty()) {
                     val r = initialRotation(new.wallpaperUrl.orEmpty(), n.playlist)
                     n = n.copy(rotationIndex = r.index, currentWallpaperUrl = r.url)
@@ -162,9 +185,9 @@ class SettingsRepository(
     private fun persist() {
         val s = _state.value
         val snapshot = Persisted(
-            settings = SettingsResponse(success = true, settings = s.settings, wallpaperPlaylist = s.playlist),
-            bombs = s.bombs.takeIf { it.success },
-            rewards = s.rewards.takeIf { it.success },
+            settings = SettingsResponse(success = true, settings = s.settings, wallpaperPlaylist = s.playlist).takeIf { settingsLoaded },
+            bombs = s.bombs.takeIf { bombsLoaded },
+            rewards = s.rewards.takeIf { rewardsLoaded },
         )
         try {
             store.absoluteFile.parentFile?.mkdirs()
@@ -175,7 +198,7 @@ class SettingsRepository(
             } catch (_: AtomicMoveNotSupportedException) {
                 Files.move(tmp.toPath(), store.toPath(), StandardCopyOption.REPLACE_EXISTING)
             }
-        } catch (_: java.io.IOException) {
+        } catch (_: Exception) {
             // Persistence is best effort; the in-memory state is still correct.
         }
     }
@@ -192,9 +215,10 @@ class SettingsRepository(
             val settings = it.settings.normalizedForBranding()
             val r = initialRotation(settings.wallpaperUrl.orEmpty(), it.wallpaperPlaylist)
             n = n.copy(settings = settings, playlist = it.wallpaperPlaylist, currentWallpaperUrl = r.url, isLoading = false)
+            settingsLoaded = true
         }
-        saved.bombs?.let { n = n.copy(bombs = it) }
-        saved.rewards?.let { n = n.copy(rewards = it) }
+        saved.bombs?.let { n = n.copy(bombs = it); bombsLoaded = true }
+        saved.rewards?.let { n = n.copy(rewards = it); rewardsLoaded = true }
         val local = collectAssetUrls(n).mapNotNull { u -> cache.peek(u)?.let { u to it } }.toMap()
         _state.value = n.copy(localFiles = local)
     }

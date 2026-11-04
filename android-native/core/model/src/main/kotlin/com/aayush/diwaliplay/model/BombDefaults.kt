@@ -1,7 +1,5 @@
-package com.aayush.diwaliplay.game.bomb
+package com.aayush.diwaliplay.model
 
-import com.aayush.diwaliplay.model.BombConfig
-import com.aayush.diwaliplay.model.BombGameSettings
 
 /** Port of `DEFAULT_BOMB_SETTINGS` in src/utils/bombDefaults.ts (verified by the bomb_defaults golden). */
 val DEFAULT_BOMB_SETTINGS = BombGameSettings(

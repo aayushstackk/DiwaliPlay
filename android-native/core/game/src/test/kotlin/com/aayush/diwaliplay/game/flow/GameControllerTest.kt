@@ -1,7 +1,7 @@
 package com.aayush.diwaliplay.game.flow
 
 import com.aayush.diwaliplay.game.Mulberry32
-import com.aayush.diwaliplay.game.bomb.DEFAULT_BOMB_CONFIGS
+import com.aayush.diwaliplay.model.DEFAULT_BOMB_CONFIGS
 import com.aayush.diwaliplay.game.calculateAchievement
 import com.aayush.diwaliplay.model.EarnedReward
 import com.aayush.diwaliplay.model.GameFeedback

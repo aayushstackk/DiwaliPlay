@@ -1,24 +1,12 @@
 package com.aayush.diwaliplay.branding
 
-import com.aayush.diwaliplay.model.BombGameSettings
+import com.aayush.diwaliplay.model.DEFAULT_BOMB_CONFIGS
+import com.aayush.diwaliplay.model.DEFAULT_BOMB_SETTINGS
 import com.aayush.diwaliplay.model.ListBombsResponse
 import com.aayush.diwaliplay.model.RewardsInfo
 import com.aayush.diwaliplay.model.SystemSettings
 import com.aayush.diwaliplay.model.WallpaperItem
 import java.io.File
-
-/** Used until the server (or the disk copy) supplies bomb tuning; values are the server's defaults. */
-val DEFAULT_BOMB_SETTINGS = BombGameSettings(
-    minSpawnDelayMs = 650.0,
-    maxSpawnDelayMs = 1400.0,
-    maxConcurrentBombs = 5,
-    bombRadius = 52.0,
-    bombLifetimeMs = 5500.0,
-    launchSpeedMultiplier = 1.45,
-    gravityMultiplier = 1.45,
-    maxBurstSize = 3,
-    burstIntervalMs = 75.0,
-)
 
 /**
  * Everything the kiosk needs from the admin panel. [settings] is already normalised with the web
@@ -28,7 +16,8 @@ val DEFAULT_BOMB_SETTINGS = BombGameSettings(
 data class BrandingState(
     val settings: SystemSettings = SystemSettings().normalizedForBranding(),
     val playlist: List<WallpaperItem> = emptyList(),
-    val bombs: ListBombsResponse = ListBombsResponse(settings = DEFAULT_BOMB_SETTINGS),
+    /** Web defaults until the server (or the disk copy) supplies bombs, so an offline first install still has bombs. */
+    val bombs: ListBombsResponse = ListBombsResponse(bombs = DEFAULT_BOMB_CONFIGS, settings = DEFAULT_BOMB_SETTINGS),
     val rewards: RewardsInfo = RewardsInfo(),
     val localFiles: Map<String, File> = emptyMap(),
     val currentWallpaperUrl: String = "",
