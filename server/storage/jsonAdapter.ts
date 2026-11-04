@@ -25,7 +25,8 @@ import {
   RewardItem,
   ScoreRewardRange,
   RewardsSettings,
-  SpinRecord
+  SpinRecord,
+  KioskDeviceRecord
 } from '../../src/types/backend';
 import { StorageAdapter, CompleteSessionParams } from './types';
 import { DEFAULT_BOMB_CONFIGS, DEFAULT_BOMB_SETTINGS } from './defaultBombs';
@@ -49,6 +50,7 @@ export interface DatabaseSchema {
   scoreRewards: Record<string, ScoreRewardRange>;
   rewardsSettings: RewardsSettings;
   spinResults: SpinRecord[];
+  kioskDevices: Record<string, KioskDeviceRecord>;
 }
 
 const DEFAULT_SETTINGS: SystemSettings = {
@@ -176,7 +178,8 @@ export class JsonFileStorageAdapter implements StorageAdapter {
           rewards: loadedRewards,
           scoreRewards: loadedScoreRewards,
           rewardsSettings: parsed.rewardsSettings || { ...DEFAULT_REWARDS_SETTINGS },
-          spinResults: Array.isArray(parsed.spinResults) ? parsed.spinResults : []
+          spinResults: Array.isArray(parsed.spinResults) ? parsed.spinResults : [],
+          kioskDevices: parsed.kioskDevices || {}
         };
       }
     } catch (err) {
@@ -214,7 +217,8 @@ export class JsonFileStorageAdapter implements StorageAdapter {
       rewards: initialRewardsMap,
       scoreRewards: initialScoreRewardsMap,
       rewardsSettings: { ...DEFAULT_REWARDS_SETTINGS },
-      spinResults: []
+      spinResults: [],
+      kioskDevices: {}
     };
   }
 
@@ -1317,6 +1321,73 @@ export class JsonFileStorageAdapter implements StorageAdapter {
       return undefined;
     }
     return this.data.spinResults.find((r) => r.sessionId === sessionId);
+  }
+
+  // --------------------------------------------------------------------------
+  // Remote Kiosk Cloud Relay Devices
+  // --------------------------------------------------------------------------
+  public async getKioskDevices(): Promise<KioskDeviceRecord[]> {
+    if (!this.data.kioskDevices) {
+      this.data.kioskDevices = {};
+    }
+    return Object.values(this.data.kioskDevices);
+  }
+
+  public async getKioskDeviceById(id: string): Promise<KioskDeviceRecord | undefined> {
+    if (!this.data.kioskDevices) return undefined;
+    return this.data.kioskDevices[id];
+  }
+
+  public async getKioskDeviceByToken(token: string): Promise<KioskDeviceRecord | undefined> {
+    if (!token || !this.data.kioskDevices) return undefined;
+    return Object.values(this.data.kioskDevices).find((d) => d.deviceToken === token);
+  }
+
+  public async findKioskDeviceByPairingCode(code: string): Promise<KioskDeviceRecord | undefined> {
+    if (!code || !this.data.kioskDevices) return undefined;
+    const now = new Date().toISOString();
+    return Object.values(this.data.kioskDevices).find(
+      (d) => d.pairingCode === code && (!d.pairingCodeExpiresAt || d.pairingCodeExpiresAt > now)
+    );
+  }
+
+  public async createKioskDevice(device: Omit<KioskDeviceRecord, 'registeredAt'>): Promise<KioskDeviceRecord> {
+    if (!this.data.kioskDevices) {
+      this.data.kioskDevices = {};
+    }
+    const newRecord: KioskDeviceRecord = {
+      ...device,
+      registeredAt: new Date().toISOString()
+    };
+    this.data.kioskDevices[newRecord.id] = newRecord;
+    this.persist();
+    return newRecord;
+  }
+
+  public async updateKioskDevice(
+    id: string,
+    updates: Partial<KioskDeviceRecord>
+  ): Promise<KioskDeviceRecord | undefined> {
+    if (!this.data.kioskDevices || !this.data.kioskDevices[id]) {
+      return undefined;
+    }
+    const existing = this.data.kioskDevices[id];
+    const updated: KioskDeviceRecord = {
+      ...existing,
+      ...updates
+    };
+    this.data.kioskDevices[id] = updated;
+    this.persist();
+    return updated;
+  }
+
+  public async deleteKioskDevice(id: string): Promise<boolean> {
+    if (!this.data.kioskDevices || !this.data.kioskDevices[id]) {
+      return false;
+    }
+    delete this.data.kioskDevices[id];
+    this.persist();
+    return true;
   }
 }
 

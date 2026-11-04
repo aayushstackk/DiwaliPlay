@@ -28,6 +28,7 @@ import { adminAuthRouter } from './adminAuth';
 import { assetsRouter } from './assets';
 import { bombsRouter } from './bombs';
 import { rewardsRouter } from './rewards';
+import { kioskRelayRouter } from '../kioskRelay';
 import { validatePlayerName, validateMobileNumber } from '../../src/utils/validation';
 
 export const apiRouter = Router();
@@ -43,6 +44,9 @@ apiRouter.use(bombsRouter);
 
 // Mount Rewards & Spin Wheel router
 apiRouter.use(rewardsRouter);
+
+// Mount Kiosk Cloud Relay router
+apiRouter.use('/kiosk-relay', kioskRelayRouter);
 
 // ============================================================================
 // Health Check

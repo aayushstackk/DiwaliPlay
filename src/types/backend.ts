@@ -576,5 +576,56 @@ export interface RewardsDataResponse {
   message?: string;
 }
 
+// ============================================================================
+// Remote Kiosk Cloud Relay Models
+// ============================================================================
+
+export interface KioskDeviceStatus {
+  connected: boolean;
+  backProtection: boolean;
+  autoLaunch: boolean;
+  watchdogRunning: boolean;
+  guardianRunning: boolean;
+  appRunning: boolean;
+  lastStateChange?: string;
+  lastStateChangeReason?: string;
+}
+
+export interface KioskDeviceRecord {
+  id: string;
+  name: string;
+  deviceToken: string;
+  pairingCode?: string;
+  pairingCodeExpiresAt?: string;
+  isPaired: boolean;
+  registeredAt: string;
+  lastHeartbeatAt?: string;
+  lastConnectedAt?: string;
+  ipAddress?: string;
+  status?: KioskDeviceStatus;
+}
+
+export type SafeKioskDevice = Omit<KioskDeviceRecord, 'deviceToken'> & {
+  isOnline: boolean;
+};
+
+export type KioskRemoteAction = 'status' | 'enable' | 'disable' | 'test-exit';
+
+export interface KioskRemoteCommandRequest {
+  action: KioskRemoteAction;
+  passcode?: string;
+}
+
+export interface KioskRemoteCommandResponse {
+  success: boolean;
+  accepted: boolean;
+  executed: boolean;
+  requestId: string;
+  status?: KioskDeviceStatus;
+  message?: string;
+  error?: string;
+}
+
+
 
 

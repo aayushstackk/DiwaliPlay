@@ -12,6 +12,7 @@
   nsExec::Exec 'cmd.exe /c schtasks /End /TN "DiwaliPlayKioskWatchdog"'
   nsExec::Exec 'cmd.exe /c schtasks /End /TN "DiwaliPlayKioskGuardian"'
   nsExec::Exec 'cmd.exe /c schtasks /End /TN "DiwaliPlayKioskBridge"'
+  nsExec::Exec 'cmd.exe /c schtasks /End /TN "DiwaliPlayKioskCloudAgent"'
   nsExec::Exec 'powershell.exe -NoProfile -Command "Stop-Process -Name DiwaliPlay -Force -ErrorAction SilentlyContinue"'
   Sleep 1000
 !macroend
@@ -30,9 +31,11 @@
   nsExec::Exec 'cmd.exe /c schtasks /End /TN "DiwaliPlayKioskWatchdog"'
   nsExec::Exec 'cmd.exe /c schtasks /End /TN "DiwaliPlayKioskGuardian"'
   nsExec::Exec 'cmd.exe /c schtasks /End /TN "DiwaliPlayKioskBridge"'
+  nsExec::Exec 'cmd.exe /c schtasks /End /TN "DiwaliPlayKioskCloudAgent"'
   nsExec::Exec 'cmd.exe /c schtasks /Delete /TN "DiwaliPlayKioskWatchdog" /F'
   nsExec::Exec 'cmd.exe /c schtasks /Delete /TN "DiwaliPlayKioskGuardian" /F'
   nsExec::Exec 'cmd.exe /c schtasks /Delete /TN "DiwaliPlayKioskBridge" /F'
+  nsExec::Exec 'cmd.exe /c schtasks /Delete /TN "DiwaliPlayKioskCloudAgent" /F'
   nsExec::Exec 'powershell.exe -NoProfile -Command "Stop-Process -Name DiwaliPlay -Force -ErrorAction SilentlyContinue"'
   Sleep 1000
 !macroend

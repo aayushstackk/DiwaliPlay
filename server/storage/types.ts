@@ -18,7 +18,8 @@ import {
   RewardItem,
   ScoreRewardRange,
   RewardsSettings,
-  SpinRecord
+  SpinRecord,
+  KioskDeviceRecord
 } from '../../src/types/backend';
 
 export interface CompleteSessionParams {
@@ -192,5 +193,16 @@ export interface StorageAdapter {
   recordSpinResult(record: Omit<SpinRecord, 'id' | 'timestamp'>): Promise<SpinRecord>;
   getSpinResults(limit?: number): Promise<SpinRecord[]>;
   getSpinResultBySessionId(sessionId: string): Promise<SpinRecord | undefined>;
+
+  // --------------------------------------------------------------------------
+  // Remote Kiosk Cloud Relay Devices
+  // --------------------------------------------------------------------------
+  getKioskDevices(): Promise<KioskDeviceRecord[]>;
+  getKioskDeviceById(id: string): Promise<KioskDeviceRecord | undefined>;
+  getKioskDeviceByToken(token: string): Promise<KioskDeviceRecord | undefined>;
+  findKioskDeviceByPairingCode(code: string): Promise<KioskDeviceRecord | undefined>;
+  createKioskDevice(device: Omit<KioskDeviceRecord, 'registeredAt'>): Promise<KioskDeviceRecord>;
+  updateKioskDevice(id: string, updates: Partial<KioskDeviceRecord>): Promise<KioskDeviceRecord | undefined>;
+  deleteKioskDevice(id: string): Promise<boolean>;
 }
 

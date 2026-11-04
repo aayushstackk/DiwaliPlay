@@ -26,7 +26,8 @@ import {
   RewardItem,
   ScoreRewardRange,
   RewardsSettings,
-  SpinRecord
+  SpinRecord,
+  KioskDeviceRecord
 } from '../../src/types/backend';
 import { StorageAdapter, CompleteSessionParams } from './types';
 import { DEFAULT_BOMB_CONFIGS, DEFAULT_BOMB_SETTINGS } from './defaultBombs';
@@ -74,6 +75,7 @@ export class MongoStorageAdapter implements StorageAdapter {
   private scoreRewardsCol!: Collection<ScoreRewardRange>;
   private rewardsSettingsCol!: Collection<any>;
   private spinResultsCol!: Collection<SpinRecord>;
+  private kioskDevicesCol!: Collection<KioskDeviceRecord>;
 
   constructor(uri: string, dbName?: string) {
     this.uri = uri;
@@ -112,9 +114,13 @@ export class MongoStorageAdapter implements StorageAdapter {
       this.scoreRewardsCol = this.db.collection<ScoreRewardRange>('score_rewards');
       this.rewardsSettingsCol = this.db.collection<any>('rewards_settings');
       this.spinResultsCol = this.db.collection<SpinRecord>('spin_results');
+      this.kioskDevicesCol = this.db.collection<KioskDeviceRecord>('kiosk_devices');
 
       // Create necessary indexes for performance and data integrity
       await Promise.all([
+        this.kioskDevicesCol.createIndex({ id: 1 }, { unique: true }),
+        this.kioskDevicesCol.createIndex({ deviceToken: 1 }),
+        this.kioskDevicesCol.createIndex({ pairingCode: 1 }),
         this.usersCol.createIndex({ id: 1 }, { unique: true }),
         this.usersCol.createIndex({ mobileNumber: 1 }, { unique: true }),
         this.codesCol.createIndex({ id: 1 }, { unique: true }),
@@ -1403,6 +1409,77 @@ export class MongoStorageAdapter implements StorageAdapter {
     if (!doc) return undefined;
     const { _id, ...clean } = doc as any;
     return clean as SpinRecord;
+  }
+
+  // --------------------------------------------------------------------------
+  // Remote Kiosk Cloud Relay Devices
+  // --------------------------------------------------------------------------
+  public async getKioskDevices(): Promise<KioskDeviceRecord[]> {
+    const docs = await this.kioskDevicesCol.find().toArray();
+    return docs.map((d) => {
+      const { _id, ...clean } = d as any;
+      return clean as KioskDeviceRecord;
+    });
+  }
+
+  public async getKioskDeviceById(id: string): Promise<KioskDeviceRecord | undefined> {
+    if (!id) return undefined;
+    const doc = await this.kioskDevicesCol.findOne({ id });
+    if (!doc) return undefined;
+    const { _id, ...clean } = doc as any;
+    return clean as KioskDeviceRecord;
+  }
+
+  public async getKioskDeviceByToken(token: string): Promise<KioskDeviceRecord | undefined> {
+    if (!token) return undefined;
+    const doc = await this.kioskDevicesCol.findOne({ deviceToken: token });
+    if (!doc) return undefined;
+    const { _id, ...clean } = doc as any;
+    return clean as KioskDeviceRecord;
+  }
+
+  public async findKioskDeviceByPairingCode(code: string): Promise<KioskDeviceRecord | undefined> {
+    if (!code) return undefined;
+    const now = new Date().toISOString();
+    const doc = await this.kioskDevicesCol.findOne({
+      pairingCode: code,
+      $or: [
+        { pairingCodeExpiresAt: { $exists: false } },
+        { pairingCodeExpiresAt: { $gt: now } }
+      ]
+    });
+    if (!doc) return undefined;
+    const { _id, ...clean } = doc as any;
+    return clean as KioskDeviceRecord;
+  }
+
+  public async createKioskDevice(device: Omit<KioskDeviceRecord, 'registeredAt'>): Promise<KioskDeviceRecord> {
+    const newRecord: KioskDeviceRecord = {
+      ...device,
+      registeredAt: new Date().toISOString()
+    };
+    await this.kioskDevicesCol.insertOne({ ...newRecord } as any);
+    return newRecord;
+  }
+
+  public async updateKioskDevice(
+    id: string,
+    updates: Partial<KioskDeviceRecord>
+  ): Promise<KioskDeviceRecord | undefined> {
+    const { _id, ...cleanUpdates } = updates as any;
+    const res = await this.kioskDevicesCol.findOneAndUpdate(
+      { id },
+      { $set: cleanUpdates },
+      { returnDocument: 'after' }
+    );
+    if (!res) return undefined;
+    const { _id: dropId, ...clean } = (res as any);
+    return clean as KioskDeviceRecord;
+  }
+
+  public async deleteKioskDevice(id: string): Promise<boolean> {
+    const res = await this.kioskDevicesCol.deleteOne({ id });
+    return res.deletedCount > 0;
   }
 }
 

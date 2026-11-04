@@ -18,9 +18,11 @@ import cookieParser from 'cookie-parser';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
+import { WebSocketServer } from 'ws';
 import { initStorage } from './server/storage';
 import { bootstrapAdmin } from './server/auth/bootstrap';
 import { apiRouter } from './server/routes/api';
+import { kioskRelayManager, kioskRelayRouter } from './server/kioskRelay';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -86,8 +88,25 @@ async function startServer() {
 
   // Mount backend API routes
   app.use('/api', apiRouter);
+  app.use('/api/kiosk-relay', kioskRelayRouter);
 
   const httpServer = http.createServer(app);
+
+  // Initialize secure WebSocket server for remote TV PC Kiosk Relay
+  const wss = new WebSocketServer({ noServer: true });
+  httpServer.on('upgrade', (req, socket, head) => {
+    try {
+      const url = new URL(req.url || '', `http://${req.headers.host || 'localhost'}`);
+      if (url.pathname === '/ws/kiosk-relay' || url.pathname === '/api/kiosk-relay/ws') {
+        wss.handleUpgrade(req, socket, head, (ws) => {
+          kioskRelayManager.handleDeviceConnection(ws, req);
+        });
+        return;
+      }
+    } catch (err) {
+      console.warn('[Upgrade] WebSocket upgrade parsing error:', err);
+    }
+  });
 
   if (!isProd) {
     // In dev: mount Vite middleware for instant live serving

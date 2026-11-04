@@ -43,7 +43,11 @@ import {
   SpinRecord,
   SpinWheelRequest,
   SpinWheelResponse,
-  RewardsDataResponse
+  RewardsDataResponse,
+  SafeKioskDevice,
+  KioskRemoteAction,
+  KioskRemoteCommandResponse,
+  KioskDeviceStatus
 } from '../types/backend';
 
 const BASE_URL = (typeof window !== 'undefined' && (window as any).__API_BASE_URL__) || import.meta.env.VITE_API_BASE_URL || '/api';
@@ -604,5 +608,46 @@ async login(req: AdminLoginRequest): Promise<AdminLoginResponse> {
   async getSpinResults(limit?: number): Promise<{ success: boolean; spinResults: SpinRecord[] }> {
     const query = limit ? `?limit=${limit}` : '';
     return request<{ success: boolean; spinResults: SpinRecord[] }>(`/admin/spin-results${query}`);
+  },
+
+  // ==========================================================================
+  // Remote Kiosk Cloud Relay
+  // ==========================================================================
+  async getKioskDevices(): Promise<{ success: boolean; devices: SafeKioskDevice[] }> {
+    return request<{ success: boolean; devices: SafeKioskDevice[] }>('/kiosk-relay/devices');
+  },
+
+  async requestKioskPairingCode(name?: string): Promise<{ success: boolean; deviceId: string; pairingCode: string; expiresAt: string; message: string }> {
+    return request('/kiosk-relay/pair-request', {
+      method: 'POST',
+      body: JSON.stringify({ name })
+    });
+  },
+
+  async claimKioskPairingCode(pairingCode: string, name?: string): Promise<{ success: boolean; device: SafeKioskDevice; message: string }> {
+    return request('/kiosk-relay/pair-claim', {
+      method: 'POST',
+      body: JSON.stringify({ pairingCode, name })
+    });
+  },
+
+  async sendKioskCommand(deviceId: string, action: KioskRemoteAction, passcode?: string): Promise<KioskRemoteCommandResponse> {
+    return request<KioskRemoteCommandResponse>(`/kiosk-relay/devices/${deviceId}/command`, {
+      method: 'POST',
+      body: JSON.stringify({ action, passcode })
+    });
+  },
+
+  async updateKioskDevice(deviceId: string, updates: { name: string }): Promise<{ success: boolean; device: SafeKioskDevice }> {
+    return request<{ success: boolean; device: SafeKioskDevice }>(`/kiosk-relay/devices/${deviceId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates)
+    });
+  },
+
+  async deleteKioskDevice(deviceId: string): Promise<{ success: boolean; message: string }> {
+    return request<{ success: boolean; message: string }>(`/kiosk-relay/devices/${deviceId}`, {
+      method: 'DELETE'
+    });
   }
 };

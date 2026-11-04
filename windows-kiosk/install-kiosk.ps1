@@ -17,14 +17,18 @@ $KioskDir = $PSScriptRoot
 $WatchdogRunner = Join-Path $KioskDir "watchdog-runner.vbs"
 $GuardianRunner = Join-Path $KioskDir "guardian-runner.vbs"
 $BridgeRunner = Join-Path $KioskDir "kiosk-bridge-runner.vbs"
+$CloudAgentRunner = Join-Path $KioskDir "kiosk-cloud-agent-runner.vbs"
 $WatchdogScript = Join-Path $KioskDir "watchdog.ps1"
 $GuardianScript = Join-Path $KioskDir "guardian-keys.ps1"
 $BridgeScript = Join-Path $KioskDir "kiosk-bridge.ps1"
+$CloudAgentScript = Join-Path $KioskDir "kiosk-cloud-agent.ps1"
 $ToggleBat = Join-Path $KioskDir "toggle-protection.bat"
 $ConfigPath = Join-Path $KioskDir "kiosk-config.json"
+$CloudDeviceConfig = Join-Path $KioskDir "kiosk-cloud-device.json"
 $WatchdogTaskName = "DiwaliPlayKioskWatchdog"
 $GuardianTaskName = "DiwaliPlayKioskGuardian"
 $BridgeTaskName = "DiwaliPlayKioskBridge"
+$CloudAgentTaskName = "DiwaliPlayKioskCloudAgent"
 
 Write-Host "`n=======================================================" -ForegroundColor Cyan
 Write-Host "     DIWALIPLAY WINDOWS KIOSK SYSTEM INSTALLER         " -ForegroundColor Yellow
@@ -92,7 +96,19 @@ try {
     Write-Host "  * Task registration failed for '$BridgeTaskName': $($_.Exception.Message)" -ForegroundColor Red
 }
 
-$taskRegistrationSuccess = ($watchdogTaskSuccess -and $guardianTaskSuccess -and $bridgeTaskSuccess)
+# 1d. Kiosk Cloud Agent Task (Remote Admin Control via Render Backend)
+$cloudAgentAction = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "`"$CloudAgentRunner`"" -WorkingDirectory $KioskDir
+$cloudAgentTaskSuccess = $false
+
+try {
+    Register-ScheduledTask -TaskName $CloudAgentTaskName -Action $cloudAgentAction -Trigger $trigger -Settings $settings -Description "DiwaliPlay Remote Kiosk Cloud Relay Agent" -Force -ErrorAction Stop | Out-Null
+    $cloudAgentTaskSuccess = $true
+    Write-Host "  * Scheduled task '$CloudAgentTaskName' registered successfully." -ForegroundColor Green
+} catch {
+    Write-Host "  * Task registration failed for '$CloudAgentTaskName': $($_.Exception.Message)" -ForegroundColor Red
+}
+
+$taskRegistrationSuccess = ($watchdogTaskSuccess -and $guardianTaskSuccess -and $bridgeTaskSuccess -and $cloudAgentTaskSuccess)
 
 # -------------------------------------------------------------
 # 2. Resilient Startup Folder Shortcuts
@@ -132,6 +148,16 @@ try {
     $scBridge.Description = "DiwaliPlay Kiosk HTTP Bridge"
     $scBridge.Save()
     Write-Host "  * Startup shortcut created: $bridgeLnk" -ForegroundColor Green
+
+    # Cloud Agent shortcut
+    $cloudLnk = Join-Path $startupFolder "DiwaliPlayKioskCloudAgent.lnk"
+    $scCloud = $wsh.CreateShortcut($cloudLnk)
+    $scCloud.TargetPath = "wscript.exe"
+    $scCloud.Arguments = "`"$CloudAgentRunner`""
+    $scCloud.WorkingDirectory = $KioskDir
+    $scCloud.Description = "DiwaliPlay Remote Kiosk Cloud Relay Agent"
+    $scCloud.Save()
+    Write-Host "  * Startup shortcut created: $cloudLnk" -ForegroundColor Green
 } catch {
     Write-Host "  * Startup shortcuts warning: $_" -ForegroundColor Yellow
 }
@@ -216,6 +242,29 @@ if (-not $SkipStartServices) {
         } catch {
             Write-Host "  * Failed to start Bridge service: $_" -ForegroundColor Red
         }
+    }
+
+    # Check and start Cloud Relay Agent if device is paired
+    if (Test-Path $CloudDeviceConfig) {
+        $cloudRunning = $false
+        try {
+            $existingCloud = Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe' or Name = 'pwsh.exe'" -ErrorAction Stop |
+                Where-Object { $_.CommandLine -and $_.CommandLine -match "kiosk-cloud-agent\.ps1" }
+            if ($existingCloud) { $cloudRunning = $true }
+        } catch {}
+
+        if ($cloudRunning) {
+            Write-Host "  * Cloud Relay Agent is already active. Duplicate prevented." -ForegroundColor Yellow
+        } else {
+            try {
+                $cProc = Start-Process "powershell.exe" -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", "`"$CloudAgentScript`"" -WorkingDirectory $KioskDir -PassThru
+                Write-Host "  * Cloud Relay Agent started successfully (PID: $($cProc.Id))." -ForegroundColor Green
+            } catch {
+                Write-Host "  * Failed to start Cloud Relay Agent: $_" -ForegroundColor Red
+            }
+        }
+    } else {
+        Write-Host "  * Cloud Relay Agent: Device not paired yet. Run 'setup-cloud-relay.ps1' or pair from Admin Panel." -ForegroundColor Gray
     }
 } else {
     Write-Host "`n[4/4] Skipping service startup as requested (-SkipStartServices)." -ForegroundColor DarkGray
