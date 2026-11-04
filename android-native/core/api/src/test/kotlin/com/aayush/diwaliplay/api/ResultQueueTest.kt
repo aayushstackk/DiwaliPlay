@@ -158,16 +158,20 @@ class ResultQueueTest {
     @Test fun transientReadErrorIsRetried() = runTest {
         val dir = tmp.newFolder()
         val api = fake { ApiResult.Success(okResp) }
-        // A directory named *.json makes readText() throw IOException.
-        val f = File(dir, "0000_x.json").apply { mkdir() }
-        val q = ResultQueue(dir, api, backgroundScope)
+        var reads = 0
+        val q = ResultQueue(dir, api, backgroundScope) { f ->
+            if (reads++ == 0) throw java.io.IOException("disk hiccup") else f.readText()
+        }
+        q.enqueue(req("a"))
         q.start()
         runCurrent()
-        assertThat(f.exists()).isTrue() // kept, not deleted
-        f.deleteRecursively()
-        q.enqueue(req("ok"))
+        assertThat(reads).isEqualTo(1)
+        assertThat(api.calls).isEmpty()
+        assertThat(files(dir)).hasSize(1) // kept, not deleted or quarantined
         advanceTimeBy(5_001)
-        assertThat(api.calls.map { it.first }).containsExactly("ok")
+        assertThat(api.calls.map { it.first }).containsExactly("a")
+        assertThat(api.calls[0].second).isEqualTo(5_000L)
+        assertThat(files(dir)).isEmpty()
     }
 
     @Test fun workerSurvivesThrowingApi() = runTest {

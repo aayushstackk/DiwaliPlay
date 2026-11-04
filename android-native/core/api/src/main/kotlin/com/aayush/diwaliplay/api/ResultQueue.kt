@@ -42,6 +42,8 @@ class ResultQueue(
     private val dir: File,
     private val api: GameApi,
     private val scope: CoroutineScope,
+    /** Test seam for file reads. */
+    private val readFile: (File) -> String = { it.readText() },
 ) {
     private val seq = AtomicLong()
     private val wake = Channel<Unit>(Channel.CONFLATED)
@@ -114,7 +116,7 @@ class ResultQueue(
     private suspend fun processNext(): Outcome {
         val file = nextFile() ?: return Outcome.IDLE
         val req = try {
-            DiwaliJson.decodeFromString(CompleteSessionRequest.serializer(), file.readText())
+            DiwaliJson.decodeFromString(CompleteSessionRequest.serializer(), readFile(file))
         } catch (_: SerializationException) {
             quarantine(file); return Outcome.PROGRESS
         } catch (_: IllegalArgumentException) {
