@@ -25,19 +25,27 @@ interface StartBackgroundCardProps {
   onNotify?: (type: 'success' | 'error', title: string, message: string) => void;
 }
 
+const PROBE_TIMEOUT_MS = 10000;
+
 function canPlayVideo(url: string): Promise<boolean> {
   return new Promise((resolve) => {
     const probe = document.createElement('video');
     probe.preload = 'auto';
     probe.muted = true;
+    let settled = false;
     const done = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
       probe.onloadeddata = null;
       probe.onerror = null;
       probe.removeAttribute('src');
       probe.load();
       resolve(ok);
     };
-    probe.onloadeddata = () => done(true);
+    const timer = setTimeout(() => done(false), PROBE_TIMEOUT_MS);
+    // A decodable video track reports a non-zero width; audio-only or undecodable video does not.
+    probe.onloadeddata = () => done(probe.videoWidth > 0);
     probe.onerror = () => done(false);
     probe.src = url;
   });
