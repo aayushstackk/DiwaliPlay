@@ -607,4 +607,11 @@ class SettingsRepositoryTest {
         r.refreshNow()
         assertThat(store.isFile).isTrue()
     }
+
+    @Test fun startBackgroundIsCached() {
+        val withBg = BrandingState(settings = SystemSettings(startBackgroundUrl = "http://x/bg.mp4").normalizedForBranding())
+        assertThat(collectAssetUrls(withBg)).contains("http://x/bg.mp4")
+        val empty = BrandingState(settings = SystemSettings(startBackgroundUrl = "").normalizedForBranding())
+        assertThat(collectAssetUrls(empty)).isEmpty()
+    }
 }

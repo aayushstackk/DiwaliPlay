@@ -26,6 +26,9 @@ export interface BrandingState {
   brandingDisplayMode: BrandingDisplayMode;
   wallpaperUrl: string;
   useBuiltInWallpaper: boolean;
+  startBackgroundUrl: string;
+  startBackgroundType: string;
+  startBackgroundDim: number;
   wallpaperOpacity: number;
   wallpaperEnabled: boolean;
   gameplayMode: GameplayInteractionMode;
@@ -51,6 +54,9 @@ interface CachedData {
   brandingDisplayMode: BrandingDisplayMode;
   wallpaperUrl: string;
   useBuiltInWallpaper: boolean;
+  startBackgroundUrl: string;
+  startBackgroundType: string;
+  startBackgroundDim: number;
   wallpaperOpacity: number;
   wallpaperEnabled: boolean;
   gameplayMode: GameplayInteractionMode;
@@ -77,6 +83,9 @@ const cachedBranding: CachedData = {
   brandingDisplayMode: 'both',
   wallpaperUrl: '',
   useBuiltInWallpaper: false,
+  startBackgroundUrl: '',
+  startBackgroundType: 'image',
+  startBackgroundDim: 50,
   wallpaperOpacity: 100,
   wallpaperEnabled: true,
   gameplayMode: 'camera',
@@ -188,6 +197,9 @@ export function useBranding(): BrandingState {
           : 'both') as BrandingDisplayMode;
         const newWallpaperUrl = s.wallpaperUrl || '';
         const newUseBuiltIn = s.useBuiltInWallpaper === true;
+        const newStartBgUrl = s.startBackgroundUrl || '';
+        const newStartBgType = s.startBackgroundType === 'video' ? 'video' : 'image';
+        const newStartBgDim = typeof s.startBackgroundDim === 'number' ? s.startBackgroundDim : 50;
         const newOpacity = typeof s.wallpaperOpacity === 'number' ? s.wallpaperOpacity : 100;
         const newWallpaperEnabled = s.wallpaperEnabled !== false;
         const newGameplayMode = (s.gameplayMode === 'touch' ? 'touch' : 'camera') as GameplayInteractionMode;
@@ -212,6 +224,9 @@ export function useBranding(): BrandingState {
         cachedBranding.brandingDisplayMode = newBrandingDisplayMode;
         cachedBranding.wallpaperUrl = newWallpaperUrl;
         cachedBranding.useBuiltInWallpaper = newUseBuiltIn;
+        cachedBranding.startBackgroundUrl = newStartBgUrl;
+        cachedBranding.startBackgroundType = newStartBgType;
+        cachedBranding.startBackgroundDim = newStartBgDim;
         cachedBranding.wallpaperOpacity = newOpacity;
         cachedBranding.wallpaperEnabled = newWallpaperEnabled;
         cachedBranding.gameplayMode = newGameplayMode;
@@ -280,6 +295,9 @@ export function useBranding(): BrandingState {
       brandingDisplayMode: cachedBranding.brandingDisplayMode || 'both',
       wallpaperUrl: cachedBranding.wallpaperUrl,
       useBuiltInWallpaper: cachedBranding.useBuiltInWallpaper,
+      startBackgroundUrl: cachedBranding.startBackgroundUrl,
+      startBackgroundType: cachedBranding.startBackgroundType,
+      startBackgroundDim: cachedBranding.startBackgroundDim,
       wallpaperOpacity: cachedBranding.wallpaperOpacity,
       wallpaperEnabled: cachedBranding.wallpaperEnabled !== false,
       gameplayMode: cachedBranding.gameplayMode || 'camera',

@@ -47,6 +47,7 @@ fun collectAssetUrls(state: BrandingState): List<String> {
     val s = state.settings
     add(s.brandLogoUrl)
     add(s.wallpaperUrl)
+    add(s.startBackgroundUrl)
     state.playlist.forEach { add(it.url) }
     state.bombs.bombs.forEach { add(it.imageUrl); add(it.soundUrl) }
     state.rewards.rewards.forEach { add(it.imageUrl) }
