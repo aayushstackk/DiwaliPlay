@@ -323,8 +323,11 @@ class EndOfRoundScreensTest {
         }
         compose.mainClock.advanceTimeBy(200)
         val photoFrame = bounds(Tags.PHOTO_FRAME)
-        assertThat(photoFrame.width.value).isWithin(1f).of(1800f)
-        assertThat(photoFrame.height.value).isWithin(1f).of(1010f)
+        // A third of the screen's area (0.577 of 1800 x 1010), centred on the 1920 x 1080 canvas.
+        assertThat(photoFrame.width.value).isWithin(1f).of(1040f)
+        assertThat(photoFrame.height.value).isWithin(1f).of(584f)
+        assertThat(((photoFrame.left + photoFrame.right) / 2).value).isWithin(1f).of(960f)
+        assertThat(((photoFrame.top + photoFrame.bottom) / 2).value).isWithin(1f).of(540f)
         assertThat(bounds(Tags.PHOTO_COUNT).right).isAtMost(photoFrame.right)
         screenshot("native_photo.png")
     }

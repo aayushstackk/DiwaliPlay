@@ -46,7 +46,7 @@ import com.aayush.diwaliplay.tracking.camera.TrackingStatus
 import java.util.Locale
 
 /**
- * PhotoCaptureModal, near full screen: the camera fills the frame edge to edge, and the title, the count and the status
+ * PhotoCaptureModal, centred at a third of the screen's area: the camera fills the frame edge to edge, and the title, the count and the status
  * sit on it over a scrim. The controller runs the countdown and the capture; this only shows them. The flash and "PHOTO
  * CAPTURED!" wait for a still to exist, so a failed capture announces nothing.
  */
@@ -62,8 +62,8 @@ fun PhotoCountdownScreen(phase: GamePhase.PhotoCountdown, playerName: String, st
         Box(
             Modifier
                 .testTag(Tags.PHOTO_FRAME)
-                .width(1800.dp)
-                .height(1010.dp)
+                .width(1040.dp)
+                .height(584.dp)
                 .clip(shape)
                 .background(Palette.Neutral900, shape)
                 .border(2.dp, Palette.Amber400.copy(alpha = 0.7f), shape),
@@ -74,13 +74,13 @@ fun PhotoCountdownScreen(phase: GamePhase.PhotoCountdown, playerName: String, st
                 !ready -> StartingState()
                 phase.step == 0 && !captured -> ClickBadge(Modifier.align(Alignment.Center))
             }
-            Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(330.dp).background(TopScrim))
-            Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(170.dp).background(BottomScrim))
-            CornerAccents(14.dp, 40.dp, Palette.Amber300.copy(alpha = 0.8f), 3.dp)
-            Header(playerName, Modifier.align(Alignment.TopCenter).padding(top = 28.dp))
-            if (ready && phase.step > 0) CountdownRing(phase.step, Modifier.align(Alignment.TopEnd).padding(36.dp))
+            Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(220.dp).background(TopScrim))
+            Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(100.dp).background(BottomScrim))
+            CornerAccents(10.dp, 28.dp, Palette.Amber300.copy(alpha = 0.8f), 3.dp)
+            Header(playerName, Modifier.align(Alignment.TopCenter).padding(top = 16.dp))
+            if (ready && phase.step > 0) CountdownRing(phase.step, Modifier.align(Alignment.TopEnd).padding(18.dp))
             // The error state says what's happening. The web's bar reads "Starting selfie camera..." beneath it.
-            if (!phase.cameraError) StatusBar(phase, ready, captured, Modifier.align(Alignment.BottomCenter).padding(bottom = 36.dp))
+            if (!phase.cameraError) StatusBar(phase, ready, captured, Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp))
             if (captured) CapturedStamp()
         }
         if (captured) Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.95f)))
@@ -93,23 +93,23 @@ private val BottomScrim = Brush.verticalGradient(0f to Color.Transparent, 1f to 
 /** Stays clear of the count in the top corner, however long the player's name is. */
 @Composable
 private fun Header(playerName: String, modifier: Modifier) {
-    Column(modifier.width(1360.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(modifier.width(780.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         val pill = RoundedCornerShape(999.dp)
         Row(
             Modifier.panel(Palette.Neutral950.copy(alpha = 0.6f), Palette.Amber500.copy(alpha = 0.5f), pill).padding(horizontal = 18.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Icon(Icons.Sparkles, 20.dp, Palette.Amber400, Modifier.pulsing())
-            Label("VICTORY CELEBRATION SOUVENIR", 18.sp, Palette.Amber300, weight = FontWeight.SemiBold, tracking = TrackingWider)
-            Icon(Icons.Sparkles, 20.dp, Palette.Amber400, Modifier.pulsing())
+            Icon(Icons.Sparkles, 16.dp, Palette.Amber400, Modifier.pulsing())
+            Label("VICTORY CELEBRATION SOUVENIR", 14.sp, Palette.Amber300, weight = FontWeight.SemiBold, tracking = TrackingWider)
+            Icon(Icons.Sparkles, 16.dp, Palette.Amber400, Modifier.pulsing())
         }
         Spacer(Modifier.height(8.dp))
-        Label("Ready for a Shot? 📸", 64.sp, Palette.Amber300, family = Fonts.Display, weight = FontWeight.Black, tracking = TrackingWider, brush = GoldText)
+        Label("Ready for a Shot? 📸", 40.sp, Palette.Amber300, family = Fonts.Display, weight = FontWeight.Black, tracking = TrackingWider, brush = GoldText)
         Spacer(Modifier.height(4.dp))
         Label(
             "Strike your best festive pose, ${playerName.uppercase(Locale.ROOT)}! Souvenir photo auto-capturing in a moment 🎆",
-            24.sp, Palette.Amber100, weight = FontWeight.Medium,
+            18.sp, Palette.Amber100, weight = FontWeight.Medium,
         )
     }
 }
@@ -141,7 +141,7 @@ internal fun LivePreview(frames: () -> CameraFrame?, modifier: Modifier) {
 
 @Composable
 private fun CountdownRing(step: Int, modifier: Modifier) {
-    Box(modifier.size(148.dp), contentAlignment = Alignment.Center) {
+    Box(modifier.size(100.dp), contentAlignment = Alignment.Center) {
         Box(Modifier.fillMaxSize().pinging().background(Color.Transparent, CircleShape).border(2.dp, Palette.Amber400.copy(alpha = 0.12f), CircleShape))
         Box(Modifier.fillMaxSize().panel(Palette.Neutral950.copy(alpha = 0.8f), Palette.Amber400.copy(alpha = 0.8f), CircleShape))
         Canvas(Modifier.fillMaxSize()) {
@@ -158,7 +158,7 @@ private fun CountdownRing(step: Int, modifier: Modifier) {
                 style = Stroke(stroke, cap = StrokeCap.Round),
             )
         }
-        Label(step.toString(), 76.sp, Palette.Amber300, Modifier.testTag(Tags.PHOTO_COUNT), family = Fonts.Mono, weight = FontWeight.Black, brush = GoldText)
+        Label(step.toString(), 52.sp, Palette.Amber300, Modifier.testTag(Tags.PHOTO_COUNT), family = Fonts.Mono, weight = FontWeight.Black, brush = GoldText)
     }
 }
 
@@ -228,12 +228,12 @@ private fun ClickBadge(modifier: Modifier) {
     Row(
         modifier
             .background(Brush.horizontalGradient(listOf(Palette.Amber500, Palette.Amber400, Palette.Yellow300)), shape)
-            .padding(horizontal = 48.dp, vertical = 24.dp),
+            .padding(horizontal = 36.dp, vertical = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Icon(Icons.Camera, 56.dp, Palette.Neutral950, strokeWidth = 2.5f)
-        Label("CLICK! \uD83D\uDCF8", 60.sp, Palette.Neutral950, family = Fonts.Display, weight = FontWeight.Black, tracking = TrackingWider)
+        Icon(Icons.Camera, 44.dp, Palette.Neutral950, strokeWidth = 2.5f)
+        Label("CLICK! \uD83D\uDCF8", 44.sp, Palette.Neutral950, family = Fonts.Display, weight = FontWeight.Black, tracking = TrackingWider)
     }
 }
 
@@ -246,12 +246,12 @@ private fun CapturedStamp() {
                 .testTag(Tags.PHOTO_CAPTURED)
                 .background(Brush.horizontalGradient(listOf(Palette.Emerald500.copy(alpha = 0.95f), Palette.Teal500.copy(alpha = 0.95f))), shape)
                 .border(1.dp, Palette.Emerald300, shape)
-                .padding(horizontal = 40.dp, vertical = 20.dp),
+                .padding(horizontal = 30.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Icon(Icons.Check, 40.dp, Palette.Neutral950, strokeWidth = 3f)
-            Label("PHOTO CAPTURED!", 40.sp, Palette.Neutral950, family = Fonts.Display, weight = FontWeight.Black, tracking = TrackingWider)
+            Icon(Icons.Check, 30.dp, Palette.Neutral950, strokeWidth = 3f)
+            Label("PHOTO CAPTURED!", 30.sp, Palette.Neutral950, family = Fonts.Display, weight = FontWeight.Black, tracking = TrackingWider)
         }
     }
 }
@@ -259,26 +259,26 @@ private fun CapturedStamp() {
 @Composable
 private fun StatusBar(phase: GamePhase.PhotoCountdown, ready: Boolean, captured: Boolean, modifier: Modifier) {
     Row(
-        modifier.panel(Palette.Neutral950.copy(alpha = 0.7f), Palette.Amber500.copy(alpha = 0.5f), RoundedCornerShape(999.dp)).padding(horizontal = 28.dp, vertical = 12.dp),
+        modifier.panel(Palette.Neutral950.copy(alpha = 0.7f), Palette.Amber500.copy(alpha = 0.5f), RoundedCornerShape(999.dp)).padding(horizontal = 20.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         when {
             captured -> {
-                Icon(Icons.Check, 26.dp, Palette.Emerald400)
-                Label("Transferring to celebration results...", 26.sp, Palette.Emerald300, family = Fonts.Mono, weight = FontWeight.Bold)
+                Icon(Icons.Check, 20.dp, Palette.Emerald400)
+                Label("Transferring to celebration results...", 18.sp, Palette.Emerald300, family = Fonts.Mono, weight = FontWeight.Bold)
             }
             ready && phase.step == 0 -> {
-                Icon(Icons.Camera, 26.dp, Palette.Amber400, Modifier.pulsing())
-                Label("Capturing your celebration moment!", 26.sp, Palette.Amber300, family = Fonts.Mono, weight = FontWeight.Bold)
+                Icon(Icons.Camera, 20.dp, Palette.Amber400, Modifier.pulsing())
+                Label("Capturing your celebration moment!", 18.sp, Palette.Amber300, family = Fonts.Mono, weight = FontWeight.Bold)
             }
             ready -> {
-                Icon(Icons.Sparkles, 26.dp, Palette.Amber400, Modifier.spinning())
-                Label("Auto-capturing in ${phase.step}s • Strike your pose!", 26.sp, Palette.Amber200, family = Fonts.Mono, weight = FontWeight.Medium)
+                Icon(Icons.Sparkles, 20.dp, Palette.Amber400, Modifier.spinning())
+                Label("Auto-capturing in ${phase.step}s • Strike your pose!", 18.sp, Palette.Amber200, family = Fonts.Mono, weight = FontWeight.Medium)
             }
             else -> {
-                Spinner(24.dp, Palette.Amber400)
-                Label("Starting selfie camera...", 26.sp, Palette.Amber200, family = Fonts.Mono, weight = FontWeight.Medium)
+                Spinner(18.dp, Palette.Amber400)
+                Label("Starting selfie camera...", 18.sp, Palette.Amber200, family = Fonts.Mono, weight = FontWeight.Medium)
             }
         }
     }
