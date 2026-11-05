@@ -11,25 +11,29 @@ import { QrCodeSvg } from './QrCodeSvg';
 import { BrandingBlock } from './BrandingBlock';
 import { getRegistrationUrl } from '../utils/registrationUrl';
 import { StartBackground } from './StartBackground';
-import { useBranding } from '../hooks/useBranding';
 
 interface KioskStartupScreenProps {
   onCodeVerified: (user: User, code: string, session?: GameSession) => void;
   onPlayChime?: () => void;
   rewardsEnabled?: boolean;
+  startBackgroundUrl?: string;
+  startBackgroundType?: string;
+  startBackgroundDim?: number;
 }
 
 export const KioskStartupScreen: React.FC<KioskStartupScreenProps> = ({
   onCodeVerified,
   onPlayChime,
-  rewardsEnabled = true
+  rewardsEnabled = true,
+  startBackgroundUrl,
+  startBackgroundType,
+  startBackgroundDim
 }) => {
   const [digits, setDigits] = useState<string[]>([]);
   const [isVerifying, setIsVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successUser, setSuccessUser] = useState<User | null>(null);
   const registrationUrl = getRegistrationUrl();
-  const branding = useBranding();
 
   const verifyCode = useCallback(async (codeStr: string) => {
     if (codeStr.length !== 4 || isVerifying) return;
@@ -107,11 +111,7 @@ export const KioskStartupScreen: React.FC<KioskStartupScreenProps> = ({
 
   return (
     <div className="h-[100dvh] w-screen overflow-hidden text-neutral-100 flex flex-col justify-between p-3 sm:p-5 select-none font-['Plus_Jakarta_Sans',sans-serif] relative">
-      <StartBackground
-        url={branding.startBackgroundUrl}
-        type={branding.startBackgroundType}
-        dim={branding.startBackgroundDim}
-      />
+      <StartBackground url={startBackgroundUrl} type={startBackgroundType} dim={startBackgroundDim} />
 
       {/* TOP HEADER: EXACTLY 3-LINE BRANDING BLOCK */}
       <header className="w-full max-w-5xl mx-auto text-center z-10 shrink-0 pt-1 relative">

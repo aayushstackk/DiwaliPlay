@@ -773,6 +773,9 @@ export default function App() {
       {isKioskStartup && (
         <div className="fixed inset-0 z-50 bg-[#0A0713]">
           <KioskStartupScreen
+            startBackgroundUrl={branding.startBackgroundUrl}
+            startBackgroundType={branding.startBackgroundType}
+            startBackgroundDim={branding.startBackgroundDim}
             onCodeVerified={async (user, code, session) => {
               setCurrentUser(user);
               setActiveCode(code);
