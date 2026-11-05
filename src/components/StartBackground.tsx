@@ -129,7 +129,8 @@ export const StartBackground: React.FC<StartBackgroundProps> = ({ url, type, dim
           key={mediaKey}
           src={resolveAssetUrl(choice.url)}
           alt=""
-          className="absolute inset-0 w-full h-full object-cover"
+          // Hidden until complete: it paints as it downloads, and the dim waits for onLoad.
+          className={`absolute inset-0 w-full h-full object-cover ${loaded ? '' : 'opacity-0'}`}
           onLoad={() => setLoadedKey(mediaKey)}
           onError={() => fail(mediaKey, 'image failed to load')}
         />

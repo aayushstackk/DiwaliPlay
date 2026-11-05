@@ -53,9 +53,9 @@ Keeping it separate from `wallpapers` keeps videos out of `wallpaperPlaylist`, s
 
 **Delete guard:** the asset delete route already refuses an asset assigned to `brandLogoUrl` or `wallpaperUrl`. Add `startBackgroundUrl`.
 
-**Delivery:** no change to `/api/assets/:id/content`. It sends the whole file with an ETag and a 24-hour cache header. Both clients download the file once and play it locally, so range requests aren't needed.
+**Delivery:** `/api/assets/:id/content` answers a matching `If-None-Match` from asset metadata, without reading storage. GridFS and local files stream to the response with backpressure; S3 and GCS still buffer behind the same interface. Both clients download the file once and play it locally, so range requests aren't needed.
 
-**Known limit:** uploads and downloads are held in server memory, so each 40 MB transfer uses about 40 MB of RAM while it runs. That's acceptable for a rarely changed file with few kiosks, but it needs checking on the production server (see Testing).
+**Known limit:** uploads are still held in server memory by multer, so each 40 MB upload uses about 40 MB of RAM while it runs. That needs checking on the production server (see Testing).
 
 ## Admin panel
 
