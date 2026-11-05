@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { Readable } from 'stream';
 import { AssetCategory, StorageProviderType } from '../../../src/types/backend';
 
 export type { StorageProviderType };
@@ -14,6 +15,12 @@ export interface StoredObjectResult {
 
 export interface ReadObjectResult {
   data: Buffer;
+  mimeType: string;
+}
+
+export interface ReadStreamResult {
+  stream: Readable;
+  size: number;
   mimeType: string;
 }
 
@@ -47,6 +54,12 @@ export interface AssetStorageProvider {
    * Reads a binary buffer from object storage.
    */
   readObject(key: string): Promise<ReadObjectResult>;
+
+  /**
+   * Opens an object for streaming, rejecting if it doesn't exist. Nothing is read until the stream is consumed.
+   * Providers without this (S3, GCS) are served through readObject, buffered.
+   */
+  openReadStream?(key: string): Promise<ReadStreamResult>;
 
   /**
    * Deletes a binary object from storage.

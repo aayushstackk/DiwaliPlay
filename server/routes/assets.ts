@@ -4,7 +4,7 @@
  */
 
 import path from 'path';
-import crypto from 'crypto';
+import { Readable, pipeline } from 'stream';
 import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import { db } from '../storage';
@@ -15,7 +15,9 @@ import {
   validateUploadedFile,
   generateSafeObjectKey,
   CATEGORY_RULES,
+  AssetStorageProvider,
   ReadObjectResult,
+  ReadStreamResult,
   StorageProviderType
 } from '../storage/assets';
 import { AssetCategory, AssetRecord } from '../../src/types/backend';
@@ -46,6 +48,100 @@ function uploadSingleFile(req: Request, res: Response, next: NextFunction) {
 }
 
 // ============================================================================
+// Public Safe Asset Content Delivery Helpers
+// ============================================================================
+
+// An object key never changes content, so these identify it without reading anything.
+const assetEtag = (asset: AssetRecord) => `"${asset.id}-${asset.fileSize}"`;
+
+function matchesEtag(header: string | undefined, etag: string): boolean {
+  if (!header) return false;
+  return header.split(',').some((value) => {
+    const candidate = value.trim();
+    return candidate === '*' || candidate === etag || candidate === `W/${etag}`;
+  });
+}
+
+function setDeliveryHeaders(res: Response, etag: string) {
+  res.setHeader('ETag', etag);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+  res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=3600');
+}
+
+/** Resolves on the first data or the end, rejects on a read error, so that failure can still be a JSON 404. */
+function firstReadable(stream: Readable): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const onReadable = () => {
+      stream.off('error', onError);
+      resolve();
+    };
+    const onError = (err: Error) => {
+      stream.off('readable', onReadable);
+      reject(err);
+    };
+    stream.once('readable', onReadable);
+    stream.once('error', onError);
+  });
+}
+
+async function openFrom(provider: AssetStorageProvider, key: string): Promise<ReadStreamResult | ReadObjectResult> {
+  if (!provider.openReadStream) return provider.readObject(key);
+  const opened = await provider.openReadStream(key);
+  try {
+    await firstReadable(opened.stream);
+    // GridFS ends quietly when a file record has lost its chunks.
+    if (opened.size > 0 && opened.stream.readableLength === 0) {
+      throw new Error(`No data for object "${key}"`);
+    }
+    return opened;
+  } catch (err) {
+    opened.stream.destroy();
+    throw err;
+  }
+}
+
+/** Resilient binary retrieval across providers; null when none has the object. */
+async function openAssetObject(asset: AssetRecord): Promise<ReadStreamResult | ReadObjectResult | null> {
+  // 1. Try designated provider
+  const designatedProvider = asset.storageProvider ? getStorageProviderByType(asset.storageProvider) : null;
+  if (designatedProvider) {
+    try {
+      return await openFrom(designatedProvider, asset.objectKey);
+    } catch {
+      // Fall through to fallback providers
+    }
+  }
+
+  // 2. Try currently active provider
+  const activeProvider = getAssetStorageProvider();
+  if (activeProvider !== designatedProvider) {
+    try {
+      return await openFrom(activeProvider, asset.objectKey);
+    } catch {
+      // Fall through
+    }
+  }
+
+  // 3. Fallback across all configured storage providers
+  const candidateProviders: StorageProviderType[] = ['gridfs', 's3', 'gcs', 'local'];
+  for (const provType of candidateProviders) {
+    if (provType !== asset.storageProvider) {
+      try {
+        const provider = getStorageProviderByType(provType);
+        if (provider.isConfigured()) {
+          return await openFrom(provider, asset.objectKey);
+        }
+      } catch {
+        // Continue search
+      }
+    }
+  }
+
+  return null;
+}
+
+// ============================================================================
 // Public Safe Asset Content Delivery Endpoint
 // ============================================================================
 assetsRouter.get('/assets/:id/content', async (req: Request, res: Response) => {
@@ -66,49 +162,16 @@ assetsRouter.get('/assets/:id/content', async (req: Request, res: Response) => {
       return res.redirect(302, asset.url);
     }
 
-    // Resilient binary retrieval:
-    // 1. Try designated provider
-    let readResult: ReadObjectResult | null = null;
-    const designatedProvider = asset.storageProvider ? getStorageProviderByType(asset.storageProvider) : null;
-    if (designatedProvider) {
-      try {
-        readResult = await designatedProvider.readObject(asset.objectKey);
-      } catch {
-        // Fall through to fallback providers
-      }
+    // Answered from metadata alone: a revalidation must not cost a read.
+    const etag = assetEtag(asset);
+    if (matchesEtag(req.headers['if-none-match'], etag)) {
+      setDeliveryHeaders(res, etag);
+      return res.status(304).end();
     }
 
-    // 2. Try currently active provider
-    if (!readResult) {
-      const activeProvider = getAssetStorageProvider();
-      if (activeProvider !== designatedProvider) {
-        try {
-          readResult = await activeProvider.readObject(asset.objectKey);
-        } catch {
-          // Fall through
-        }
-      }
-    }
+    const source = await openAssetObject(asset);
 
-    // 3. Fallback across all configured storage providers
-    if (!readResult) {
-      const candidateProviders: StorageProviderType[] = ['gridfs', 's3', 'gcs', 'local'];
-      for (const provType of candidateProviders) {
-        if (provType !== asset.storageProvider) {
-          try {
-            const provider = getStorageProviderByType(provType);
-            if (provider.isConfigured()) {
-              readResult = await provider.readObject(asset.objectKey);
-              if (readResult) break;
-            }
-          } catch {
-            // Continue search
-          }
-        }
-      }
-    }
-
-    if (!readResult) {
+    if (!source) {
       console.warn(
         `[Asset Delivery] Asset binary missing from storage: "${asset.id}" (key: "${asset.objectKey}", provider: "${asset.storageProvider}")`
       );
@@ -120,25 +183,33 @@ assetsRouter.get('/assets/:id/content', async (req: Request, res: Response) => {
       });
     }
 
-    const { data } = readResult;
-    const mimeType = asset.mimeType || readResult.mimeType || 'application/octet-stream';
-    const etag = `"${crypto.createHash('md5').update(data).digest('hex')}"`;
+    // Strict security headers for content delivery
+    res.setHeader('Content-Type', asset.mimeType || source.mimeType || 'application/octet-stream');
+    setDeliveryHeaders(res, etag);
 
-    if (req.headers['if-none-match'] === etag) {
-      return res.status(304).end();
+    if ('data' in source) {
+      res.setHeader('Content-Length', source.data.length);
+      return res.status(200).send(source.data);
     }
 
-    // Strict security headers for content delivery
-    res.setHeader('Content-Type', mimeType);
-    res.setHeader('ETag', etag);
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
-    res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=3600');
-    res.setHeader('Content-Length', data.length);
+    res.setHeader('Content-Length', source.size);
+    res.status(200);
+    if (req.method === 'HEAD') {
+      source.stream.destroy();
+      return res.end();
+    }
 
-    return res.status(200).send(data);
+    // Holds backpressure, and a client that disconnects destroys the read stream. A read that fails from here on
+    // cuts the response short of its Content-Length, which clients treat as a failed download.
+    pipeline(source.stream, res, (err) => {
+      if (err && (err as NodeJS.ErrnoException).code !== 'ERR_STREAM_PREMATURE_CLOSE') {
+        console.warn(`[Asset Delivery] Stream failed for asset ${asset.id}:`, err.message);
+      }
+    });
+    return;
   } catch (err: any) {
     console.error(`[Asset Delivery] Error serving asset ${req.params.id}:`, err.message);
+    if (res.headersSent) return res.destroy();
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     return res.status(404).json({
       success: false,

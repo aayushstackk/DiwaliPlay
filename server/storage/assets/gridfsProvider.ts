@@ -3,9 +3,22 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { Readable } from 'stream';
 import { GridFSBucket, Db, ObjectId } from 'mongodb';
-import { AssetStorageProvider, StoredObjectResult, ReadObjectResult, StorageProviderType } from './types';
+import {
+  AssetStorageProvider,
+  StoredObjectResult,
+  ReadObjectResult,
+  ReadStreamResult,
+  StorageProviderType
+} from './types';
 import { getStorage } from '../index';
+
+function* chunksOf(data: Buffer, size: number): Generator<Buffer> {
+  for (let offset = 0; offset < data.length; offset += size) {
+    yield data.subarray(offset, offset + size);
+  }
+}
 
 export class GridFSStorageProvider implements AssetStorageProvider {
   private bucket: GridFSBucket | null = null;
@@ -113,11 +126,13 @@ export class GridFSStorageProvider implements AssetStorageProvider {
         });
       });
 
-      uploadStream.end(data);
+      // One chunk at a time: handed the whole buffer, the driver inserts every chunk at once and holds them all.
+      Readable.from(chunksOf(data, uploadStream.chunkSizeBytes)).pipe(uploadStream);
     });
   }
 
-  public async readObject(key: string): Promise<ReadObjectResult> {
+  /** The most recent file for a key, or null. */
+  private async findFile(key: string) {
     const bucket = this.resolveBucket();
 
     // Query files collection by filename or metadata originalKey
@@ -128,13 +143,34 @@ export class GridFSStorageProvider implements AssetStorageProvider {
       .toArray();
 
     if (!files || files.length === 0) {
-      throw new Error(`Object not found in GridFS: "${key}"`);
+      return null;
     }
 
-    // Use the most recent file if multiple exist
     const fileDoc = files[files.length - 1];
     const mimeType =
       (fileDoc.metadata as any)?.mimeType || (fileDoc.metadata as any)?.contentType || 'application/octet-stream';
+    return { fileDoc, mimeType };
+  }
+
+  public async openReadStream(key: string): Promise<ReadStreamResult> {
+    const found = await this.findFile(key);
+    if (!found) {
+      throw new Error(`Object not found in GridFS: "${key}"`);
+    }
+    return {
+      stream: this.resolveBucket().openDownloadStream(found.fileDoc._id),
+      size: found.fileDoc.length,
+      mimeType: found.mimeType
+    };
+  }
+
+  public async readObject(key: string): Promise<ReadObjectResult> {
+    const bucket = this.resolveBucket();
+    const found = await this.findFile(key);
+    if (!found) {
+      throw new Error(`Object not found in GridFS: "${key}"`);
+    }
+    const { fileDoc, mimeType } = found;
 
     return new Promise<ReadObjectResult>((resolve, reject) => {
       const downloadStream = bucket.openDownloadStream(fileDoc._id);

@@ -5,7 +5,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { AssetStorageProvider, StoredObjectResult, ReadObjectResult } from './types';
+import { AssetStorageProvider, StoredObjectResult, ReadObjectResult, ReadStreamResult } from './types';
 
 export const LOCAL_UPLOADS_DIR = path.resolve(process.cwd(), 'data', 'uploads');
 
@@ -74,6 +74,21 @@ export class LocalStorageProvider implements AssetStorageProvider {
     const data = await fs.promises.readFile(fullPath);
     return {
       data,
+      mimeType: 'application/octet-stream' // Inferred by metadata store
+    };
+  }
+
+  public async openReadStream(key: string): Promise<ReadStreamResult> {
+    const fullPath = path.resolve(this.baseDir, key);
+
+    if (!fullPath.startsWith(this.baseDir)) {
+      throw new Error(`Path traversal attempt detected in key: "${key}"`);
+    }
+
+    const { size } = await fs.promises.stat(fullPath);
+    return {
+      stream: fs.createReadStream(fullPath),
+      size,
       mimeType: 'application/octet-stream' // Inferred by metadata store
     };
   }
