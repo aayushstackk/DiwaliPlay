@@ -250,7 +250,12 @@ const SpinWheelComponent: React.FC<SpinWheelProps> = ({
     setIsSpinning(true);
     onSpinStart?.();
 
-    getAudioContext();
+    // onSpinStart has locked both exits. A failure to open audio must not leave them locked with no spin running.
+    try {
+      getAudioContext();
+    } catch (err) {
+      console.warn('Spin audio unavailable:', err);
+    }
 
     const numSlices = Math.max(1, rewards.length);
     const initialAngle = rotationRef.current;
@@ -267,13 +272,17 @@ const SpinWheelComponent: React.FC<SpinWheelProps> = ({
       serverResult = { success: false, errorMessage: 'Network error while spinning.' };
     }, SPIN_RESPONSE_TIMEOUT_MS);
 
-    gameApi
-      .spinWheel({
-        playerName: playerName || (isMaster ? 'Master Tester' : 'Player'),
-        mobileNumber: mobileNumber || undefined,
-        sessionId: sessionId || undefined,
-        userId: isMaster ? 'trial_user_8536' : undefined
-      })
+    // A guest id has no server session, so the server would record a real coupon against nothing.
+    const spinRequest = sessionId?.startsWith('guest_')
+      ? Promise.reject(new Error('This game could not be registered for Spin & Win.'))
+      : gameApi.spinWheel({
+          playerName: playerName || (isMaster ? 'Master Tester' : 'Player'),
+          mobileNumber: mobileNumber || undefined,
+          sessionId: sessionId || undefined,
+          userId: isMaster ? 'trial_user_8536' : undefined
+        });
+
+    spinRequest
       .then((res) => {
         if (res.success && res.reward) {
           serverResult = {

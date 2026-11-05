@@ -22,6 +22,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -162,6 +163,16 @@ class GameViewModelTest {
         assertThat(r.vm.requestSpin(spin)).isEqualTo(SpinOutcome.Failed)
         r.api.onSpin = { ApiResult.Success(SpinWheelResponse(success = false, message = "paused")) }
         assertThat(r.vm.requestSpin(spin)).isEqualTo(SpinOutcome.Failed)
+    }
+
+    @Test
+    fun aSpinCallThatNeverAnswersFailsAfterTheResponseTimeout() = runTest {
+        val r = Rig(this, rewardsOn)
+        val spin = toSpin(r)
+        r.api.onSpin = { awaitCancellation() }
+        val started = testScheduler.currentTime
+        assertThat(r.vm.requestSpin(spin)).isEqualTo(SpinOutcome.Failed)
+        assertThat(testScheduler.currentTime - started).isEqualTo(SPIN_RESPONSE_TIMEOUT_MS)
     }
 
     @Test

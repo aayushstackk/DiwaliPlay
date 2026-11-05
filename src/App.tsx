@@ -428,7 +428,8 @@ export default function App() {
             targetAchieved: branding.targetScoreEnabled ? (gameScore.score >= branding.targetScore) : undefined,
           })
           .then((res) => {
-            if (res.success && res.session?.earnedReward) {
+            // A slow answer can arrive after this player left: their prize must not show on the next player's screen.
+            if (res.success && res.session?.earnedReward && activeSessionIdRef.current === currentTargetSession) {
               setEarnedReward(res.session.earnedReward);
             }
           })

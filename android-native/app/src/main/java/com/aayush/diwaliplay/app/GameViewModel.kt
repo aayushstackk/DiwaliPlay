@@ -68,6 +68,12 @@ private const val AUDIO_READY_POLL_MS = 50L
  */
 internal const val SPIN_HOLD_MS = 5_000L
 
+/**
+ * SpinWheel SPIN_RESPONSE_TIMEOUT_MS. Play Again and the close button stay locked while the wheel cruises, so a
+ * dead network must not hold them for the HTTP client's own 45 s. A prize recorded on a later answer isn't shown.
+ */
+internal const val SPIN_RESPONSE_TIMEOUT_MS = 15_000L
+
 /** GameOverModal AUTO_RETURN_SECONDS. */
 internal const val AUTO_RETURN_SECONDS = 20
 
@@ -375,7 +381,8 @@ class GameViewModel(
             mobileNumber = over.mobileNumber?.ifBlank { null },
             sessionId = id,
         )
-        val r = deps.api.spin(request) as? ApiResult.Success ?: return SpinOutcome.Failed
+        val r = withTimeoutOrNull(SPIN_RESPONSE_TIMEOUT_MS) { deps.api.spin(request) } as? ApiResult.Success
+            ?: return SpinOutcome.Failed
         val reward = r.value.reward ?: return SpinOutcome.Failed
         // A session that has already spun gets a 409 from the server, so it fails here with everything else.
         return if (r.value.success) SpinOutcome.Won(reward, r.value.rewardIndex) else SpinOutcome.Failed
