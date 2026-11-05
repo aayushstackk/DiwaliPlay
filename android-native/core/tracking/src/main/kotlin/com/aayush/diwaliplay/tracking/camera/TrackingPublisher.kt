@@ -17,7 +17,10 @@ private const val STATUS_INTERVAL_MS = 500L
 sealed interface TrackingStatus {
     data object Starting : TrackingStatus
 
-    /** [delegate] is [DELEGATE_GPU] or [DELEGATE_CPU]; values are averages over the last ~0.5 s / 1 s. */
+    /**
+     * [delegate] is [DELEGATE_GPU] or [DELEGATE_CPU]; values are averages over the last ~0.5 s / 1 s. With no hand
+     * tracking it's [DELEGATE_NONE], and Running means the camera has delivered a frame.
+     */
     data class Running(val delegate: String, val inferenceMs: Double, val cameraFps: Double) : TrackingStatus
 
     data class CameraLost(val reason: String) : TrackingStatus
@@ -26,8 +29,10 @@ sealed interface TrackingStatus {
      * Hands are published empty. After a failure during a run, frames are ignored and start() does
      * nothing, so retrying requires stop() then start(). Only a start() refused for a missing camera
      * permission never began a run; that one can be retried with start() alone.
+     *
+     * [cameraAlive]: only hand tracking failed. Frames keep coming, for the live background and the photo.
      */
-    data class Failed(val reason: String) : TrackingStatus
+    data class Failed(val reason: String, val cameraAlive: Boolean = false) : TrackingStatus
 }
 
 /**
@@ -69,6 +74,7 @@ internal class TrackingPublisher(
     /** Highest generation that has failed. Generations only grow, so this needs no reset. */
     private val failedGeneration = AtomicInteger(-1)
     @Volatile private var cameraLost = false
+    @Volatile private var frameReportedGeneration = -1
 
     // Executor-only state.
     private var lastStatusAt = 0L
@@ -91,7 +97,19 @@ internal class TrackingPublisher(
 
     fun acceptsFrames(gen: Int): Boolean = gen == generation && !isFailed(gen) && !cameraLost
 
+    /** The camera is delivering, whatever has become of hand tracking. A camera failure is the pipeline's to add. */
+    fun cameraAlive(gen: Int): Boolean = gen == generation && !cameraLost
+
     private fun isFailed(gen: Int) = failedGeneration.get() >= gen
+
+    /** A run with no hand tracking got a frame: it's ready. Once per run, and again if the camera comes back. */
+    fun onCameraFrame(gen: Int, cameraFps: Double) {
+        if (frameReportedGeneration == gen || !acceptsFrames(gen)) return
+        frameReportedGeneration = gen
+        executor.execute {
+            if (acceptsFrames(gen)) _status.value = TrackingStatus.Running(DELEGATE_NONE, 0.0, cameraFps)
+        }
+    }
 
     fun onResult(gen: Int, frame: HandFrame, timestampMs: Long, delegate: String, frameW: Int, frameH: Int, cameraFps: Double) {
         if (gen != generation) return
@@ -107,7 +125,7 @@ internal class TrackingPublisher(
                 reportRunning(delegate, inferenceMs, cameraFps)
             } catch (t: Throwable) {
                 log("tracking update failed", t)
-                fail(gen, "tracking failed: ${t.message ?: t.javaClass.simpleName}")
+                fail(gen, "tracking failed: ${t.message ?: t.javaClass.simpleName}", cameraAlive = true)
             }
         }
     }
@@ -116,12 +134,12 @@ internal class TrackingPublisher(
      * Failed plus one publish of empty hands, for the first failure of [gen] only. Returns true if
      * this call took effect, false if [gen] is stale or has already failed.
      */
-    fun fail(gen: Int, reason: String): Boolean {
+    fun fail(gen: Int, reason: String, cameraAlive: Boolean = false): Boolean {
         if (gen != generation) return false
         if (failedGeneration.getAndUpdate { max(it, gen) } >= gen) return false
         executor.execute {
             if (gen != generation) return@execute // end() publishes for itself
-            _status.value = TrackingStatus.Failed(reason)
+            _status.value = TrackingStatus.Failed(reason, cameraAlive)
             publishEmpty()
         }
         return true
@@ -136,6 +154,7 @@ internal class TrackingPublisher(
         val gen = generation
         if (cameraLost || isFailed(gen)) return
         cameraLost = true
+        frameReportedGeneration = -1
         executor.execute {
             if (gen != generation || isFailed(gen)) return@execute
             _status.value = TrackingStatus.CameraLost(reason)

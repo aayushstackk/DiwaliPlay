@@ -193,17 +193,23 @@ private fun StartingState() {
     }
 }
 
-@Composable
-private fun CameraErrorState(status: TrackingStatus) {
-    val reason = (status as? TrackingStatus.Failed)?.reason.orEmpty()
-    val message = when {
-        reason.contains("permission", ignoreCase = true) ->
+/** What the error state says. A hand-tracking failure says nothing about the camera, which may be fine. */
+internal fun photoErrorMessage(status: TrackingStatus): String {
+    val failed = status as? TrackingStatus.Failed
+    return when {
+        failed?.cameraAlive == true -> "Your photo couldn't be taken this time. Continuing automatically to your celebration results..."
+        failed?.reason.orEmpty().contains("permission", ignoreCase = true) ->
             "Camera permission was denied. Continuing automatically to your celebration results..."
         // The camera never failed; it just never delivered a frame (the 8 s watchdog).
         status is TrackingStatus.Starting || status is TrackingStatus.Running ->
             "Camera failed to start video feed. Continuing to celebration results..."
         else -> "Front camera unavailable. Continuing automatically to your celebration results..."
     }
+}
+
+@Composable
+private fun CameraErrorState(status: TrackingStatus) {
+    val message = photoErrorMessage(status)
     Column(
         Modifier.fillMaxSize().testTag(Tags.PHOTO_ERROR).background(Palette.Neutral950.copy(alpha = 0.9f)).padding(20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -216,7 +222,7 @@ private fun CameraErrorState(status: TrackingStatus) {
             Icon(Icons.Alert, 24.dp, Palette.Rose400)
         }
         Spacer(Modifier.height(10.dp))
-        Label("Camera Unavailable", 14.sp, Palette.Rose200, family = Fonts.Display, weight = FontWeight.Bold)
+        Label(if (status is TrackingStatus.Failed && status.cameraAlive) "Photo Unavailable" else "Camera Unavailable", 14.sp, Palette.Rose200, family = Fonts.Display, weight = FontWeight.Bold)
         Spacer(Modifier.height(4.dp))
         Label(message, 12.sp, Palette.Neutral300)
         Spacer(Modifier.height(12.dp))

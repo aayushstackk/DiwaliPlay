@@ -40,7 +40,8 @@ interface TrackingSource {
     fun snapshot(): TrackingSnapshot
     fun latestFrame(): CameraFrame?
     fun captureStill(): ByteArray?
-    @MainThread fun start()
+    /** [trackHands] false: a touch round. No hand tracking runs, and Running means the camera has delivered a frame. */
+    @MainThread fun start(trackHands: Boolean)
     @MainThread fun stop()
 }
 
@@ -50,7 +51,7 @@ class PipelineTrackingSource(private val pipeline: TrackingPipeline) : TrackingS
     override fun latestFrame(): CameraFrame? = pipeline.latestFrame()
     override fun captureStill(): ByteArray? = pipeline.captureStill()
     // No Preview use case: BackdropSurfaceView draws the analysis frames (see its KDoc).
-    override fun start() = pipeline.start(null)
+    override fun start(trackHands: Boolean) = pipeline.start(null, trackHands)
     override fun stop() = pipeline.stop()
 }
 

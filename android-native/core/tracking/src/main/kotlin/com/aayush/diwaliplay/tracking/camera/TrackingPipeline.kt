@@ -54,7 +54,31 @@ class MonotonicTimestamp {
 class CameraFrame(val bitmap: Bitmap, val rotationDegrees: Int)
 
 /**
- * Camera → MediaPipe (LIVE_STREAM) → [HandTracker] → [hands].
+ * What happens to one analysis frame, apart from Android's types. The frame is kept for the live background and the
+ * photo before anything to do with hands, so neither depends on the landmarker: not on its having started, and not on
+ * its having failed. Only a dead camera stops frames.
+ */
+internal class FrameRoute<F>(
+    private val trackHands: Boolean,
+    private val cameraAlive: () -> Boolean,
+    private val readyToDetect: () -> Boolean,
+    private val store: (F) -> Unit,
+    private val onCameraFrame: () -> Unit,
+    private val detect: (F) -> Unit,
+) {
+    /** A run with no hand tracking never builds a landmarker. */
+    val wantsLandmarker: Boolean get() = trackHands
+
+    fun onFrame(decode: () -> F) {
+        if (!cameraAlive()) return
+        val frame = decode()
+        store(frame)
+        if (!trackHands) onCameraFrame() else if (readyToDetect()) detect(frame)
+    }
+}
+
+/**
+ * Camera → MediaPipe (LIVE_STREAM) → [HandTracker] → [hands]; or, for a run that doesn't track hands, camera frames only.
  *
  * Threading:
  * - [start] / [stop]: main thread (CameraX binding). Both are idempotent. The owner's ON_DESTROY
@@ -69,8 +93,9 @@ class CameraFrame(val bitmap: Bitmap, val rotationDegrees: Int)
  * mirrored. Non-16:9 frames (the 640×480 fallback) go through [cropToSixteenNine]. Results that
  * arrive after [stop] (or from a previous start) are dropped. A frame that fails is dropped; after
  * [MAX_CONSECUTIVE_FRAME_FAILURES] in a row, or on an unrecoverable landmarker or tracker error,
- * the run ends as [TrackingStatus.Failed] with empty hands, never an uncaught exception. Call
- * stop() then start() to retry.
+ * hand tracking ends as [TrackingStatus.Failed] with empty hands, never an uncaught exception, while
+ * the camera carries on supplying [latestFrame] and [captureStill] ([TrackingStatus.Failed.cameraAlive]).
+ * Call stop() then start() to retry.
  */
 class TrackingPipeline(
     context: Context,
@@ -110,6 +135,10 @@ class TrackingPipeline(
     @Volatile private var frameH = 0
     @Volatile private var cameraFps = 0.0
 
+    /** This run's camera failed outright, as opposed to being lost for a while or hand tracking failing. */
+    @Volatile private var cameraDead = false
+    @Volatile private var trackHands = true
+
     /** Delegate of the live landmarker, mirrored from the analysis thread for the result path. */
     @Volatile private var activeDelegate: String? = null
 
@@ -136,9 +165,13 @@ class TrackingPipeline(
      *
      * Emits Failed("camera permission denied") and does not begin a run when CAMERA isn't granted,
      * so that case alone can be retried with start.
+     *
+     * [trackHands] false is for rounds that don't use hands (touch mode): no landmarker is built, frames still reach
+     * [latestFrame] and [captureStill], [hands] stays empty, and [status] goes to Running with [DELEGATE_NONE] on the
+     * first camera frame. The mode lasts for the run: it's ignored if one is already in progress.
      */
     @MainThread
-    fun start(showPreview: PreviewView?) {
+    fun start(showPreview: PreviewView?, trackHands: Boolean = true) {
         checkMain()
         if (running) return
         if (!hasCameraPermission()) {
@@ -146,17 +179,20 @@ class TrackingPipeline(
             return
         }
         running = true
+        this.trackHands = trackHands
+        cameraDead = false
         val gen = publisher.begin()
         cameraFps = 0.0
+        val route = routeFor(gen, trackHands)
         lifecycleOwner.lifecycle.addObserver(destroyObserver)
         analysisExecutor.execute {
             fpsWindowStart = 0L
             fpsWindowFrames = 0
             consecutiveFrameFailures = 0
-            createLandmarker(gen)
+            if (route.wantsLandmarker) createLandmarker(gen)
         }
-        camera.bind(showPreview, analysisExecutor, { image -> analyze(gen, image) }) { reason ->
-            fail(gen, reason, null)
+        camera.bind(showPreview, analysisExecutor, { image -> analyze(gen, route, image) }) { reason ->
+            failCamera(gen, reason, null)
         }
     }
 
@@ -199,9 +235,22 @@ class TrackingPipeline(
         }
     }
 
+    /** Hand tracking is over, but the camera isn't: the photo and live background carry on. A run without hands has only the camera to fail. */
     private fun fail(gen: Int, reason: String, cause: Throwable?) {
+        if (!trackHands) {
+            failCamera(gen, reason, cause)
+            return
+        }
         Log.e(TAG, reason, cause)
-        if (publisher.fail(gen, reason)) clearStill()
+        publisher.fail(gen, reason, cameraAlive = true)
+    }
+
+    private fun failCamera(gen: Int, reason: String, cause: Throwable?) {
+        Log.e(TAG, reason, cause)
+        if (!publisher.isCurrent(gen)) return
+        cameraDead = true
+        publisher.fail(gen, reason)
+        clearStill()
     }
 
     /** Now, and again after any frame already on the analysis thread (the frame gate then stops new ones). */
@@ -237,23 +286,24 @@ class TrackingPipeline(
         landmarker = null
     }
 
-    private fun analyze(gen: Int, image: ImageProxy) {
-        try {
-            if (!publisher.acceptsFrames(gen)) return
-            countFrame()
-            val host = landmarker ?: return
-            beforeDetect?.invoke()
-            val rotation = image.imageInfo.rotationDegrees
-            val bitmap = image.toBitmap()
-            latestFrame.set(CameraFrame(bitmap, rotation))
-            if (rotation % 180 == 0) {
-                frameW = bitmap.width; frameH = bitmap.height
-            } else {
-                frameW = bitmap.height; frameH = bitmap.width
-            }
-            host.detectAsync(bitmap, timestamps.next(SystemClock.uptimeMillis()), rotation)
-            activeDelegate = host.delegate // detectAsync may have fallen back to CPU
+    private fun routeFor(gen: Int, trackHands: Boolean) = FrameRoute<CameraFrame>(
+        trackHands = trackHands,
+        cameraAlive = { !cameraDead && publisher.cameraAlive(gen) },
+        readyToDetect = { publisher.acceptsFrames(gen) && landmarker != null },
+        store = latestFrame::set,
+        onCameraFrame = {
             consecutiveFrameFailures = 0
+            publisher.onCameraFrame(gen, cameraFps)
+        },
+        detect = ::detect,
+    )
+
+    private fun analyze(gen: Int, route: FrameRoute<CameraFrame>, image: ImageProxy) {
+        try {
+            route.onFrame {
+                countFrame()
+                CameraFrame(image.toBitmap(), image.imageInfo.rotationDegrees)
+            }
         } catch (e: LandmarkerRebuildException) {
             fail(gen, e.message ?: "landmarker rebuild failed", e)
         } catch (t: Throwable) {
@@ -261,6 +311,21 @@ class TrackingPipeline(
         } finally {
             image.close()
         }
+    }
+
+    private fun detect(frame: CameraFrame) {
+        val host = landmarker ?: return
+        beforeDetect?.invoke()
+        val bitmap = frame.bitmap
+        val rotation = frame.rotationDegrees
+        if (rotation % 180 == 0) {
+            frameW = bitmap.width; frameH = bitmap.height
+        } else {
+            frameW = bitmap.height; frameH = bitmap.width
+        }
+        host.detectAsync(bitmap, timestamps.next(SystemClock.uptimeMillis()), rotation)
+        activeDelegate = host.delegate // detectAsync may have fallen back to CPU
+        consecutiveFrameFailures = 0
     }
 
     /** Drops the frame, like the web's "Inference frame dropped"; only a persistent run of these fails. */

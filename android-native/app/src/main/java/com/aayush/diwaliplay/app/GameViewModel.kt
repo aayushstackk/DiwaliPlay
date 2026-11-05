@@ -362,6 +362,13 @@ class GameViewModel(
             return
         }
         cancelEndOfRound()
+        // A run that has failed stays failed until restarted, and the replay deserves a working camera. If it still
+        // won't start, syncToPhase finds that out straight away, so the photo doesn't sit out the 8 s watchdog.
+        val status = deps.tracking.status.value
+        if (cameraOn && (status is TrackingStatus.Failed || status is TrackingStatus.CameraLost)) {
+            deps.tracking.stop()
+            cameraOn = false
+        }
         deps.branding.advanceWallpaper()
         _round.value = round.copy(wallpaperUrl = deps.branding.state.value.currentWallpaperUrl)
         controller.onPlayAgain()
@@ -371,12 +378,9 @@ class GameViewModel(
     /** Asks the server for the wheel's result. Every failure, including no usable session id, is [SpinOutcome.Failed]. */
     suspend fun requestSpin(spin: GamePhase.Spin): SpinOutcome {
         val trial = _round.value?.isTrial == true
-        var id = resolvedSessionId(spin.sessionId)
-        if (id.startsWith(GUEST_SESSION_PREFIX)) {
-            // A server-flagged trial never calls startSession. A real round's start hasn't answered: never send a guest id.
-            if (!trial) return SpinOutcome.Failed
-            id = TRIAL_SESSION_ID
-        }
+        val id = resolvedSessionId(spin.sessionId)
+        // No server session for this round, so no reward can be recorded against it. Never send a guest id.
+        if (id.startsWith(GUEST_SESSION_PREFIX)) return SpinOutcome.Failed
         val request = SpinWheelRequest(
             userId = if (trial) TRIAL_USER_ID else null,
             playerName = spin.playerName.ifBlank { if (trial) "Master Tester" else "Player" },
@@ -484,7 +488,7 @@ class GameViewModel(
         val wanted = round != null && cameraWanted(p, round.settings.isTouchMode, round.wallpaperEnabled)
         if (wanted && !cameraOn) {
             cameraOn = true
-            deps.tracking.start()
+            deps.tracking.start(trackHands = round?.settings?.isTouchMode != true)
             onTrackingStatus(deps.tracking.status.value) // a refused start may repeat the last status, which emits nothing
         } else if (!wanted && cameraOn) {
             cameraOn = false
@@ -495,7 +499,10 @@ class GameViewModel(
         if (cameraOn && deps.tracking.status.value is TrackingStatus.Running) controller.onPhotoCameraReady()
 
         when {
-            p == GamePhase.Startup -> cancelEndOfRound()
+            p == GamePhase.Startup -> {
+                cancelEndOfRound()
+                effects.clearRoundSession()
+            }
             // GameOverModal: with rewards off the countdown starts with the card.
             p is GamePhase.GameOver && round?.settings?.rewardsEnabled == false -> startAutoReturn()
             // Every way to feedback leaves the kiosk on its way home.
@@ -512,7 +519,9 @@ class GameViewModel(
     private fun onTrackingStatus(status: TrackingStatus) {
         if (!cameraOn) return
         when (status) {
-            is TrackingStatus.Failed, is TrackingStatus.CameraLost -> controller.onCameraLost()
+            // Only hand tracking failed: hands are already empty, and the photo can still be taken.
+            is TrackingStatus.Failed -> if (!status.cameraAlive) controller.onCameraLost()
+            is TrackingStatus.CameraLost -> controller.onCameraLost()
             is TrackingStatus.Running -> controller.onPhotoCameraReady()
             TrackingStatus.Starting -> Unit
         }

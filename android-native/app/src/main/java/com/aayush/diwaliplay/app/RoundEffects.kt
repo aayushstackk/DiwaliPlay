@@ -79,6 +79,12 @@ internal class RoundEffects(
     /** [id] with a stand-in replaced by the server's id. For network effects: the FIFO guarantees `startSession` has finished. */
     private fun serverId(id: String) = if (id.startsWith(GUEST_SESSION_PREFIX)) startedSessionId ?: id else id
 
+    /** The round is over: nothing may be read as its id from now on, and a `startSession` still running can't set one. */
+    fun clearRoundSession() {
+        startGeneration.incrementAndGet()
+        currentRoundSessionId = null
+    }
+
     /** [id] with a stand-in replaced by this round's server id, if it has one yet; else [id] unchanged. Any thread. */
     fun currentServerId(id: String) = if (id.startsWith(GUEST_SESSION_PREFIX)) currentRoundSessionId ?: id else id
 

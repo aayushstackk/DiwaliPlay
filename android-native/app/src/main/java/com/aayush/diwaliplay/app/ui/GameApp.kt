@@ -96,7 +96,7 @@ private fun PhaseContent(vm: GameViewModel, phase: GamePhase, branding: Branding
             ChangeCodeButton(vm::onInterrupted, Modifier.align(Alignment.TopEnd))
             when (val s = status) {
                 TrackingStatus.Starting -> VisionLoadingOverlay()
-                is TrackingStatus.Failed -> CameraErrorOverlay(s.reason, onRetryCamera, vm::onInterrupted)
+                is TrackingStatus.Failed -> CameraErrorOverlay(s.reason, onRetryCamera, vm::onInterrupted, s.cameraAlive)
                 is TrackingStatus.CameraLost -> CameraErrorOverlay(s.reason, onRetryCamera, vm::onInterrupted)
                 is TrackingStatus.Running -> Unit
             }

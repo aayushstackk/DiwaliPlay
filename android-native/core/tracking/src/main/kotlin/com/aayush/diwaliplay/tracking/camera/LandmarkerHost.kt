@@ -20,6 +20,9 @@ private const val TAG = "LandmarkerHost"
 const val DELEGATE_GPU = "GPU"
 const val DELEGATE_CPU = "CPU"
 
+/** A run with no hand tracking, so no landmarker: see [TrackingPipeline.start]. */
+const val DELEGATE_NONE = "NONE"
+
 /** Callback for [RunningMode.LIVE_STREAM]. Runs on MediaPipe's own result thread. */
 fun interface LiveResultListener {
     /** [timestampMs] is the timestamp passed to [LandmarkerHost.detectAsync] for that frame. */

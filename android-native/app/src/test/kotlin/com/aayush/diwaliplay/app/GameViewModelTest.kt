@@ -162,6 +162,124 @@ class GameViewModelTest {
     }
 
     @Test
+    fun aServerFlaggedTrialNeverGetsThePreviousPlayersSession() = runTest {
+        val r = Rig(this, rewardsOn)
+        r.api.serverSessionId = "previous_player"
+        r.acceptCode()
+        r.playThroughCountdown()
+        runCurrent()
+        assertThat(r.vm.resolvedSessionId("guest_1_2")).isEqualTo("previous_player")
+        r.vm.onInterrupted()
+        runCurrent()
+        assertThat(r.vm.resolvedSessionId("guest_1_2")).isEqualTo("guest_1_2") // gone with the round
+
+        // Flagged a trial by the server, with no session: it never calls startSession, so its id stays a guest's.
+        r.api.onVerify = { ApiResult.Success(VerifyCodeResponse(success = true, valid = true, isTrial = true, user = TEST_USER)) }
+        r.api.onSpin = { ApiResult.Success(SpinWheelResponse(success = true, reward = prize)) }
+        val spin = toSpin(r)
+        assertThat(r.vm.requestSpin(spin)).isEqualTo(SpinOutcome.Failed)
+        assertThat(r.api.spins).isEmpty()
+    }
+
+    @Test
+    fun aStartSessionStillRunningWhenTheRoundEndsCantPublishItsId() = runTest {
+        val r = Rig(this, rewardsOn)
+        val slow = CompletableDeferred<Unit>()
+        r.api.onStart = {
+            slow.await()
+            ApiResult.Success(
+                com.aayush.diwaliplay.model.StartSessionResponse(success = true, session = GameSession(id = "late", userId = "u1"), user = TEST_USER),
+            )
+        }
+        r.acceptCode()
+        r.playThroughCountdown()
+        r.vm.onInterrupted()
+        runCurrent()
+        slow.complete(Unit)
+        runCurrent()
+        assertThat(r.vm.resolvedSessionId("guest_1_2")).isEqualTo("guest_1_2")
+    }
+
+    @Test
+    fun touchRoundsDontTrackHandsAndCameraRoundsDo() = runTest {
+        val touch = Rig(this, SystemSettings(gameplayMode = "touch", wallpaperEnabled = false, rewardsEnabled = false))
+        touch.acceptCode()
+        assertThat(touch.tracking.lastTrackHands).isFalse()
+
+        val camera = Rig(this)
+        camera.acceptCode()
+        assertThat(camera.tracking.lastTrackHands).isTrue()
+    }
+
+    @Test
+    fun aHandTrackingFailureInACameraRoundStillTakesThePhoto() = runTest {
+        val r = Rig(this)
+        r.acceptCode()
+        r.playThroughCountdown()
+        r.tracking.emit(TrackingStatus.Failed("landmarker failed", cameraAlive = true))
+        runCurrent()
+        r.frames(35_100)
+        assertThat(r.vm.phase.value).isEqualTo(GamePhase.PhotoCountdown(5))
+        r.frames(5_100)
+        advanceTimeBy(500)
+        runCurrent()
+        r.frames(50)
+        assertThat((r.vm.phase.value as GamePhase.GameOver).card.photoJpeg).isNotNull()
+    }
+
+    @Test
+    fun aDeadCameraInACameraRoundStillGoesToTheErrorPath() = runTest {
+        val r = Rig(this)
+        r.acceptCode()
+        r.playThroughCountdown()
+        r.tracking.emit(TrackingStatus.Failed("bind failed"))
+        runCurrent()
+        r.frames(35_100)
+        assertThat(r.vm.phase.value).isEqualTo(GamePhase.PhotoCountdown(0, cameraError = true))
+    }
+
+    /** A trial touch round with its camera on throughout, played to the card with a camera that has then failed. */
+    private fun TestScope.trialCardWithAFailedCamera(r: Rig) {
+        r.acceptCode("8536")
+        r.frames(3_600)
+        r.frames(35_100)
+        r.frames(5_100)
+        advanceTimeBy(500)
+        runCurrent()
+        r.frames(50)
+        assertThat(r.vm.phase.value).isInstanceOf(GamePhase.GameOver::class.java)
+        r.tracking.emit(TrackingStatus.Failed("bind failed"))
+        runCurrent()
+    }
+
+    private val liveCameraTouch = SystemSettings(gameplayMode = "touch", wallpaperEnabled = false, rewardsEnabled = false)
+
+    @Test
+    fun aTrialReplayRestartsAFailedCamera() = runTest {
+        val r = Rig(this, liveCameraTouch)
+        trialCardWithAFailedCamera(r)
+        val starts = r.tracking.starts
+        r.vm.onPlayAgain()
+        runCurrent()
+        assertThat(r.tracking.starts).isEqualTo(starts + 1)
+        r.frames(3_600)
+        r.frames(35_100)
+        assertThat(r.vm.phase.value).isEqualTo(GamePhase.PhotoCountdown(5))
+    }
+
+    @Test
+    fun aTrialReplayWhoseCameraWontRestartSkipsTheWatchdog() = runTest {
+        val r = Rig(this, liveCameraTouch)
+        trialCardWithAFailedCamera(r)
+        r.tracking.refuseStartWith = TrackingStatus.Failed("camera permission denied")
+        r.vm.onPlayAgain()
+        runCurrent()
+        r.frames(3_600)
+        r.frames(35_100)
+        assertThat(r.vm.phase.value).isEqualTo(GamePhase.PhotoCountdown(0, cameraError = true))
+    }
+
+    @Test
     fun aSpinAlreadyTakenFailsLikeAnyOther() = runTest {
         val r = Rig(this, rewardsOn)
         val spin = toSpin(r)

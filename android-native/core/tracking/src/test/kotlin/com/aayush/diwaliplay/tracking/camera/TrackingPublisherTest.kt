@@ -196,4 +196,50 @@ class TrackingPublisherTest {
         publisher.reject("camera permission denied")
         assertThat(publisher.status.value).isEqualTo(TrackingStatus.Failed("camera permission denied"))
     }
+
+    @Test
+    fun theFirstCameraFrameIsReadyWithoutAnyResult() {
+        val gen = publisher.begin()
+        publisher.onCameraFrame(gen, 30.0)
+        executor.runAll()
+        assertThat(publisher.status.value).isEqualTo(TrackingStatus.Running(DELEGATE_NONE, 0.0, 30.0))
+    }
+
+    @Test
+    fun aStaleCameraFrameIsIgnored() {
+        val old = publisher.begin()
+        publisher.begin()
+        publisher.onCameraFrame(old, 30.0)
+        executor.runAll()
+        assertThat(publisher.status.value).isEqualTo(TrackingStatus.Starting)
+    }
+
+    @Test
+    fun aCameraFrameAfterLossIsNotReadyUntilTheCameraReopens() {
+        val gen = publisher.begin()
+        publisher.onCameraFrame(gen, 30.0)
+        publisher.onCameraLost("gone")
+        executor.runAll()
+        assertThat(publisher.status.value).isEqualTo(TrackingStatus.CameraLost("gone"))
+        assertThat(publisher.cameraAlive(gen)).isFalse()
+        publisher.onCameraFrame(gen, 30.0)
+        executor.runAll()
+        assertThat(publisher.status.value).isEqualTo(TrackingStatus.CameraLost("gone"))
+
+        publisher.onCameraOpen()
+        assertThat(publisher.cameraAlive(gen)).isTrue()
+        publisher.onCameraFrame(gen, 30.0)
+        executor.runAll()
+        assertThat(publisher.status.value).isInstanceOf(TrackingStatus.Running::class.java)
+    }
+
+    @Test
+    fun aHandTrackingFailureLeavesTheCameraAlive() {
+        val gen = publisher.begin()
+        publisher.fail(gen, "landmarker failed", cameraAlive = true)
+        executor.runAll()
+        assertThat(publisher.status.value).isEqualTo(TrackingStatus.Failed("landmarker failed", cameraAlive = true))
+        assertThat(publisher.cameraAlive(gen)).isTrue()
+        assertThat(publisher.acceptsFrames(gen)).isFalse()
+    }
 }

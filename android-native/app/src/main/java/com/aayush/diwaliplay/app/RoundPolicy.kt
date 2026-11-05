@@ -24,8 +24,8 @@ fun backdropFor(phase: GamePhase, touch: Boolean, wallpaperEnabled: Boolean): Ba
 
 /**
  * When the camera (and so MediaPipe) runs. It stays off until a code is accepted (spec §6). Camera mode tracks hands
- * up to the photo. Touch mode has no tracking, so with a wallpaper it starts only for the photo, whose 5 s countdown
- * leaves time to open it. A live-camera background keeps it on until reset.
+ * up to the photo. Touch mode has no tracking, so with a wallpaper it starts only for the photo, whose countdown waits
+ * for the camera's first frame (at most PHOTO_WATCHDOG_MS). A live-camera background keeps it on until reset.
  */
 fun cameraWanted(phase: GamePhase, touch: Boolean, wallpaperEnabled: Boolean): Boolean {
     if (phase == GamePhase.Startup) return false

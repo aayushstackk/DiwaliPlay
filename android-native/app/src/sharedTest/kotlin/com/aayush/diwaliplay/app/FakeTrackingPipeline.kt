@@ -25,15 +25,20 @@ class FakeTrackingPipeline : TrackingSource {
     /** False: [start] stays at Starting until [becomeReady], as a real camera does while it opens. */
     @Volatile var startsReady = true
 
+    /** Set: [start] reports this at once, like a refused camera. */
+    @Volatile var refuseStartWith: TrackingStatus? = null
+    @Volatile var lastTrackHands: Boolean? = null
+
     override fun snapshot(): TrackingSnapshot = snapshotValue
     override fun latestFrame(): CameraFrame? = null
     override fun captureStill(): ByteArray? = still
 
-    override fun start() {
+    override fun start(trackHands: Boolean) {
         if (running) return
         running = true
         starts++
-        _status.value = if (startsReady) RUNNING else TrackingStatus.Starting
+        lastTrackHands = trackHands
+        _status.value = refuseStartWith ?: if (startsReady) RUNNING else TrackingStatus.Starting
     }
 
     override fun stop() {

@@ -34,6 +34,15 @@ class TrackingPipelineCameraTest {
         withTimeout(30_000) { pipeline.status.first { match(it) || it is TrackingStatus.Failed } }
     }
 
+    /** A landmarker failure leaves the camera running: stills go on, and from new frames. */
+    private fun assertCameraStillDelivering(pipeline: TrackingPipeline) {
+        assertThat(pipeline.captureStill()).isNotNull()
+        val before = pipeline.latestFrame()
+        val deadline = System.currentTimeMillis() + 5_000
+        while (System.currentTimeMillis() < deadline && pipeline.latestFrame() === before) Thread.sleep(20)
+        assertThat(pipeline.latestFrame()).isNotSameInstanceAs(before)
+    }
+
     /** Stills are cleared on the analysis thread, just after the status changes. */
     private fun awaitNoStill(pipeline: TrackingPipeline) {
         val deadline = System.currentTimeMillis() + 5_000
@@ -118,7 +127,7 @@ class TrackingPipelineCameraTest {
     }
 
     @Test
-    fun analysisFailureGivesFailedEmptyHandsAndNoStillWithoutCrashing() {
+    fun analysisFailureGivesFailedAndEmptyHandsButTheCameraCarriesOn() {
         val owner = TestOwner()
         val pipeline = startedPipeline(owner)
         pipeline.beforeDetect = { throw IllegalStateException("boom") }
@@ -126,14 +135,53 @@ class TrackingPipelineCameraTest {
         val failed = awaitStatus(pipeline) { false }
         assertThat(failed).isInstanceOf(TrackingStatus.Failed::class.java)
         assertThat((failed as TrackingStatus.Failed).reason).contains("boom")
+        assertThat(failed.cameraAlive).isTrue()
         awaitNoHands(pipeline)
-        awaitNoStill(pipeline)
+        assertCameraStillDelivering(pipeline)
 
         // Terminal until restarted; stop() then start() recovers.
         pipeline.beforeDetect = null
         instrumentation.runOnMainSync { pipeline.stop(); pipeline.start(null) }
         assertThat(awaitStatus(pipeline) { it is TrackingStatus.Running }).isInstanceOf(TrackingStatus.Running::class.java)
         instrumentation.runOnMainSync { pipeline.stop() }
+    }
+
+    @Test
+    fun withoutHandTrackingTheFirstCameraFrameIsReadyAndGivesAStill() {
+        val context = instrumentation.targetContext
+        instrumentation.uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.CAMERA)
+        val owner = TestOwner()
+        lateinit var pipeline: TrackingPipeline
+        instrumentation.runOnMainSync {
+            owner.registry.currentState = Lifecycle.State.RESUMED
+            pipeline = TrackingPipeline(context, owner, HandTracker())
+            // Would fail the run if anything tried to detect.
+            pipeline.beforeDetect = { throw IllegalStateException("detect ran with no hand tracking") }
+            pipeline.start(null, trackHands = false)
+        }
+        val running = awaitStatus(pipeline) { it is TrackingStatus.Running }
+        assertThat(running).isEqualTo(TrackingStatus.Running(DELEGATE_NONE, 0.0, (running as TrackingStatus.Running).cameraFps))
+
+        val jpeg = pipeline.captureStill()
+        assertThat(jpeg).isNotNull()
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(jpeg, 0, jpeg!!.size, bounds)
+        assertThat(bounds.outWidth).isGreaterThan(0)
+        assertThat(bounds.outMimeType).isEqualTo("image/jpeg")
+        assertCameraStillDelivering(pipeline)
+        assertThat(pipeline.hands.get().hands.left.detected).isFalse()
+
+        // Losing the camera still means no photo, and it recovers when the camera comes back.
+        instrumentation.runOnMainSync { owner.registry.currentState = Lifecycle.State.CREATED }
+        assertThat(awaitStatus(pipeline) { it is TrackingStatus.CameraLost }).isInstanceOf(TrackingStatus.CameraLost::class.java)
+        awaitNoStill(pipeline)
+        instrumentation.runOnMainSync { owner.registry.currentState = Lifecycle.State.RESUMED }
+        assertThat(awaitStatus(pipeline) { it is TrackingStatus.Running }).isInstanceOf(TrackingStatus.Running::class.java)
+        assertThat(pipeline.status.value).isNotInstanceOf(TrackingStatus.Failed::class.java)
+        instrumentation.runOnMainSync {
+            pipeline.stop()
+            owner.registry.currentState = Lifecycle.State.DESTROYED
+        }
     }
 
     @Test
@@ -206,7 +254,7 @@ class TrackingPipelineCameraTest {
         assertThat(failed).isInstanceOf(TrackingStatus.Failed::class.java)
         assertThat((failed as TrackingStatus.Failed).reason).contains("persistent")
         awaitNoHands(pipeline)
-        awaitNoStill(pipeline)
+        assertCameraStillDelivering(pipeline)
         assertThat(thrown.get()).isEqualTo(limit)
 
         pipeline.beforeDetect = null

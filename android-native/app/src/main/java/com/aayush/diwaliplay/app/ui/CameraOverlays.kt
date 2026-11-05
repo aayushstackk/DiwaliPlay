@@ -56,7 +56,7 @@ fun VisionLoadingOverlay() {
 
 /** App.tsx's camera error overlay. */
 @Composable
-fun CameraErrorOverlay(reason: String, onRetry: () -> Unit, onCancel: () -> Unit) {
+fun CameraErrorOverlay(reason: String, onRetry: () -> Unit, onCancel: () -> Unit, cameraAlive: Boolean = false) {
     Column(
         Modifier.fillMaxSize().background(Palette.Neutral950.copy(alpha = 0.9f)),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -66,7 +66,8 @@ fun CameraErrorOverlay(reason: String, onRetry: () -> Unit, onCancel: () -> Unit
             Icon(Icons.Alert, 28.dp, Palette.Rose400)
         }
         Spacer(Modifier.height(12.dp))
-        Label("CAMERA ACCESS REQUIRED", 18.sp, Palette.Rose200, weight = FontWeight.Bold, tracking = TrackingWider)
+        // A hand-tracking failure isn't about camera access: the camera may be fine.
+        Label(if (cameraAlive) "HAND TRACKING UNAVAILABLE" else "CAMERA ACCESS REQUIRED", 18.sp, Palette.Rose200, weight = FontWeight.Bold, tracking = TrackingWider)
         Spacer(Modifier.height(8.dp))
         Label(reason, 14.sp, Palette.Neutral300, Modifier.width(448.dp))
         Spacer(Modifier.height(20.dp))
@@ -82,7 +83,7 @@ fun CameraErrorOverlay(reason: String, onRetry: () -> Unit, onCancel: () -> Unit
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Icon(Icons.Camera, 16.dp, Palette.Neutral950)
-                Label("GRANT & START CAMERA", 12.sp, Palette.Neutral950, weight = FontWeight.Bold, tracking = TrackingWider)
+                Label(if (cameraAlive) "TRY AGAIN" else "GRANT & START CAMERA", 12.sp, Palette.Neutral950, weight = FontWeight.Bold, tracking = TrackingWider)
             }
             Box(
                 Modifier
