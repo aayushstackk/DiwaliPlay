@@ -42,7 +42,7 @@ App support range: **minSdk 26 (Android 8.0), targetSdk/compileSdk 35**, landsca
 | Hand tracking | MediaPipe Tasks Vision for Android (`HandLandmarker`), GPU delegate with CPU fallback | Native GPU inference is far faster than the WASM/WebGL path |
 | Camera | CameraX, 1280×720 @ 30 fps for both preview and analysis | Same 16:9 shape as the screen, so landmarks map 1:1 with no crop correction |
 | Mirroring | Done by the app (preview transform + landmark x-flip) | The camera reports "back", so Android won't mirror it |
-| Sound | Built-in web sounds pre-rendered to OGG and shipped; SoundPool for effects, Media3 ExoPlayer for music | Identical sound without porting the 2,200-line synthesiser |
+| Sound | Built-in web sounds pre-rendered to FLAC and shipped (see "Changes during implementation"); SoundPool for effects, Media3 ExoPlayer for music | Identical sound without porting the 2,200-line synthesiser |
 | Kiosk | Built-in lock (device owner + lock-task, home-app fallback) and the existing cloud relay | User decision |
 | Server | API and relay go directly to `https://diwaliplay.onrender.com`; both addresses can be changed on-device | Vercel's `/api` rewrite doesn't carry WebSockets |
 | Folder | `android-native/` (not `android/`) | Avoids colliding with `npx cap add android` from the Capacitor deps in `package.json` |
@@ -163,13 +163,13 @@ Every phase also handles the web's abandon path (`POST /api/session/abandon`) wh
 ## 9. Kiosk lock and remote relay (`core:kiosk`)
 
 ### Lock tiers
-- **Full lock (recommended).** The app is provisioned as **device owner** once during setup (`adb shell dpm set-device-owner com.aayush.diwaliplay.kiosk/.kiosk.KioskDeviceAdminReceiver`; requires no accounts on the device). Then:
+- **Full lock (recommended).** The app is provisioned as **device owner** once during setup (`adb shell dpm set-device-owner com.aayush.diwaliplay.kiosk/.KioskDeviceAdminReceiver`; requires no accounts on the device). Then:
   - `setLockTaskPackages` and `startLockTask` block Home/Back/Recents/status bar
   - keyguard is disabled and the screen stays on (`FLAG_KEEP_SCREEN_ON` + `setKeyguardDisabled`)
   - the app is set as the persistent preferred home activity, so it starts on boot
   - camera permission is auto-granted (`setPermissionGrantState`)
 - **Fallback (no device owner).** The app declares a `HOME` intent filter. Once the operator picks it as the default home app, it starts on boot and Home returns to it. Back is consumed in-app; immersive full-screen hides the system bars. Exit through system gestures remains possible.
-- **Crash recovery.** A default uncaught-exception handler schedules a relaunch via `AlarmManager` (~2 s), then exits. Being the home app also brings it back. This matches the Windows watchdog's "relaunch within 2 s".
+- **Crash recovery.** A default uncaught-exception handler schedules a relaunch via `AlarmManager` (about 5 s in practice, see "Changes during implementation"), then exits. Being the home app also brings it back.
 
 ### Hidden admin access
 - Tap the brand logo 5 times within 3 s, then enter the local **admin PIN** (set on first launch; stored as a salted PBKDF2 hash in app-private storage).
@@ -267,3 +267,37 @@ Same protocol and endpoints as `windows-kiosk/kiosk-cloud-agent.ps1`:
 | Render free-tier cold starts delay code checks | "Connecting" state, background retry, trial code works offline, result queue |
 | Exported sounds differ slightly from live synthesis | Export uses the same engine code offline; spot-check by ear during acceptance |
 | Web game changes later and the native port drifts | Golden fixtures are regenerated from the TS code; a failing golden test flags drift |
+
+## 14. Changes during implementation
+
+Where the build differed from the text above, and why. The text above has been corrected only where it named a wrong command or number; everything else is recorded here.
+
+**Sound (section 8)**
+- Built-in sounds are lossless **FLAC**, not OGG Vorbis. No Vorbis encoder was available without installing software, FLAC is exact so the music loops keep their precise lengths, and the whole set is 4.09 MB. The APK stores `.flac` uncompressed, because SoundPool opens assets by file descriptor.
+
+**Kiosk lock and relay (section 9)**
+- Device-owner command is `adb shell dpm set-device-owner com.aayush.diwaliplay.kiosk/.KioskDeviceAdminReceiver`: the receiver is in the package `com.aayush.diwaliplay.kiosk`, the same as the application id, so there is no `.kiosk.` segment.
+- Crash relaunch takes about **5 s**, not 2 s: `AlarmManager` has that floor for ordinary apps. The system only lets the relaunch start the activity for a device owner or the default home app.
+- Status mapping for the relay: `watchdogRunning = installed && (owner || default home)`; `autoLaunch = (owner && lockWanted) || default home`. The original mapping overstated what works without either.
+- PIN lockout: **5 attempts, then 15 minutes**, as the server's admin login. It is shared by the admin dialog and relay passcodes.
+- The admin screen has a PIN-protected **Remove device owner**. Without it a provisioned kiosk could only be released by a factory reset, and Android 14 refuses `dpm remove-active-admin` for a non-test admin.
+- A relay `enable`/`disable` with no passcode is honoured; a passcode that is sent is checked against the PIN. The web panel's passcode box is therefore optional for Android devices.
+- The web panel change is slightly wider than section 9 said: an Android-specific passcode dialog, the test-exit tooltip (about 5 s) and showing the device's error message.
+
+**Rendering and tracking (section 5)**
+- Hand movement alone triggers **no crackers or points** (web parity). Bombs score.
+- The camera preview is a `BackdropSurfaceView`: the mirrored analysis frames drawn on a surface under the game surface, rather than `PreviewView`.
+- Sparks are drawn with `drawLines` per batch, not one path stroke per batch.
+- Landmarks reach `HandTracker` raw; its palm maths does the mirroring, as the web does. Touch-mode rounds run the camera without hand tracking.
+- The bomb hit radius is 46 px.
+
+**Screens (sections 6 and 10)**
+- The photo countdown waits for the camera, with an 8 s watchdog, in touch rounds.
+- Trial rounds reach the wheel when rewards are on. The wheel refetches the rewards on entry.
+
+**Testing (section 11)**
+- The hand-tracking test uses Google's sample hand image, from the same host as the bundled model, instead of a recorded clip.
+
+**Delivery (section 12)**
+- Release builds run R8 with keep rules for MediaPipe and Flogger (`app/proguard-rules.pro`). Without the Flogger rule hand tracking fails at start.
+- Lint gate: no lint errors; warnings are allowed.

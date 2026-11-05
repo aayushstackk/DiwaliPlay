@@ -6,6 +6,15 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+// The web app's version (root package.json) is the release version; versionCode is bumped by hand per release.
+val rootPackageVersion: String = file("../../package.json").readText()
+    .let { Regex("\"version\"\\s*:\\s*\"([^\"]+)\"").find(it)?.groupValues?.get(1) }
+    ?: error("No \"version\" in the root package.json")
+
+// Release signing comes from the environment or Gradle properties (~/.gradle/gradle.properties); nothing is stored in the repo.
+// Without a keystore the release build is still produced, but unsigned.
+fun signingSetting(name: String): String? = providers.environmentVariable(name).orNull ?: providers.gradleProperty(name).orNull
+
 android {
     namespace = "com.aayush.diwaliplay.app"
     compileSdk = 35
@@ -15,7 +24,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = rootPackageVersion
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -27,10 +36,31 @@ android {
         noCompress += "task"
     }
 
+    signingConfigs {
+        val keystorePath = signingSetting("DIWALI_KEYSTORE_PATH")
+        if (keystorePath != null) {
+            create("release") {
+                storeFile = file(keystorePath)
+                storePassword = signingSetting("DIWALI_KEYSTORE_PASSWORD")
+                keyAlias = signingSetting("DIWALI_KEY_ALIAS")
+                keyPassword = signingSetting("DIWALI_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfigs.findByName("release")?.let { signingConfig = it }
         }
+    }
+
+    lint {
+        // Errors fail the build; warnings are reported only.
+        abortOnError = true
+        warningsAsErrors = false
     }
 
     compileOptions {

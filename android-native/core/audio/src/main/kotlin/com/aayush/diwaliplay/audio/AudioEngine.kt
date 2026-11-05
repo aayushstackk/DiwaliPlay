@@ -233,6 +233,8 @@ class AudioEngine(context: Context, private val resolver: SoundResolver) {
         }
     }
 
+    // setLooper is marked unstable; the main looper is what the player is meant to be driven from here.
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     private fun startBgmNow() {
         val choice = snapshot.let { resolver.bgm(it.settings, it.files) }
         if (choice.source == SoundSource.None) {

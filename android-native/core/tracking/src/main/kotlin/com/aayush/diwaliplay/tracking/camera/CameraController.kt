@@ -87,6 +87,7 @@ internal class CameraController(
         camera = null
     }
 
+    @androidx.annotation.OptIn(ExperimentalCamera2Interop::class)
     private fun bindNow(
         p: ProcessCameraProvider,
         previewView: PreviewView?,
@@ -179,6 +180,7 @@ internal class CameraController(
          *
          * configureInstance throws IllegalStateException on a second call, hence once per process.
          */
+        @androidx.annotation.OptIn(androidx.camera.lifecycle.ExperimentalCameraProviderConfiguration::class)
         fun configureCameraXOnce() {
             if (!cameraXConfigured.compareAndSet(false, true)) return
             try {
