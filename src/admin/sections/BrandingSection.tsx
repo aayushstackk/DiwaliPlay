@@ -10,6 +10,7 @@ import { BrandLogo } from '../../components/BrandLogo';
 import { useAdminTheme } from '../AdminThemeContext';
 import { resolveAssetUrl } from '../../utils/assetUrl';
 import { DiwaliWallpaper } from '../../components/DiwaliWallpaper';
+import { StartBackgroundCard } from './StartBackgroundCard';
 import {
   Palette,
   Sparkles,
@@ -1101,7 +1102,14 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
       {/* ==================================================================== */}
       {activeTab === 'wallpapers' && (
         <div className="space-y-6">
-
+          {settings && (
+            <StartBackgroundCard
+              settings={settings}
+              onSettingsUpdated={onSettingsUpdated}
+              readOnly={currentUserRole !== 'superadmin'}
+              onNotify={showToast}
+            />
+          )}
 
           {/* Feedback messages */}
           {wallpaperSuccess && (
