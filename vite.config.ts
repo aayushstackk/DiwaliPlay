@@ -19,6 +19,9 @@ function selfHostMediapipeWasm(): Plugin {
     'vision_wasm_internal.wasm',
     'vision_wasm_nosimd_internal.js',
     'vision_wasm_nosimd_internal.wasm',
+    // ES-module loader used by the hand-tracking Web Worker (module workers can't importScripts)
+    'vision_wasm_module_internal.js',
+    'vision_wasm_module_internal.wasm',
   ];
   return {
     name: 'self-host-mediapipe-wasm',
@@ -42,6 +45,10 @@ function selfHostMediapipeWasm(): Plugin {
 export default defineConfig(() => {
   return {
     plugins: [selfHostMediapipeWasm(), react(), tailwindcss()],
+    worker: {
+      // The hand-tracking worker is a module worker (type: 'module')
+      format: 'es' as const,
+    },
     define: {
       __MEDIAPIPE_VERSION__: JSON.stringify(MEDIAPIPE_VERSION),
     },

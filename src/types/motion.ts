@@ -122,6 +122,14 @@ export interface SoundStats {
 export interface PerformanceMetrics {
   cameraFps: number;
   processingFps: number;
+  renderFps: number;
+  detectionMs: number;
+  frameToResultMs: number;
+  cameraDelayMs: number | null; // null when the camera driver reports no capture time
+  cameraMode: string;
+  trackerMode: string;
+  gpuName: string;
+  lowEndMode: boolean;
   trackingConfidence: number; // e.g. 0.88 (88%)
   leftSpeed: number;
   rightSpeed: number;
