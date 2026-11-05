@@ -10,6 +10,8 @@ import type { Category, NormalizedLandmark } from '@mediapipe/tasks-vision';
 export interface HandWorkerInitOptions {
   wasmBasePath: string;
   modelAssetPath: string;
+  delegate?: 'GPU' | 'CPU';
+  numHands: number;
 }
 
 export type HandWorkerRequest =
@@ -18,7 +20,7 @@ export type HandWorkerRequest =
   | { type: 'close' };
 
 export type HandWorkerResponse =
-  | { type: 'ready'; delegate: 'GPU' | 'CPU' }
+  | { type: 'ready'; delegate: 'GPU' | 'CPU'; rendererName: string }
   | { type: 'init-error'; message: string }
   | {
       type: 'result';

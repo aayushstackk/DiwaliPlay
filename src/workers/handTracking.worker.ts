@@ -12,6 +12,7 @@
  */
 
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
+import { getWebGlRendererName } from '../utils/trackingOverrides';
 import type {
   HandWorkerRequest,
   HandWorkerResponse,
@@ -42,7 +43,7 @@ async function createLandmarker(
       delegate,
     },
     runningMode: 'VIDEO',
-    numHands: 2,
+    numHands: options.numHands,
     minHandDetectionConfidence: 0.35,
     minHandPresenceConfidence: 0.35,
     minTrackingConfidence: 0.35,
@@ -54,11 +55,12 @@ self.onmessage = async (event: MessageEvent<HandWorkerRequest>) => {
 
   if (msg.type === 'init') {
     try {
-      let delegate: 'GPU' | 'CPU' = 'GPU';
+      let delegate: 'GPU' | 'CPU' = msg.options.delegate ?? 'GPU';
       try {
         // GPU in a worker needs OffscreenCanvas + WebGL2 in workers; not every browser/driver has it
-        landmarker = await createLandmarker(msg.options, 'GPU');
+        landmarker = await createLandmarker(msg.options, delegate);
       } catch (gpuErr) {
+        if (delegate === 'CPU') throw gpuErr;
         console.warn('[HandWorker] GPU delegate unavailable in worker, using CPU:', gpuErr);
         delegate = 'CPU';
         landmarker = await createLandmarker(msg.options, 'CPU');
@@ -77,7 +79,7 @@ self.onmessage = async (event: MessageEvent<HandWorkerRequest>) => {
         console.warn('[HandWorker] Warm-up inference failed (non-fatal):', warmErr);
       }
 
-      post({ type: 'ready', delegate });
+      post({ type: 'ready', delegate, rendererName: getWebGlRendererName() });
     } catch (err) {
       post({ type: 'init-error', message: err instanceof Error ? err.message : String(err) });
     }

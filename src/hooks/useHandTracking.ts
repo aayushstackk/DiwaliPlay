@@ -31,6 +31,7 @@ import {
 import { recognizeHandGesture } from '../utils/gestureRecognition';
 import { CrackerEngine } from '../utils/crackerEngine';
 import { HandTrackingWorkerClient, isWorkerTrackingEnabled } from '../utils/handTrackingWorkerClient';
+import { getTrackingOverrides, getWebGlRendererName } from '../utils/trackingOverrides';
 import type { HandDetectionResult } from '../utils/handTrackingWorkerProtocol';
 import { SoundEngine, CrackerSoundType } from '../utils/soundEngine';
 import { SfxKey, GameAudioSettings } from '../types/backend';
@@ -70,6 +71,10 @@ const DEFAULT_HAND = (side: 'left' | 'right'): TrackedHand => ({
   isPredicted: false,
 });
 
+const trackingOverrides = getTrackingOverrides(
+  typeof window !== 'undefined' ? window.location.search : ''
+);
+
 const smoothTiming = (previous: number, sample: number) =>
   previous > 0 ? previous * 0.8 + sample * 0.2 : sample;
 
@@ -88,6 +93,7 @@ const DEFAULT_METRICS: PerformanceMetrics = {
   cameraDelayMs: null,
   cameraMode: '',
   trackerMode: '',
+  gpuName: '',
   lowEndMode: false,
   trackingConfidence: 0,
   leftSpeed: 0,
@@ -402,7 +408,12 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
         if (isWorkerTrackingEnabled()) {
           try {
             setModelLoadingProgress('Starting hand tracking worker...');
-            const client = await HandTrackingWorkerClient.create({ wasmBasePath, modelAssetPath });
+            const client = await HandTrackingWorkerClient.create({
+              wasmBasePath,
+              modelAssetPath,
+              delegate: trackingOverrides.delegate,
+              numHands: trackingOverrides.numHands,
+            });
             if (!isMounted) {
               client.close();
               return;
@@ -444,10 +455,10 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
       const landmarker = await HandLandmarker.createFromOptions(vision, {
         baseOptions: {
           modelAssetPath: '/models/hand_landmarker.task',
-          delegate: 'GPU',
+          delegate: trackingOverrides.delegate ?? 'GPU',
         },
         runningMode: 'VIDEO',
-        numHands: 2,
+        numHands: trackingOverrides.numHands,
         minHandDetectionConfidence: 0.35,
         minHandPresenceConfidence: 0.35,
         minTrackingConfidence: 0.35,
@@ -611,6 +622,7 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
     const MAX_WORKER_ERRORS = 5;
     let lastThrottleCheck = 0;
     let lastRenderTime = 0;
+    let hasUndetectedFrame = false;
 
     const recordDetectionTiming = (detectionMs: number, frameToResultMs: number) => {
       const counters = fpsCountersRef.current;
@@ -652,6 +664,7 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
 
       lastVideoTime = video.currentTime;
       isInferringRef.current = true;
+      hasUndetectedFrame = false;
 
       // Monotonically increasing timestamp protection for MediaPipe Tasks Vision
       if (currentTime <= lastInferenceTime) {
@@ -689,7 +702,9 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
             // A camera frame that arrived during this detection was skipped. Start on the
             // newest frame now: waiting for the next one halves the detection rate whenever
             // inference outlasts a camera frame, and MediaPipe then loses fast-moving hands.
-            if (!isCancelled) {
+            // Only when one really arrived: a live video's currentTime keeps moving between
+            // frames, so that check alone would re-detect the same frame in a tight loop.
+            if (!isCancelled && hasUndetectedFrame) {
               runInference(performance.now());
             }
           });
@@ -1108,9 +1123,12 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
           frameToResultMs: Math.round(fpsCounters.frameToResultMs),
           cameraDelayMs: fpsCounters.cameraDelayMs > 0 ? Math.round(fpsCounters.cameraDelayMs) : null,
           cameraMode: describeCameraMode(streamRef.current),
-          trackerMode: workerClientRef.current
-            ? `Worker ${workerClientRef.current.delegate}`
-            : 'Main thread',
+          trackerMode: `${
+            workerClientRef.current
+              ? `Worker ${workerClientRef.current.delegate}`
+              : `Main ${trackingOverrides.delegate ?? 'GPU'}`
+          }, ${trackingOverrides.numHands} hand(s)`,
+          gpuName: workerClientRef.current?.rendererName || getWebGlRendererName(),
           lowEndMode: isLowEndHardware(),
           trackingConfidence: Math.round(avgConfidence * 100),
           leftSpeed: updatedLeft.movementSpeed,
@@ -1164,6 +1182,7 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
           if (isCancelled) return;
           const counters = fpsCountersRef.current;
           counters.camFrameCount++;
+          hasUndetectedFrame = true;
           // Not every camera driver reports a capture time, so this can stay empty
           if (metadata?.captureTime) {
             const delay = performance.now() - metadata.captureTime;

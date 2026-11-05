@@ -27,6 +27,7 @@ interface PendingDetect {
  */
 export class HandTrackingWorkerClient {
   public delegate: 'GPU' | 'CPU' = 'GPU';
+  public rendererName = '';
   /** Last worker-side inference time in ms (for diagnostics). */
   public lastInferenceMs = 0;
   /** Set when the worker crashes or a detection fails; callers should fall back. */
@@ -73,6 +74,7 @@ export class HandTrackingWorkerClient {
         if (msg.type === 'ready') {
           clearTimeout(timer);
           client.delegate = msg.delegate;
+          client.rendererName = msg.rendererName;
           client.attachRuntimeHandlers();
           resolve(client);
         } else if (msg.type === 'init-error') {

@@ -128,6 +128,7 @@ export interface PerformanceMetrics {
   cameraDelayMs: number | null; // null when the camera driver reports no capture time
   cameraMode: string;
   trackerMode: string;
+  gpuName: string;
   lowEndMode: boolean;
   trackingConfidence: number; // e.g. 0.88 (88%)
   leftSpeed: number;

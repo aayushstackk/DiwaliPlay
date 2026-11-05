@@ -16,14 +16,15 @@ export const TrackingTimingOverlay: React.FC<{ metrics: PerformanceMetrics }> = 
     ['Frame to result', `${metrics.frameToResultMs} ms`],
     ['Drawing', `${metrics.renderFps} fps`],
     ['Tracker', `${metrics.trackerMode}${metrics.lowEndMode ? ', low-end' : ''}`],
+    ['GPU', metrics.gpuName],
   ];
 
   return (
     <div className="fixed top-2 left-2 z-[9999] pointer-events-none rounded-lg bg-black/85 px-3 py-2 font-mono text-sm text-amber-200">
       {rows.map(([label, value]) => (
-        <div key={label} className="flex justify-between gap-6">
+        <div key={label} className="flex max-w-[34rem] justify-between gap-6">
           <span className="text-neutral-400">{label}</span>
-          <span className="font-bold">{value}</span>
+          <span className="min-w-0 break-words text-right font-bold">{value}</span>
         </div>
       ))}
     </div>
