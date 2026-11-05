@@ -82,6 +82,7 @@ R8 can remove or rename what's only reached by reflection, and only this APK sho
 - [ ] **Wheel:** spins, ticks, lands, and shows the prize with its (SVG) image.
 - [ ] **Card:** shows with the photo, and saves.
 - [ ] **Relay:** pairs, connects, and answers status, enable, disable from the panel.
+- [ ] **Start video:** with an MP4 set as the start screen background, the start screen plays it (Media3 runs only in this path, so R8 can't be trusted without it), and entering a code stops it.
 
 ## 9. Start screen background (image or MP4)
 
@@ -95,7 +96,7 @@ Needs the real display. In the web admin, Wallpapers tab, "Start screen backgrou
 - [ ] **First video frames.** When the video starts (after launch, and after returning to the start screen), the first frames can show undimmed for a moment, because the dim applies only once a frame is showing. Check this doesn't look wrong. Note: ____________.
 - [ ] **H.265 file.** Upload an H.265 (HEVC) MP4 (the admin's browser check may refuse it first; if so, set it through the API or another browser that decodes it). Pass: the display ends at the built-in scene, undimmed, with no black screen and no crash. Only MPEG-1 was tested on the emulator.
 - [ ] **Video restart doesn't stutter.** Leave the start screen (enter a code, or open the admin screen) and come back several times. Pass: the video restarts each time without a visible stutter or a black flash, and the round's camera opens normally after the video was released.
-- [ ] **Broken file and removal.** Set a background, then "Remove (use built-in)". Pass: the display returns to the built-in scene within the 8-second settings poll.
+- [ ] **Broken file and removal.** Upload a corrupt file that still gets through the server's check (an `.mp4` whose bytes after the `ftyp` header are garbage; the admin's browser check will refuse it, so set it through the API). Pass: the display shows the built-in scene, undimmed, with no black screen or crash, and logs one warning. Then set a good background and use "Remove (use built-in)". Pass: the display returns to the built-in scene within the 8-second settings poll.
 
 ## Result
 

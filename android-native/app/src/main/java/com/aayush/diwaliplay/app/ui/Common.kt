@@ -15,8 +15,6 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -90,13 +88,6 @@ fun Modifier.pulsing(enabled: Boolean = true): Modifier {
 /** The frosted panels of the web UI: a dark fill and a thin border. The blur is left out for speed, as the web's `round-active` does. */
 fun Modifier.panel(fill: Color, border: Color, shape: Shape, borderWidth: Dp = 1.dp): Modifier =
     background(fill, shape).border(borderWidth, border, shape)
-
-/** A soft circular glow standing in for a blurred disc, centred at a fraction of the size. */
-fun Modifier.ambientGlow(color: Color, centerX: Float, centerY: Float, radius: Dp): Modifier = drawBehind {
-    val c = Offset(size.width * centerX, size.height * centerY)
-    val r = radius.toPx()
-    drawCircle(Brush.radialGradient(listOf(color, Color.Transparent), center = c, radius = r), r, c)
-}
 
 /** Centres one child. */
 @Composable

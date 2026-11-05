@@ -1,5 +1,6 @@
 package com.aayush.diwaliplay.app.ui
 
+import android.util.Log
 import android.view.SurfaceView
 import androidx.annotation.OptIn
 import androidx.compose.runtime.Composable
@@ -61,9 +62,10 @@ fun StartVideoSurface(
             released()
         }
 
-        fun fail() {
+        fun fail(reason: String) {
             if (broken) return
             broken = true
+            Log.w(TAG, "Start video failed; showing the built-in: $reason")
             release()
             failed(file)
         }
@@ -83,10 +85,10 @@ fun StartVideoSurface(
                     override fun onTracksChanged(tracks: Tracks) {
                         // Empty until the file has been read. False with no video track, or no decoder for it. A video
                         // over the decoder's stated limits still gets a try: onPlayerError catches it if that fails.
-                        if (!tracks.isEmpty && !tracks.isTypeSupported(C.TRACK_TYPE_VIDEO, true)) fail()
+                        if (!tracks.isEmpty && !tracks.isTypeSupported(C.TRACK_TYPE_VIDEO, true)) fail("no video track it can decode")
                     }
 
-                    override fun onPlayerError(error: PlaybackException) = fail()
+                    override fun onPlayerError(error: PlaybackException) = fail(error.errorCodeName)
                 })
                 setVideoSurfaceView(surface)
                 setMediaItem(MediaItem.fromUri(file.toURI().toString()))
@@ -110,3 +112,5 @@ fun StartVideoSurface(
         }
     }
 }
+
+private const val TAG = "StartVideoSurface"

@@ -129,7 +129,7 @@ private fun ConnectingBadge(modifier: Modifier) {
 private fun QrCard(url: String, modifier: Modifier) {
     Column(
         modifier
-            .panel(Palette.Neutral900.copy(alpha = 0.8f), Palette.Amber500.copy(alpha = 0.3f), RoundedCornerShape(24.dp))
+            .panel(Palette.Neutral900.copy(alpha = 0.95f), Palette.Amber500.copy(alpha = 0.3f), RoundedCornerShape(24.dp))
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -194,7 +194,7 @@ private fun CodeCard(
     val locked = ui.busy
     Column(
         modifier
-            .panel(Palette.Neutral900.copy(alpha = 0.9f), Palette.Amber500.copy(alpha = 0.35f), RoundedCornerShape(24.dp))
+            .panel(Palette.Neutral900.copy(alpha = 0.95f), Palette.Amber500.copy(alpha = 0.35f), RoundedCornerShape(24.dp))
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
