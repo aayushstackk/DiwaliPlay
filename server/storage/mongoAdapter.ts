@@ -42,6 +42,7 @@ const DEFAULT_SETTINGS: SystemSettings = {
   brandLogoUrl: '',
   brandingDisplayMode: 'both',
   wallpaperUrl: '',
+  useBuiltInWallpaper: false,
   experienceTitle: 'DIWALI FUN PLAY',
   connectorText: 'by',
   logoWidth: 160,

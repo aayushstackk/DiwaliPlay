@@ -25,6 +25,7 @@ export interface BrandingState {
   logoPosition: { x: number; y: number };
   brandingDisplayMode: BrandingDisplayMode;
   wallpaperUrl: string;
+  useBuiltInWallpaper: boolean;
   wallpaperOpacity: number;
   wallpaperEnabled: boolean;
   gameplayMode: GameplayInteractionMode;
@@ -49,6 +50,7 @@ interface CachedData {
   logoPosition: { x: number; y: number };
   brandingDisplayMode: BrandingDisplayMode;
   wallpaperUrl: string;
+  useBuiltInWallpaper: boolean;
   wallpaperOpacity: number;
   wallpaperEnabled: boolean;
   gameplayMode: GameplayInteractionMode;
@@ -74,6 +76,7 @@ const cachedBranding: CachedData = {
   logoPosition: { x: 0, y: 0 },
   brandingDisplayMode: 'both',
   wallpaperUrl: '',
+  useBuiltInWallpaper: false,
   wallpaperOpacity: 100,
   wallpaperEnabled: true,
   gameplayMode: 'camera',
@@ -142,6 +145,14 @@ function buildRotationPlaylist(
 }
 
 function advanceRotation() {
+  // The built-in scene is one fixed choice: nothing to rotate through.
+  if (cachedBranding.useBuiltInWallpaper) {
+    cachedBranding.rotationIndex = 0;
+    cachedBranding.currentWallpaperUrl = '';
+    notifyListeners();
+    return;
+  }
+
   const rotationList = buildRotationPlaylist(
     cachedBranding.wallpaperUrl,
     cachedBranding.wallpaperPlaylist
@@ -176,6 +187,7 @@ export function useBranding(): BrandingState {
           ? s.brandingDisplayMode
           : 'both') as BrandingDisplayMode;
         const newWallpaperUrl = s.wallpaperUrl || '';
+        const newUseBuiltIn = s.useBuiltInWallpaper === true;
         const newOpacity = typeof s.wallpaperOpacity === 'number' ? s.wallpaperOpacity : 100;
         const newWallpaperEnabled = s.wallpaperEnabled !== false;
         const newGameplayMode = (s.gameplayMode === 'touch' ? 'touch' : 'camera') as GameplayInteractionMode;
@@ -186,7 +198,9 @@ export function useBranding(): BrandingState {
           : 35;
         const newPlaylist = res.wallpaperPlaylist || [];
 
-        const activeChanged = newWallpaperUrl !== cachedBranding.wallpaperUrl;
+        const activeChanged =
+          newWallpaperUrl !== cachedBranding.wallpaperUrl ||
+          newUseBuiltIn !== cachedBranding.useBuiltInWallpaper;
 
         cachedBranding.brandName = newBrandName;
         cachedBranding.brandLogoUrl = newBrandLogoUrl;
@@ -197,6 +211,7 @@ export function useBranding(): BrandingState {
         cachedBranding.logoPosition = newPos;
         cachedBranding.brandingDisplayMode = newBrandingDisplayMode;
         cachedBranding.wallpaperUrl = newWallpaperUrl;
+        cachedBranding.useBuiltInWallpaper = newUseBuiltIn;
         cachedBranding.wallpaperOpacity = newOpacity;
         cachedBranding.wallpaperEnabled = newWallpaperEnabled;
         cachedBranding.gameplayMode = newGameplayMode;
@@ -213,7 +228,10 @@ export function useBranding(): BrandingState {
         cachedBranding.isLoading = false;
 
         // If active wallpaper changed or not set yet, reset to first in rotation
-        if (activeChanged || !cachedBranding.currentWallpaperUrl) {
+        if (newUseBuiltIn) {
+          cachedBranding.rotationIndex = 0;
+          cachedBranding.currentWallpaperUrl = '';
+        } else if (activeChanged || !cachedBranding.currentWallpaperUrl) {
           const rotationList = buildRotationPlaylist(newWallpaperUrl, newPlaylist);
           cachedBranding.rotationIndex = 0;
           cachedBranding.currentWallpaperUrl = rotationList[0]?.url || newWallpaperUrl || '';
@@ -261,6 +279,7 @@ export function useBranding(): BrandingState {
       logoPosition: cachedBranding.logoPosition,
       brandingDisplayMode: cachedBranding.brandingDisplayMode || 'both',
       wallpaperUrl: cachedBranding.wallpaperUrl,
+      useBuiltInWallpaper: cachedBranding.useBuiltInWallpaper,
       wallpaperOpacity: cachedBranding.wallpaperOpacity,
       wallpaperEnabled: cachedBranding.wallpaperEnabled !== false,
       gameplayMode: cachedBranding.gameplayMode || 'camera',
@@ -270,7 +289,9 @@ export function useBranding(): BrandingState {
       audioSettings: cachedBranding.audioSettings,
       achievementTiers: cachedBranding.achievementTiers,
       wallpaperPlaylist: cachedBranding.wallpaperPlaylist,
-      currentWallpaperUrl: cachedBranding.currentWallpaperUrl || cachedBranding.wallpaperUrl,
+      currentWallpaperUrl: cachedBranding.useBuiltInWallpaper
+        ? ''
+        : cachedBranding.currentWallpaperUrl || cachedBranding.wallpaperUrl,
       advanceWallpaper: advanceRotation,
       isLoading: cachedBranding.isLoading
     }),

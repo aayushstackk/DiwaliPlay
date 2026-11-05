@@ -3,20 +3,37 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { resolveAssetUrl } from '../utils/assetUrl';
+
+// Admin previews draw the scene at this size and scale it down, so the tile matches a real screen.
+const PREVIEW_WIDTH = 1280;
+const PREVIEW_HEIGHT = 720;
 
 interface DiwaliWallpaperProps {
   wallpaperUrl?: string | null;
   opacity?: number; // 0 to 100
   className?: string;
+  contained?: boolean; // fill the parent instead of the screen, for admin previews
 }
 
 export const DiwaliWallpaper: React.FC<DiwaliWallpaperProps> = ({
   wallpaperUrl,
   opacity = 100,
-  className = ''
+  className = '',
+  contained = false
 }) => {
+  const frame = contained ? 'absolute top-0 left-0' : 'fixed inset-0 -z-10';
+  const previewRef = useRef<HTMLDivElement>(null);
+  const [previewScale, setPreviewScale] = useState(0);
+
+  useEffect(() => {
+    const el = previewRef.current;
+    if (!contained || !el) return;
+    const observer = new ResizeObserver(() => setPreviewScale(el.clientWidth / PREVIEW_WIDTH));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [contained]);
   const [imageError, setImageError] = useState(false);
 
   useEffect(() => {
@@ -49,18 +66,26 @@ export const DiwaliWallpaper: React.FC<DiwaliWallpaperProps> = ({
 
   // Built-in Festive Diwali Full-Screen Wallpaper
   // Responsive, aspect-ratio preserving, zero border, zero stretching
-  return (
+  const scene = (
     <div
-      className={`fixed inset-0 w-full h-full overflow-hidden pointer-events-none select-none -z-10 bg-[#0A0518] transition-opacity duration-300 ${className}`}
-      style={{ opacity: normalizedOpacity }}
+      className={`${frame} w-full h-full overflow-hidden pointer-events-none select-none bg-[#0A0518] transition-opacity duration-300 ${className}`}
+      style={{
+        opacity: normalizedOpacity,
+        ...(contained && {
+          width: PREVIEW_WIDTH,
+          height: PREVIEW_HEIGHT,
+          transform: `scale(${previewScale})`,
+          transformOrigin: 'top left'
+        })
+      }}
       aria-hidden="true"
     >
       {/* Deep Royal Midnight Purple & Dark Indigo Gradient Base */}
       <div className="absolute inset-0 bg-gradient-to-b from-[#070312] via-[#0E0620] to-[#15082C]" />
 
       {/* Atmospheric Ambient Glows */}
-      <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[70vw] h-[40vh] bg-amber-500/10 rounded-full blur-[140px]" />
-      <div className="absolute bottom-0 left-0 right-0 h-[45vh] bg-gradient-to-t from-orange-600/15 via-amber-600/5 to-transparent blur-[80px]" />
+      <div className={`absolute left-1/2 -translate-x-1/2 bg-amber-500/10 rounded-full -top-32 blur-[140px] ${contained ? 'w-[70%] h-[40%]' : 'w-[70vw] h-[40vh]'}`} />
+      <div className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-orange-600/15 via-amber-600/5 to-transparent blur-[80px] ${contained ? 'h-[45%]' : 'h-[45vh]'}`} />
 
       {/* Subtle Starry Night Texture Overlay */}
       <div className="absolute inset-0 opacity-30 mix-blend-screen bg-[radial-gradient(#FDE68A_1px,transparent_1px)] [background-size:32px_32px]" />
@@ -77,7 +102,7 @@ export const DiwaliWallpaper: React.FC<DiwaliWallpaperProps> = ({
 
       {/* Subtle Elegant Mandala Patterns in Background */}
       <svg
-        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[85vw] max-w-[850px] aspect-square text-amber-500/[0.04] animate-spin-slow pointer-events-none"
+        className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 ${contained ? 'w-[85%]' : 'w-[85vw]'} max-w-[850px] aspect-square text-amber-500/[0.04] animate-spin-slow pointer-events-none`}
         viewBox="0 0 200 200"
         fill="none"
         stroke="currentColor"
@@ -136,5 +161,13 @@ export const DiwaliWallpaper: React.FC<DiwaliWallpaperProps> = ({
       {/* Radial Dark Vignette to ensure firework particles pop with maximum brilliance */}
       <div className="absolute inset-0 bg-radial-gradient from-transparent via-neutral-950/20 to-neutral-950/50 pointer-events-none" />
     </div>
+  );
+
+  return contained ? (
+    <div ref={previewRef} className="absolute inset-0 overflow-hidden pointer-events-none">
+      {scene}
+    </div>
+  ) : (
+    scene
   );
 };

@@ -177,6 +177,7 @@ data class SystemSettings(
     val brandLogoUrl: String? = null,
     val brandingDisplayMode: String = "both",
     val wallpaperUrl: String? = null,
+    val useBuiltInWallpaper: Boolean = false,
     val experienceTitle: String = "DIWALI FUN PLAY",
     val connectorText: String = "by",
     val logoWidth: Double = 160.0,

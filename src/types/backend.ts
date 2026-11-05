@@ -164,6 +164,7 @@ export interface SystemSettings {
   brandLogoUrl?: string; // dynamic company logo URL
   brandingDisplayMode?: BrandingDisplayMode; // 'both' (Name + Logo) | 'name' (Name Only) | 'logo' (Logo Only) (default: 'both')
   wallpaperUrl?: string; // dynamic full-screen wallpaper URL
+  useBuiltInWallpaper?: boolean; // ON: show the built-in festive scene and ignore uploads (default: false)
   experienceTitle?: string; // Line 1: Experience Title (default: "DIWALI FUN PLAY")
   connectorText?: string; // Line 2: Connector Text (default: "by")
   logoWidth?: number; // width in px (default: 160)

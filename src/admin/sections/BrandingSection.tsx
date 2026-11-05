@@ -9,6 +9,7 @@ import { adminApi } from '../../services/api';
 import { BrandLogo } from '../../components/BrandLogo';
 import { useAdminTheme } from '../AdminThemeContext';
 import { resolveAssetUrl } from '../../utils/assetUrl';
+import { DiwaliWallpaper } from '../../components/DiwaliWallpaper';
 import {
   Palette,
   Sparkles,
@@ -172,6 +173,10 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
 
   const wallpaperFileInputRef = useRef<HTMLInputElement>(null);
   const currentWallpaperUrl = settings?.wallpaperUrl || '';
+  const isBuiltInActive = settings?.useBuiltInWallpaper === true;
+  // No choice saved yet: the kiosk shows the built-in scene if there are no uploads, or rotates through them.
+  const isRotatingUploads = !isBuiltInActive && !currentWallpaperUrl && wallpapers.length > 0;
+  const activePreviewUrl = isBuiltInActive ? '' : currentWallpaperUrl || wallpapers[0]?.url || '';
 
   // Synchronize state when settings prop updates
   useEffect(() => {
@@ -525,7 +530,8 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
 
     try {
       const res = await adminApi.updateSettings({
-        wallpaperUrl: asset.url
+        wallpaperUrl: asset.url,
+        useBuiltInWallpaper: false
       });
       if (res.success && res.settings) {
         const msg = `Active wallpaper updated to "${asset.displayName || asset.originalFilename}". It will appear first in rotation.`;
@@ -546,10 +552,11 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
 
     try {
       const res = await adminApi.updateSettings({
-        wallpaperUrl: ''
+        wallpaperUrl: '',
+        useBuiltInWallpaper: true
       });
       if (res.success && res.settings) {
-        const msg = 'Reset to procedural festive default background.';
+        const msg = 'Built-in Festive wallpaper is now active.';
         setWallpaperSuccess(msg);
         showToast('success', 'Wallpaper Reset Successfully', msg);
         onSettingsUpdated(res.settings);
@@ -580,7 +587,7 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
       setWallpaperEnabled(enabled);
       setIsSavingToggle(false);
       const msg = enabled
-        ? 'Gameplay Wallpaper set to ON — Using Uploaded Wallpaper during active gameplay.'
+        ? 'Gameplay Wallpaper set to ON — Using Wallpaper during active gameplay.'
         : 'Gameplay Wallpaper set to OFF — Using Live Camera Background during active gameplay.';
       setWallpaperSuccess(msg);
       showToast('success', 'Wallpaper Mode Updated Successfully', msg);
@@ -1144,11 +1151,11 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                             : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
                       }`}
                     >
-                      {wallpaperEnabled ? 'ACTIVE: UPLOADED WALLPAPER' : 'ACTIVE: LIVE CAMERA FEED'}
+                      {wallpaperEnabled ? 'ACTIVE: WALLPAPER' : 'ACTIVE: LIVE CAMERA FEED'}
                     </span>
                   </div>
                   <p className={`text-xs mt-1 max-w-2xl leading-relaxed ${secondaryText}`}>
-                    Choose what players see behind the arcade gameplay screen. When enabled, your uploaded festive
+                    Choose what players see behind the arcade gameplay screen. When enabled, your selected
                     wallpaper is shown. When disabled, the player's live webcam video feed becomes the backdrop (AR mode).
                   </p>
                 </div>
@@ -1171,7 +1178,7 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                   } disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
                   <ImageIcon className="w-4 h-4 shrink-0" />
-                  <span>ON — Use Uploaded Wallpaper</span>
+                  <span>ON — Use Wallpaper</span>
                 </button>
 
                 <button
@@ -1213,7 +1220,7 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                       ? wallpaperEnabled ? 'bg-[#B36D4E]' : 'bg-[#806B58]'
                       : wallpaperEnabled ? 'bg-cyan-400' : 'bg-slate-600'
                   }`} />
-                  ON — Uploaded Wallpaper Mode
+                  ON — Wallpaper Mode
                 </div>
                 <p className={`text-[10.5px] leading-relaxed ${secondaryText}`}>
                   Renders the active festive wallpaper or playlist image behind the game. Bombs, launch mortars, hand fire flames, and HUD float on top.
@@ -1257,7 +1264,7 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                       Active Kiosk Wallpaper
                     </h2>
                   </div>
-                  {currentWallpaperUrl && (
+                  {!isBuiltInActive && (
                     <button
                       type="button"
                       onClick={handleClearActiveWallpaper}
@@ -1274,29 +1281,24 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                 <div className={`rounded-xl border overflow-hidden relative aspect-video flex items-center justify-center shadow-inner ${
                   isLight ? 'border-[#D8C7AE] bg-[#090D1A]' : 'border-slate-800 bg-slate-950/80'
                 }`}>
-                  {currentWallpaperUrl ? (
+                  {activePreviewUrl ? (
                     <img
-                      src={resolveAssetUrl(currentWallpaperUrl)}
+                      src={resolveAssetUrl(activePreviewUrl)}
                       alt="Current Kiosk Wallpaper"
                       style={{ opacity: wallpaperOpacity / 100 }}
                       className="w-full h-full object-cover transition-opacity duration-200"
                     />
                   ) : (
-                    <div className="text-center p-6 flex flex-col items-center">
-                      <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-3 border ${
-                        isLight ? 'bg-[#FAF4E8] border-[#D8C7AE]' : 'bg-cyan-500/10 border-cyan-500/20'
-                      }`}>
-                        <Sparkles className={`w-6 h-6 ${isLight ? 'text-[#B36D4E]' : 'text-cyan-400'}`} />
-                      </div>
-                      <h4 className={`text-sm font-semibold mb-1 ${primaryText}`}>
-                        Procedural Festive Background
-                      </h4>
-                      <p className={`text-[11px] max-w-sm ${secondaryText}`}>
-                        Interactive dark background with sparkle particles, diya lamp glow, and motion bursts.
-                      </p>
-                    </div>
+                    <DiwaliWallpaper contained opacity={wallpaperOpacity} />
                   )}
                 </div>
+                <p className={`mt-2 text-[11px] ${secondaryText}`}>
+                  {isRotatingUploads
+                    ? 'Rotating through uploaded wallpapers, one per round.'
+                    : activePreviewUrl
+                    ? 'Showing the selected uploaded wallpaper first.'
+                    : 'Showing the Built-in Festive wallpaper.'}
+                </p>
 
                 {/* Wallpaper Opacity Control */}
                 <div className={`mt-5 p-4 rounded-xl border space-y-2 ${cardSubBg}`}>
@@ -1443,12 +1445,57 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
               </button>
             </div>
 
-            {wallpapers.length === 0 ? (
-              <div className={`p-8 text-center text-xs ${secondaryText}`}>
-                No custom wallpapers uploaded yet. Upload an image above to populate the library.
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {/* Built-in option: always available, can't be deleted */}
+              <div
+                className={`rounded-xl border overflow-hidden flex flex-col justify-between transition-all ${
+                  isLight
+                    ? isBuiltInActive
+                      ? 'bg-[#FAF4E8] border-[#B36D4E] shadow-[0_0_12px_rgba(179,109,78,0.25)]'
+                      : 'bg-[#FAF4E8] border-[#D8C7AE] hover:border-[#B36D4E]'
+                    : isBuiltInActive
+                      ? 'bg-slate-900/80 border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.2)]'
+                      : 'bg-slate-900/80 border-slate-800 hover:border-cyan-500/30'
+                }`}
+              >
+                <div className="aspect-video relative bg-slate-950 overflow-hidden">
+                  <DiwaliWallpaper contained />
+                  {isBuiltInActive && (
+                    <div className={`absolute top-2 right-2 px-2 py-0.5 rounded font-bold text-[10px] flex items-center gap-1 shadow ${
+                      isLight ? 'bg-[#76513D] text-[#FDF9F3]' : 'bg-cyan-500 text-slate-950'
+                    }`}>
+                      <Check className="w-3 h-3" />
+                      <span>ACTIVE</span>
+                    </div>
+                  )}
+                </div>
+                <div className="p-3 flex-1 flex flex-col justify-between">
+                  <div>
+                    <h4 className={`text-xs font-semibold truncate ${primaryText}`}>Built-in Festive</h4>
+                    <div className={`text-[10px] mt-1 ${secondaryText}`}>Default wallpaper, works offline</div>
+                  </div>
+                  <div className={`mt-2 pt-2 border-t flex items-center justify-between gap-2 ${isLight ? 'border-[#D8C7AE]/60' : 'border-slate-800'}`}>
+                    {isBuiltInActive ? (
+                      <span className={`text-[11px] font-semibold ${isLight ? 'text-[#58734B]' : 'text-cyan-300'}`}>
+                        Currently Active
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleClearActiveWallpaper}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-medium cursor-pointer transition-colors border ${
+                          isLight
+                            ? 'bg-[#FAF4E8] hover:bg-[#F1E8D9] text-[#76513D] border-[#D8C7AE] hover:border-[#B36D4E]'
+                            : 'bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200 border-cyan-500/40'
+                        }`}
+                      >
+                        Set as Active
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+
                 {wallpapers.map((asset, index) => {
                   const isActive = currentWallpaperUrl === asset.url;
                   const currentOrder = typeof asset.order === 'number' && !isNaN(asset.order) ? asset.order : index + 1;
@@ -1559,7 +1606,6 @@ export const BrandingSection: React.FC<BrandingSectionProps> = ({
                   );
                 })}
               </div>
-            )}
           </div>
         </div>
       )}

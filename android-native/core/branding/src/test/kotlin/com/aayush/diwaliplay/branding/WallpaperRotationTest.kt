@@ -46,4 +46,13 @@ class WallpaperRotationTest {
         assertThat(advanceRotation("http://x/z.png", emptyList(), 0)).isEqualTo(WallpaperRotation(0, "http://x/z.png"))
         assertThat(advanceRotation("", emptyList(), 3)).isEqualTo(WallpaperRotation(0, ""))
     }
+
+    @Test fun builtInWinsOverUploadsAndActiveUrl() {
+        assertThat(buildRotationPlaylist(b.url, listOf(a, b, c), useBuiltIn = true)).isEmpty()
+        assertThat(initialRotation(b.url, listOf(a, b, c), useBuiltIn = true)).isEqualTo(WallpaperRotation(0, ""))
+    }
+
+    @Test fun builtInDoesNotRotate() {
+        assertThat(advanceRotation(b.url, listOf(a, b, c), 1, useBuiltIn = true)).isEqualTo(WallpaperRotation(0, ""))
+    }
 }

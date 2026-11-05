@@ -249,6 +249,27 @@ class SettingsRepositoryTest {
         assertThat(api.settingsCalls).isEqualTo(2)
     }
 
+    @Test fun builtInWallpaperOverridesUploadsAndStopsRotation() = runTest {
+        val api = FakeApi()
+        val base = (api.settings as ApiResult.Success).value.settings
+        val list = listOf(WallpaperItem("a", "http://x/a.png"), WallpaperItem("b", "http://x/b.png"))
+        api.settings = settingsOf(base.copy(wallpaperUrl = "", useBuiltInWallpaper = false), list)
+        val r = repo(api)
+        r.refreshNow()
+        // No choice saved yet: uploads rotate.
+        assertThat(r.state.value.currentWallpaperUrl).isEqualTo("http://x/a.png")
+        // Admin selects the built-in scene.
+        api.settings = settingsOf(base.copy(wallpaperUrl = "", useBuiltInWallpaper = true), list)
+        r.refreshNow()
+        assertThat(r.state.value.currentWallpaperUrl).isEmpty()
+        r.advanceWallpaper()
+        assertThat(r.state.value.currentWallpaperUrl).isEmpty()
+        // Admin selects an upload again.
+        api.settings = settingsOf(base.copy(wallpaperUrl = "http://x/b.png", useBuiltInWallpaper = false), list)
+        r.refreshNow()
+        assertThat(r.state.value.currentWallpaperUrl).isEqualTo("http://x/b.png")
+    }
+
     @Test fun wallpaperRotationFollowsActiveAndAdvances() = runTest {
         val api = FakeApi()
         val base = (api.settings as ApiResult.Success).value.settings

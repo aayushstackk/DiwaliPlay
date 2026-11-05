@@ -105,7 +105,7 @@ class SettingsRepository(
     /** Mirror of `advanceWallpaper`. */
     fun advanceWallpaper() {
         _state.update { s ->
-            val r = advanceRotation(s.settings.wallpaperUrl.orEmpty(), s.playlist, s.rotationIndex)
+            val r = advanceRotation(s.settings.wallpaperUrl.orEmpty(), s.playlist, s.rotationIndex, s.settings.useBuiltInWallpaper)
             s.copy(rotationIndex = r.index, currentWallpaperUrl = r.url)
         }
     }
@@ -160,7 +160,8 @@ class SettingsRepository(
             var n = s.copy(isLoading = false)
             if (okSettings != null) {
                 val new = okSettings.settings.normalizedForBranding()
-                val activeChanged = new.wallpaperUrl != s.settings.wallpaperUrl
+                val activeChanged = new.wallpaperUrl != s.settings.wallpaperUrl ||
+                    new.useBuiltInWallpaper != s.settings.useBuiltInWallpaper
                 // Like the web, audio settings and tiers are only overwritten when the response carries them.
                 val merged = new.copy(
                     audioSettings = new.audioSettings ?: s.settings.audioSettings,
@@ -168,7 +169,7 @@ class SettingsRepository(
                 )
                 n = n.copy(settings = merged, playlist = okSettings.wallpaperPlaylist)
                 if (activeChanged || n.currentWallpaperUrl.isEmpty()) {
-                    val r = initialRotation(new.wallpaperUrl.orEmpty(), n.playlist)
+                    val r = initialRotation(new.wallpaperUrl.orEmpty(), n.playlist, new.useBuiltInWallpaper)
                     n = n.copy(rotationIndex = r.index, currentWallpaperUrl = r.url)
                 }
             }
@@ -246,7 +247,7 @@ class SettingsRepository(
         var n = BrandingState()
         saved.settings?.takeIf { it.success }?.let {
             val settings = it.settings.normalizedForBranding()
-            val r = initialRotation(settings.wallpaperUrl.orEmpty(), it.wallpaperPlaylist)
+            val r = initialRotation(settings.wallpaperUrl.orEmpty(), it.wallpaperPlaylist, settings.useBuiltInWallpaper)
             n = n.copy(settings = settings, playlist = it.wallpaperPlaylist, currentWallpaperUrl = r.url, isLoading = false)
             settingsLoaded = true
         }
