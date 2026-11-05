@@ -74,6 +74,7 @@ import com.aayush.diwaliplay.app.ui.theme.Palette
 import com.aayush.diwaliplay.branding.ServerConfig
 import com.aayush.diwaliplay.kiosk.AdminPin
 import com.aayush.diwaliplay.kiosk.KioskController
+import com.aayush.diwaliplay.kiosk.relay.RelayManager
 import com.aayush.diwaliplay.tracking.camera.TrackingStatus
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -103,7 +104,7 @@ fun AdminScreen(
     onRetryCamera: () -> Unit,
     onClose: () -> Unit,
     onExit: () -> Unit,
-    relaySection: @Composable ColumnScope.() -> Unit = { RelayPlaceholder() },
+    relaySection: @Composable ColumnScope.() -> Unit = { RelayPlaceholder(admin.relay) },
 ) {
     var lockWanted by remember { mutableStateOf(kiosk?.lockWanted == true) }
     var isOwner by remember { mutableStateOf(kiosk?.isDeviceOwner == true) }
@@ -222,8 +223,8 @@ internal fun RemoveOwnerOverlay(pin: AdminPin, onRemove: () -> Unit, onCancel: (
 }
 
 @Composable
-private fun RelayPlaceholder() {
-    Hint("Not available yet.")
+private fun ColumnScope.RelayPlaceholder(relay: RelayManager?) {
+    if (relay == null) Hint("Not available.") else RelaySection(relay)
 }
 
 @Composable
@@ -259,7 +260,7 @@ private fun Section(title: String, modifier: Modifier = Modifier, content: @Comp
 }
 
 @Composable
-private fun Hint(text: String, modifier: Modifier = Modifier, color: Color = Palette.Neutral400) {
+internal fun Hint(text: String, modifier: Modifier = Modifier, color: Color = Palette.Neutral400) {
     Label(text, 17.sp, color, modifier, align = TextAlign.Start)
 }
 
@@ -405,7 +406,7 @@ private fun AddressField(
 }
 
 @Composable
-private fun AdminButton(text: String, tag: String, fill: Color = Palette.Amber500, color: Color = Palette.Neutral950, onClick: () -> Unit) {
+internal fun AdminButton(text: String, tag: String, fill: Color = Palette.Amber500, color: Color = Palette.Neutral950, onClick: () -> Unit) {
     val shape = RoundedCornerShape(10.dp)
     Centered(
         Modifier

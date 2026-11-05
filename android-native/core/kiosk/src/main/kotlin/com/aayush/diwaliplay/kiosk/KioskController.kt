@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.util.Log
+import com.aayush.diwaliplay.kiosk.relay.RelayKiosk
 import com.aayush.diwaliplay.model.KioskDeviceStatus
 import java.time.Instant
 
@@ -24,7 +25,7 @@ internal fun isLockWanted(context: Context, deviceOwner: Boolean): Boolean =
     context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getBoolean(KEY_WANTED, deviceOwner)
 
 /** Spec §9's lock tiers. Lock calls are main-thread, like the [Activity] methods they make. */
-class KioskController(private val activity: Activity, private val dpm: DevicePolicyManager) {
+class KioskController(private val activity: Activity, private val dpm: DevicePolicyManager) : RelayKiosk {
     private val prefs = activity.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val admin = ComponentName(activity, KioskDeviceAdminReceiver::class.java)
     private val pkg: String = activity.packageName
@@ -48,7 +49,9 @@ class KioskController(private val activity: Activity, private val dpm: DevicePol
      * Device owner: full lock, home and camera. Otherwise screen pinning, which shows the system's prompt.
      * [reason] is reported in [status], as `lastStateChangeReason`.
      */
-    fun enableLock(reason: String = REASON_ADMIN_SCREEN) {
+    fun enableLock() = enableLock(REASON_ADMIN_SCREEN)
+
+    override fun enableLock(reason: String) {
         remember(wanted = true, reason)
         applyLock()
     }
@@ -87,7 +90,9 @@ class KioskController(private val activity: Activity, private val dpm: DevicePol
     }
 
     /** Back to a normal app, including no longer being forced as home: otherwise Home couldn't leave the kiosk. */
-    fun disableLock(reason: String = REASON_ADMIN_SCREEN) {
+    fun disableLock() = disableLock(REASON_ADMIN_SCREEN)
+
+    override fun disableLock(reason: String) {
         remember(wanted = false, reason)
         stopLockTask()
         if (isDeviceOwner) {
@@ -136,7 +141,7 @@ class KioskController(private val activity: Activity, private val dpm: DevicePol
      * [KioskBootReceiver] and the preferred home depend on it. `connected` stays false: only the relay client knows
      * that, and it fills it in.
      */
-    fun status(): KioskDeviceStatus {
+    override fun status(): KioskDeviceStatus {
         val active = isLockActive
         val owner = isDeviceOwner
         val home = isDefaultHome()

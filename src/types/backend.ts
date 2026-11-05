@@ -589,6 +589,8 @@ export interface KioskDeviceStatus {
   appRunning: boolean;
   lastStateChange?: string;
   lastStateChangeReason?: string;
+  /** Absent means a Windows TV PC. */
+  platform?: 'windows' | 'android';
 }
 
 export interface KioskDeviceRecord {

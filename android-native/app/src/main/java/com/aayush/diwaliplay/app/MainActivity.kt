@@ -39,6 +39,7 @@ class MainActivity : ComponentActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         enterImmersive()
         kiosk.grantCameraIfOwner()
+        (application as DiwaliApplication).attachKiosk(kiosk)
         setContent { GameApp(viewModel, onRetryCamera = ::retryCamera, kiosk = kiosk, onExit = ::exitApp) }
         // Asked for up front: a dialog on the start screen interrupts nobody, unlike one mid-calibration.
         if (savedInstanceState == null && !hasCameraPermission()) askForCamera()
@@ -55,6 +56,11 @@ class MainActivity : ComponentActivity() {
             enterImmersive()
             kiosk.restoreLockIfNeeded()
         }
+    }
+
+    override fun onDestroy() {
+        (application as DiwaliApplication).detachKiosk(kiosk)
+        super.onDestroy()
     }
 
     override fun onPause() {

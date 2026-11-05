@@ -261,6 +261,8 @@ export const GameSettingsSection: React.FC<GameSettingsSectionProps> = ({
   }, []);
 
   const currentRemoteDevice = remoteDevices.find(d => d.id === selectedDeviceId);
+  // Android displays have no watchdog or guardian process: the OS lock and crash handler stand in for them.
+  const isAndroidRemote = selectedDeviceId !== 'local' && currentRemoteDevice?.status?.platform === 'android';
 
   const handleToggleKiosk = async (targetState: boolean) => {
     if (currentUserRole !== 'superadmin') {
@@ -1137,6 +1139,12 @@ export const GameSettingsSection: React.FC<GameSettingsSectionProps> = ({
                   </div>
                 )}
 
+                {isAndroidRemote && (
+                  <div className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold border bg-lime-950/40 border-lime-500/30 text-lime-300">
+                    <span>Android</span>
+                  </div>
+                )}
+
                 {/* Status Indicator */}
                 <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono font-bold border ${
                   selectedDeviceId === 'local'
@@ -1309,7 +1317,7 @@ export const GameSettingsSection: React.FC<GameSettingsSectionProps> = ({
                   <span>When ON (Protected Mode)</span>
                 </div>
                 <ul className={`text-[11px] space-y-1 list-disc list-inside ${secondaryText}`}>
-                  <li>Watchdog monitors DiwaliPlay and auto-relaunches on exit or crash.</li>
+                  {!isAndroidRemote && <li>Watchdog monitors DiwaliPlay and auto-relaunches on exit or crash.</li>}
                   <li>Blocks accidental exit keys (Alt+F4, Windows Key, Alt+Tab, Ctrl+Esc).</li>
                   <li>Emergency admin unlock on TV PC: <span className="font-mono font-bold text-amber-400">Ctrl + Alt + Shift + D</span>.</li>
                 </ul>
@@ -1326,7 +1334,7 @@ export const GameSettingsSection: React.FC<GameSettingsSectionProps> = ({
                 </div>
                 <ul className={`text-[11px] space-y-1 list-disc list-inside ${secondaryText}`}>
                   <li>Allows standard exit via Alt+F4, close button, or exit button.</li>
-                  <li>Watchdog stands by without relaunching after app closure.</li>
+                  {!isAndroidRemote && <li>Watchdog stands by without relaunching after app closure.</li>}
                   <li>Switching OFF requires Admin Passcode (Default: <span className="font-mono font-bold">8536</span>).</li>
                 </ul>
               </div>

@@ -11,6 +11,7 @@ import com.aayush.diwaliplay.branding.BrandingState
 import com.aayush.diwaliplay.branding.ServerConfig
 import com.aayush.diwaliplay.branding.SettingsRepository
 import com.aayush.diwaliplay.kiosk.AdminPin
+import com.aayush.diwaliplay.kiosk.relay.RelayManager
 import com.aayush.diwaliplay.model.BombConfig
 import com.aayush.diwaliplay.model.CompleteSessionRequest
 import com.aayush.diwaliplay.model.GameAudioSettings
@@ -42,7 +43,7 @@ class AppDependencies(
 )
 
 /** What the admin screen needs beyond the view model. */
-class AdminDependencies(val pin: AdminPin, val serverConfig: ServerConfig)
+class AdminDependencies(val pin: AdminPin, val serverConfig: ServerConfig, val relay: RelayManager? = null)
 
 /**
  * The server session of the round in progress, on disk so it outlives the process: a round that dies with the process

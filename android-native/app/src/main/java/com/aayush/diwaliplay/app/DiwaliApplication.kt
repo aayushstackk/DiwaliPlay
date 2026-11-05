@@ -2,6 +2,7 @@ package com.aayush.diwaliplay.app
 
 import android.app.Application
 import com.aayush.diwaliplay.kiosk.CrashRestarter
+import com.aayush.diwaliplay.kiosk.KioskController
 
 class DiwaliApplication : Application() {
     /** Instrumented tests set this before launching the activity. */
@@ -20,6 +21,15 @@ class DiwaliApplication : Application() {
         true
     } catch (_: ClassNotFoundException) {
         false
+    }
+
+    /** The activity's lock controller, for the relay. Tests that supply their own dependencies have no relay. */
+    fun attachKiosk(controller: KioskController) {
+        if (dependenciesOverride == null) container.attachKiosk(controller)
+    }
+
+    fun detachKiosk(controller: KioskController) {
+        if (dependenciesOverride == null) container.detachKiosk(controller)
     }
 
     fun newDependencies(): AppDependencies = dependenciesOverride ?: container.newDependencies()

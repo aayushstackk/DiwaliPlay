@@ -28,8 +28,14 @@ kotlin {
 dependencies {
     implementation(project(":core:api"))
     implementation(project(":core:model"))
+    implementation(project(":core:branding"))
+    implementation(libs.okhttp)
+    implementation(libs.kotlinx.serialization.json)
+    implementation(libs.kotlinx.coroutines.android)
 
     testImplementation(libs.junit)
     testImplementation(libs.truth)
     testImplementation(libs.robolectric)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.okhttp.mockwebserver)
 }
