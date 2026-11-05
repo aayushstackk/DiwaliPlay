@@ -72,6 +72,7 @@ class RelayPairingTest {
         assertThat(store.get("relay_device_id")).isEqualTo("kiosk_dev_abc")
         assertThat(store.get("relay_device_token")).isEqualTo("tok-secret")
         assertThat(prefs.all.toString()).doesNotContain("tok-secret")
+        assertThat(store.get("relay_api_base")).isEqualTo(config.apiBaseUrl) // the token belongs to this server only
         assertThat(pairing.isPaired()).isTrue()
     }
 
@@ -89,10 +90,12 @@ class RelayPairingTest {
         val s = store
         s.put("relay_device_id", "x")
         s.put("relay_device_token", "y")
+        s.put("relay_api_base", "z")
         val pairing = RelayPairing(OkHttpClient(), config, s, now = { BASE })
         pairing.unpair()
         assertThat(s.get("relay_device_id")).isNull()
         assertThat(s.get("relay_device_token")).isNull()
+        assertThat(s.get("relay_api_base")).isNull()
     }
 
     private companion object { const val BASE = 1_800_000_000_000L }

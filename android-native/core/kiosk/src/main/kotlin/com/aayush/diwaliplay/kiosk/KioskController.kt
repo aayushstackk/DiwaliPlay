@@ -53,6 +53,8 @@ class KioskController(private val activity: Activity, private val dpm: DevicePol
 
     override fun enableLock(reason: String) {
         remember(wanted = true, reason)
+        // If the system refuses now (the activity is in the background), the next resume or focus must try again.
+        restoreSettled = false
         applyLock()
     }
 

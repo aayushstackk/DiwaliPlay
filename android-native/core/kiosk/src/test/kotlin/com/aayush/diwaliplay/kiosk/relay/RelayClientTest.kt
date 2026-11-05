@@ -40,9 +40,14 @@ import org.robolectric.RuntimeEnvironment
 
 private class FakeKiosk : RelayKiosk {
     var locked = false
+    var foreground = true
+    var statusFails = false
     val calls = mutableListOf<String>()
-    override fun status() = KioskDeviceStatus(backProtection = locked, appRunning = true, platform = "android")
-    override fun enableLock(reason: String) { locked = true; calls += "enable:$reason" }
+    override fun status(): KioskDeviceStatus {
+        if (statusFails) throw IllegalStateException("no activity")
+        return KioskDeviceStatus(backProtection = locked, appRunning = true, platform = "android")
+    }
+    override fun enableLock(reason: String) { if (foreground) locked = true; calls += "enable:$reason" }
     override fun disableLock(reason: String) { locked = false; calls += "disable:$reason" }
 }
 
@@ -74,6 +79,7 @@ class RelayClientTest {
     private fun paired() {
         store.put("relay_device_id", "kiosk_dev_1")
         store.put("relay_device_token", "tok-1")
+        store.put("relay_api_base", config.apiBaseUrl)
     }
 
     /** Virtual time, sockets that never touch a network. [attempts] gets the virtual time of every connect. */
@@ -82,6 +88,8 @@ class RelayClientTest {
         val listeners = mutableListOf<WebSocketListener>()
         val attempts = mutableListOf<Long>()
         var failuresLeft = failFirst
+        var dropAfterOpen = false
+        var stall = false
         val exits = mutableListOf<Long>()
         val dispatcher = StandardTestDispatcher(test.testScheduler)
         val client = RelayClient(
@@ -94,7 +102,13 @@ class RelayClientTest {
                 attempts += test.testScheduler.currentTime
                 val ws = FakeSocket(req)
                 sockets += ws; listeners += l
-                if (failuresLeft > 0) { failuresLeft--; l.onFailure(ws, java.io.IOException("down"), null) } else l.onOpen(ws, response(req))
+                if (stall) return@RelayClient ws
+                if (failuresLeft > 0) {
+                    failuresLeft--; l.onFailure(ws, java.io.IOException("down"), null)
+                } else {
+                    l.onOpen(ws, response(req))
+                    if (dropAfterOpen) l.onClosed(ws, 1000, "bye")
+                }
                 ws
             },
         )
@@ -104,11 +118,15 @@ class RelayClientTest {
             listeners.last().onMessage(sockets.last(), """{"type":"command","requestId":"$id","action":"$action"$params,"timestamp":1}""")
             test.testScheduler.runCurrent()
         }
+        /** The server's answer to the first heartbeat: the connection is good from here. */
+        fun heartbeatAck() {
+            listeners.last().onMessage(sockets.last(), """{"type":"heartbeat_ack","timestamp":1}""")
+            test.testScheduler.runCurrent()
+        }
         fun ack(): JsonObject = sockets.last().sent.last { it["type"]!!.jsonPrimitive.content == "ack" }
     }
 
     @Test fun connectsWithIdAndTokenQuery() {
-        paired()
         val server = MockWebServer().also { servers += it }
         val opened = LinkedBlockingQueue<okhttp3.mockwebserver.RecordedRequest?>()
         val messages = LinkedBlockingQueue<String>()
@@ -119,6 +137,7 @@ class RelayClientTest {
         )
         server.start()
         config.apiBaseUrl = server.url("/").toString().trimEnd('/')
+        paired()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         val client = RelayClient(OkHttpClient(), config, store, kiosk, pin, scope, main = Dispatchers.IO)
         try {
@@ -132,7 +151,6 @@ class RelayClientTest {
     }
 
     @Test fun answersPingWithPong() {
-        paired()
         val server = MockWebServer().also { servers += it }
         val messages = LinkedBlockingQueue<String>()
         server.enqueue(
@@ -143,6 +161,7 @@ class RelayClientTest {
         )
         server.start()
         config.apiBaseUrl = server.url("/").toString().trimEnd('/')
+        paired()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         try {
             RelayClient(OkHttpClient(), config, store, kiosk, pin, scope, main = Dispatchers.IO).start()
@@ -152,7 +171,6 @@ class RelayClientTest {
     }
 
     @Test fun statusCommandAcksWithAndroidPlatform() {
-        paired()
         val server = MockWebServer().also { servers += it }
         val messages = LinkedBlockingQueue<String>()
         server.enqueue(
@@ -165,6 +183,7 @@ class RelayClientTest {
         )
         server.start()
         config.apiBaseUrl = server.url("/").toString().trimEnd('/')
+        paired()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         try {
             RelayClient(OkHttpClient(), config, store, kiosk, pin, scope, main = Dispatchers.IO).start()
@@ -194,6 +213,8 @@ class RelayClientTest {
         assertThat(rig.sockets.single().types()).hasSize(2)
         advanceTimeBy(20_000); runCurrent()
         assertThat(rig.sockets.single().types()).hasSize(3)
+        assertThat(rig.client.connected.value).isFalse() // not until the server answers
+        rig.heartbeatAck()
         assertThat(rig.client.connected.value).isTrue()
     }
 
@@ -204,6 +225,7 @@ class RelayClientTest {
         advanceTimeBy(200_000); runCurrent()
         // 0, +2, +4, +8, +16, +30, +30, +30: the eighth attempt succeeds
         assertThat(rig.attempts.take(8)).containsExactly(0L, 2_000L, 6_000L, 14_000L, 30_000L, 60_000L, 90_000L, 120_000L).inOrder()
+        rig.heartbeatAck()
         assertThat(rig.client.connected.value).isTrue()
         // a good connection resets the backoff
         rig.listeners.last().onClosed(rig.sockets.last(), 1000, "bye")
@@ -212,6 +234,86 @@ class RelayClientTest {
         val closedAt = testScheduler.currentTime
         advanceTimeBy(2_001); runCurrent()
         assertThat(rig.attempts.last()).isEqualTo(closedAt + 2_000)
+    }
+
+    @Test fun connectionsThatDropBeforeAnAckKeepBackingOff() = runTest {
+        paired()
+        val rig = Rig(this)
+        rig.dropAfterOpen = true
+        rig.client.start()
+        advanceTimeBy(200_000); runCurrent()
+        assertThat(rig.attempts.take(6)).containsExactly(0L, 2_000L, 6_000L, 14_000L, 30_000L, 60_000L).inOrder()
+        assertThat(rig.client.connected.value).isFalse()
+    }
+
+    @Test fun revokedPairingStopsReconnectingAndSaysSo() = runTest {
+        paired()
+        val rig = Rig(this)
+        rig.client.start(); runCurrent()
+        rig.listeners.last().onClosing(rig.sockets.last(), 4401, "Unauthorized: Invalid device token")
+        runCurrent()
+        advanceTimeBy(200_000); runCurrent()
+        assertThat(rig.sockets).hasSize(1)
+        assertThat(rig.client.problem.value).isEqualTo(RelayProblem.Rejected)
+        assertThat(rig.client.connected.value).isFalse()
+        rig.client.start(); runCurrent() // pairing again (or a restart) clears it and tries afresh
+        assertThat(rig.sockets).hasSize(2)
+    }
+
+    @Test fun stalledHandshakeIsCancelledAndRetried() = runTest {
+        paired()
+        val rig = Rig(this)
+        rig.stall = true
+        rig.client.start(); runCurrent()
+        advanceTimeBy(29_999); runCurrent()
+        assertThat(rig.sockets.single().closed).isFalse()
+        advanceTimeBy(2); runCurrent()
+        assertThat(rig.sockets.first().closed).isTrue()
+        rig.stall = false
+        advanceTimeBy(2_001); runCurrent()
+        assertThat(rig.attempts).containsExactly(0L, 32_000L).inOrder()
+    }
+
+    @Test fun anOpenThatArrivesAfterStopCantStickConnected() = runTest {
+        paired()
+        val rig = Rig(this)
+        rig.client.start(); runCurrent()
+        val l = rig.listeners.last(); val s = rig.sockets.last()
+        rig.client.stop(); runCurrent()
+        l.onOpen(s, rig.response(s.request()))
+        l.onMessage(s, """{"type":"heartbeat_ack","timestamp":1}""")
+        runCurrent()
+        assertThat(rig.client.connected.value).isFalse()
+    }
+
+    @Test fun aPairingFromAnotherServerIsNeverUsed() = runTest {
+        paired()
+        config.apiBaseUrl = "https://other.example"
+        val rig = Rig(this)
+        rig.client.start()
+        advanceTimeBy(60_000); runCurrent()
+        assertThat(rig.attempts).isEmpty()
+        assertThat(rig.client.problem.value).isEqualTo(RelayProblem.OtherServer)
+    }
+
+    @Test fun aStatusThatThrowsStillGetsAnAck() = runTest {
+        paired()
+        val rig = Rig(this)
+        rig.client.start(); runCurrent()
+        kiosk.statusFails = true
+        rig.command("status")
+        assertThat(rig.ack()["success"]!!.jsonPrimitive.boolean).isFalse()
+        assertThat(rig.ack()["error"]!!.jsonPrimitive.content).isNotEmpty()
+    }
+
+    @Test fun enableSaysWhenTheLockIsntActiveYet() = runTest {
+        paired()
+        val rig = Rig(this)
+        rig.client.start(); runCurrent()
+        kiosk.foreground = false
+        rig.command("enable")
+        assertThat(rig.ack()["success"]!!.jsonPrimitive.boolean).isTrue()
+        assertThat(rig.ack()["message"]!!.jsonPrimitive.content).contains("not active yet")
     }
 
     @Test fun answersPingWithPongOnAnySocket() = runTest {

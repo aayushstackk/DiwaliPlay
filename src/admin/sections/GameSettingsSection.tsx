@@ -327,7 +327,12 @@ export const GameSettingsSection: React.FC<GameSettingsSectionProps> = ({
       const res = await adminApi.sendKioskCommand(selectedDeviceId, action, passcode);
 
       if (!res.success || !res.executed) {
-        throw new Error(res.error || res.message || 'Execution failed on TV PC.');
+        // An Android display explains itself in `message` ("PIN locked": for how long; "N attempts left").
+        throw new Error(
+          isAndroidRemote && res.error && res.message
+            ? `${res.error}: ${res.message}`
+            : res.error || res.message || 'Execution failed on TV PC.'
+        );
       }
 
       setKioskFeedback({
@@ -486,14 +491,15 @@ export const GameSettingsSection: React.FC<GameSettingsSectionProps> = ({
 
   const handleConfirmPasscode = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!enteredPasscode.trim()) {
+    // On Android the panel is already signed in, so a blank PIN is allowed (it is also the way out of a forgotten one).
+    if (!enteredPasscode.trim() && !isAndroidRemote) {
       setPasscodeError('Please enter the admin passcode.');
       return;
     }
     if (selectedDeviceId === 'local') {
       applyKioskState(false, enteredPasscode.trim());
     } else {
-      applyRemoteKioskState(false, enteredPasscode.trim());
+      applyRemoteKioskState(false, enteredPasscode.trim() || undefined);
     }
   };
 
@@ -1335,7 +1341,9 @@ export const GameSettingsSection: React.FC<GameSettingsSectionProps> = ({
                 <ul className={`text-[11px] space-y-1 list-disc list-inside ${secondaryText}`}>
                   <li>Allows standard exit via Alt+F4, close button, or exit button.</li>
                   {!isAndroidRemote && <li>Watchdog stands by without relaunching after app closure.</li>}
-                  <li>Switching OFF requires Admin Passcode (Default: <span className="font-mono font-bold">8536</span>).</li>
+                  {isAndroidRemote
+                    ? <li>Switching OFF accepts the display's Admin PIN, but doesn't require it.</li>
+                    : <li>Switching OFF requires Admin Passcode (Default: <span className="font-mono font-bold">8536</span>).</li>}
                 </ul>
               </div>
             </div>
@@ -1394,7 +1402,9 @@ export const GameSettingsSection: React.FC<GameSettingsSectionProps> = ({
                   onClick={handleTestExit}
                   disabled={isKioskUpdating}
                   className="px-2 py-0.5 rounded border border-rose-500/40 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-[10px] flex items-center gap-1 cursor-pointer transition-colors disabled:opacity-50"
-                  title="Test App Exit: If Back Protection is ON, watchdog will recover and relaunch within 2s; if OFF, app exits normally."
+                  title={isAndroidRemote
+                    ? 'Test App Exit: the app relaunches in about 5 s if it is the device owner or home app; otherwise it stays closed.'
+                    : 'Test App Exit: If Back Protection is ON, watchdog will recover and relaunch within 2s; if OFF, app exits normally.'}
                 >
                   <Power className="w-2.5 h-2.5" />
                   <span>Test Exit</span>
@@ -1508,10 +1518,12 @@ export const GameSettingsSection: React.FC<GameSettingsSectionProps> = ({
               </div>
               <div>
                 <h3 className={`text-base font-bold ${primaryText}`}>
-                  Admin Passcode Required
+                  {isAndroidRemote ? 'Admin PIN (optional)' : 'Admin Passcode Required'}
                 </h3>
                 <p className={`text-xs mt-0.5 ${secondaryText}`}>
-                  Enter passcode to disable Kiosk Back Protection and restore normal PC operation.
+                  {isAndroidRemote
+                    ? 'Enter the display\'s Admin PIN, or leave it blank to disable the lock without one.'
+                    : 'Enter passcode to disable Kiosk Back Protection and restore normal PC operation.'}
                 </p>
               </div>
             </div>
@@ -1519,12 +1531,12 @@ export const GameSettingsSection: React.FC<GameSettingsSectionProps> = ({
             <form onSubmit={handleConfirmPasscode} className="space-y-3">
               <div>
                 <label className={`block text-xs font-semibold mb-1 ${primaryText}`}>
-                  Admin Passcode
+                  {isAndroidRemote ? 'Admin PIN (optional)' : 'Admin Passcode'}
                 </label>
                 <input
                   type="password"
                   autoFocus
-                  placeholder="Enter passcode (Default: 8536)"
+                  placeholder={isAndroidRemote ? 'Admin PIN (optional)' : 'Enter passcode (Default: 8536)'}
                   value={enteredPasscode}
                   onChange={(e) => {
                     setEnteredPasscode(e.target.value);

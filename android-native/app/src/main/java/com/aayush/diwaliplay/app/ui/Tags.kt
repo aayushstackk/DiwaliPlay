@@ -73,6 +73,8 @@ object Tags {
     const val ADMIN_RELAY_PAIR = "admin_relay_pair"
     const val ADMIN_RELAY_CANCEL = "admin_relay_cancel"
     const val ADMIN_RELAY_UNPAIR = "admin_relay_unpair"
+    const val ADMIN_RELAY_UNPAIR_CONFIRM = "admin_relay_unpair_confirm"
+    const val ADMIN_RELAY_UNPAIR_CANCEL = "admin_relay_unpair_cancel"
     const val ADMIN_CAMERA_TEST = "admin_camera_test"
     const val ADMIN_CAMERA_VIEW = "admin_camera_view"
     const val ADMIN_PERF = "admin_perf"

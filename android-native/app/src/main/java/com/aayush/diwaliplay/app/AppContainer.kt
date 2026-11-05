@@ -104,8 +104,8 @@ private class AlwaysResumedLifecycleOwner : LifecycleOwner {
 }
 
 /**
- * The activity's [KioskController], for the relay, which lives as long as the process. Between activities the relay can
- * still report that the app is up, but can't change the lock, and says so.
+ * The activity's [KioskController], for the relay, which lives as long as the process. With no activity (after Exit, say)
+ * the relay stays connected but reports `appRunning = false`, and answers lock changes with a failure.
  */
 internal class CurrentKiosk : RelayKiosk {
     @Volatile private var controller: KioskController? = null
@@ -115,7 +115,7 @@ internal class CurrentKiosk : RelayKiosk {
     fun detach(c: KioskController) { if (controller === c) controller = null }
 
     override fun status(): KioskDeviceStatus =
-        controller?.status() ?: KioskDeviceStatus(appRunning = true, platform = "android")
+        controller?.status() ?: KioskDeviceStatus(appRunning = false, platform = "android")
 
     override fun enableLock(reason: String) = (controller ?: throw IllegalStateException("No screen to lock")).enableLock(reason)
 

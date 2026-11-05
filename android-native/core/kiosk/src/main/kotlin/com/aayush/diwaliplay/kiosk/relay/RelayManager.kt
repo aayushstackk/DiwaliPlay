@@ -31,6 +31,7 @@ class RelayManager(
         val code: String? = null,
         val expiresAtMs: Long? = null,
         val error: String? = null,
+        val problem: RelayProblem? = null,
     )
 
     private val _state = MutableStateFlow(State())
@@ -39,6 +40,7 @@ class RelayManager(
 
     init {
         scope.launch { client.connected.collect { c -> _state.update { it.copy(connected = c) } } }
+        scope.launch { client.problem.collect { p -> _state.update { it.copy(problem = p) } } }
     }
 
     /** At app start: connects if this device is already paired. */
@@ -74,6 +76,13 @@ class RelayManager(
                 _state.update { it.copy(busy = false, code = null, expiresAtMs = null, error = "Pairing failed.") }
             }
         }
+    }
+
+    /** After the API address was saved: reconnects, so that a pairing made against the old one is noticed. */
+    fun addressChanged() {
+        if (!_state.value.paired) return
+        client.stop()
+        client.start()
     }
 
     @Synchronized

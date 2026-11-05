@@ -253,6 +253,21 @@ class KioskControllerTest {
         assertThat(shadowOf(refusing).isLockTask).isFalse()
     }
 
+    /** A remote enable that lands while the activity is in the background is refused; the next resume must apply it. */
+    @Test fun anEnableRefusedInTheBackgroundIsRetriedOnResume() {
+        val refusing = Robolectric.buildActivity(RefusingActivity::class.java).setup().get()
+        val c = KioskController(refusing, dpm)
+        c.restoreLockIfNeeded() // nothing wanted: this launch is settled
+
+        refusing.refuse = true
+        c.enableLock("Remote relay")
+        assertThat(shadowOf(refusing).isLockTask).isFalse()
+
+        refusing.refuse = false
+        c.restoreLockIfNeeded() // back in the foreground
+        assertThat(shadowOf(refusing).isLockTask).isTrue()
+    }
+
     @Test fun statusMapsFieldsAndPlatformAndroid() {
         makeOwner()
         Thread.setDefaultUncaughtExceptionHandler(null)

@@ -1,6 +1,7 @@
 package com.aayush.diwaliplay.app.ui.admin
 
 import com.aayush.diwaliplay.kiosk.relay.RelayManager.State
+import com.aayush.diwaliplay.kiosk.relay.RelayProblem
 import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 
@@ -26,6 +27,11 @@ class RelayLinesTest {
     @Test fun pairedSaysWhetherItsConnected() {
         assertThat(relayLines(State(paired = true, connected = true), 0).status).isEqualTo("Paired. Connected.")
         assertThat(relayLines(State(paired = true), 0).status).startsWith("Paired. Not connected")
+    }
+
+    @Test fun aRejectedOrForeignPairingSaysToPairAgain() {
+        assertThat(relayLines(State(paired = true, problem = RelayProblem.Rejected), 0).status).isEqualTo("Pairing rejected: unpair and pair again.")
+        assertThat(relayLines(State(paired = true, problem = RelayProblem.OtherServer), 0).status).startsWith("Paired with a different server")
     }
 
     @Test fun askingForACode() {

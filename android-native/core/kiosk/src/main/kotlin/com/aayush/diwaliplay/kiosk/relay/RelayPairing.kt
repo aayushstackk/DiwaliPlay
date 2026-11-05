@@ -24,6 +24,9 @@ import okhttp3.RequestBody.Companion.toRequestBody
 private const val TAG = "RelayPairing"
 internal const val KEY_DEVICE_ID = "relay_device_id"
 internal const val KEY_DEVICE_TOKEN = "relay_device_token"
+
+/** The API address the pairing was made against: its token is only ever sent there. */
+internal const val KEY_API_BASE = "relay_api_base"
 private const val POLL_MS = 3_000L
 
 /** The server gives the code 15 minutes; used only if its `expiresAt` can't be read. */
@@ -45,6 +48,7 @@ class RelayPairing(
     private val io: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private val expiries = HashMap<String, Long>()
+    private val bases = HashMap<String, String>()
 
     /** Throws [IOException] if the server can't be reached or doesn't give a code. */
     suspend fun requestCode(name: String): PairingCode = withContext(io) {
@@ -56,7 +60,10 @@ class RelayPairing(
         if (deviceId.isNullOrEmpty() || code.isNullOrEmpty()) throw IOException("The server's answer had no code")
         val expiresAt = json["expiresAt"]?.jsonPrimitive?.contentOrNull.orEmpty()
         val expiresAtMs = runCatching { Instant.parse(expiresAt).toEpochMilli() }.getOrElse { now() + DEFAULT_LIFETIME_MS }
-        synchronized(expiries) { expiries[deviceId] = expiresAtMs }
+        synchronized(expiries) {
+            expiries[deviceId] = expiresAtMs
+            bases[deviceId] = config.apiBaseUrl
+        }
         PairingCode(deviceId, code, expiresAt, expiresAtMs)
     }
 
@@ -69,7 +76,7 @@ class RelayPairing(
         while (now() < deadline) {
             val answer = withContext(io) { check(deviceId) }
             when (answer) {
-                is Check.Paired -> return savePairing(answer.deviceId, answer.token)
+                is Check.Paired -> return savePairing(answer.deviceId, answer.token, synchronized(expiries) { bases[deviceId] } ?: config.apiBaseUrl)
                 Check.Gone -> return false
                 Check.NotYet -> Unit
             }
@@ -85,10 +92,12 @@ class RelayPairing(
     fun unpair() {
         store.remove(KEY_DEVICE_ID)
         store.remove(KEY_DEVICE_TOKEN)
+        store.remove(KEY_API_BASE)
     }
 
-    private suspend fun savePairing(deviceId: String, token: String): Boolean = withContext(io) {
+    private suspend fun savePairing(deviceId: String, token: String, base: String): Boolean = withContext(io) {
         try {
+            store.put(KEY_API_BASE, base)
             store.put(KEY_DEVICE_ID, deviceId)
             store.put(KEY_DEVICE_TOKEN, token)
             true

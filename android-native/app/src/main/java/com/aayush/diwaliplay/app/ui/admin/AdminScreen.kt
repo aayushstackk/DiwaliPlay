@@ -104,7 +104,7 @@ fun AdminScreen(
     onRetryCamera: () -> Unit,
     onClose: () -> Unit,
     onExit: () -> Unit,
-    relaySection: @Composable ColumnScope.() -> Unit = { RelayPlaceholder(admin.relay) },
+    relaySection: @Composable ColumnScope.() -> Unit = { RelaySlot(admin.relay) },
 ) {
     var lockWanted by remember { mutableStateOf(kiosk?.lockWanted == true) }
     var isOwner by remember { mutableStateOf(kiosk?.isDeviceOwner == true) }
@@ -157,7 +157,7 @@ fun AdminScreen(
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
                 KioskLockSection(kiosk, lockWanted, isOwner, { lockWanted = it }, { removingOwner = true })
-                ServerSection(admin.serverConfig) { activity.value++ }
+                ServerSection(admin.serverConfig, onSaved = { admin.relay?.addressChanged() }) { activity.value++ }
                 Section("Relay pairing", Modifier.testTag(Tags.ADMIN_RELAY), relaySection)
             }
             Column(
@@ -223,7 +223,7 @@ internal fun RemoveOwnerOverlay(pin: AdminPin, onRemove: () -> Unit, onCancel: (
 }
 
 @Composable
-private fun ColumnScope.RelayPlaceholder(relay: RelayManager?) {
+private fun ColumnScope.RelaySlot(relay: RelayManager?) {
     if (relay == null) Hint("Not available.") else RelaySection(relay)
 }
 
@@ -330,7 +330,7 @@ internal fun lockSummary(deviceOwner: Boolean, wanted: Boolean, active: Boolean)
 }
 
 @Composable
-private fun ServerSection(config: ServerConfig, onTyped: () -> Unit) {
+private fun ServerSection(config: ServerConfig, onSaved: () -> Unit, onTyped: () -> Unit) {
     val context = LocalContext.current
     val debuggable = remember { context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0 }
     var api by remember { mutableStateOf(config.apiBaseUrl) }
@@ -365,6 +365,7 @@ private fun ServerSection(config: ServerConfig, onTyped: () -> Unit) {
                     api = config.apiBaseUrl
                     web = config.publicWebUrl
                     saved = true
+                    onSaved()
                 }
             }
             if (saved) Hint("Saved", Modifier.testTag(Tags.ADMIN_SERVERS_SAVED), Palette.Emerald300)

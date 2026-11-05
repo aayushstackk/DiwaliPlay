@@ -38,6 +38,10 @@ class RelaySectionTest {
         state = State(paired = true, connected = true)
         compose.onNodeWithTag(Tags.ADMIN_RELAY_STATE).assertIsDisplayed()
         compose.onNodeWithTag(Tags.ADMIN_RELAY_UNPAIR).performClick()
+        assertThat(calls).containsExactly("pair", "cancel").inOrder() // asked first
+        compose.onNodeWithTag(Tags.ADMIN_RELAY_UNPAIR_CANCEL).performClick()
+        compose.onNodeWithTag(Tags.ADMIN_RELAY_UNPAIR).performClick()
+        compose.onNodeWithTag(Tags.ADMIN_RELAY_UNPAIR_CONFIRM).performClick()
         assertThat(calls).containsExactly("pair", "cancel", "unpair").inOrder()
     }
 }

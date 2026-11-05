@@ -7,6 +7,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -24,6 +27,7 @@ import kotlinx.coroutines.delay
 internal data class RelayLines(val status: String, val code: String?, val expiry: String?, val hint: String?)
 
 internal fun relayLines(state: RelayManager.State, now: Long): RelayLines = when {
+    state.paired && state.problem != null -> RelayLines(state.problem?.text.orEmpty(), null, null, "This display isn't reachable from the web admin panel until it is paired again.")
     state.paired -> RelayLines(
         status = if (state.connected) "Paired. Connected." else "Paired. Not connected: retrying.",
         code = null, expiry = null, hint = "Commands from the web admin panel reach this display while connected.",
@@ -62,11 +66,19 @@ internal fun ColumnScope.RelaySectionContent(state: RelayManager.State, onPair: 
     }
     if (lines.expiry != null) Hint(lines.expiry, Modifier.testTag(Tags.ADMIN_RELAY_EXPIRY))
     if (lines.hint != null) Hint(lines.hint)
+    var confirming by remember { mutableStateOf(false) }
     val error = state.error
     if (error != null) Hint(error, Modifier.testTag(Tags.ADMIN_RELAY_ERROR), Palette.Rose300)
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         when {
-            state.paired -> AdminButton("Unpair", Tags.ADMIN_RELAY_UNPAIR, Palette.Rose500, Palette.Neutral950, onUnpair)
+            state.paired && confirming -> {
+                AdminButton("Yes, unpair", Tags.ADMIN_RELAY_UNPAIR_CONFIRM, Palette.Rose500, Palette.Neutral950) {
+                    confirming = false
+                    onUnpair()
+                }
+                AdminButton("Keep paired", Tags.ADMIN_RELAY_UNPAIR_CANCEL, Palette.Neutral800, Palette.Neutral300) { confirming = false }
+            }
+            state.paired -> AdminButton("Unpair", Tags.ADMIN_RELAY_UNPAIR, Palette.Rose500, Palette.Neutral950) { confirming = true }
             state.busy -> AdminButton("Cancel", Tags.ADMIN_RELAY_CANCEL, Palette.Neutral800, Palette.Neutral300, onCancel)
             else -> AdminButton(if (error != null) "Try again" else "Pair this display", Tags.ADMIN_RELAY_PAIR, onClick = onPair)
         }
