@@ -10,6 +10,8 @@ import { User, GameSession } from '../types/backend';
 import { QrCodeSvg } from './QrCodeSvg';
 import { BrandingBlock } from './BrandingBlock';
 import { getRegistrationUrl } from '../utils/registrationUrl';
+import { StartBackground } from './StartBackground';
+import { useBranding } from '../hooks/useBranding';
 
 interface KioskStartupScreenProps {
   onCodeVerified: (user: User, code: string, session?: GameSession) => void;
@@ -27,6 +29,7 @@ export const KioskStartupScreen: React.FC<KioskStartupScreenProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [successUser, setSuccessUser] = useState<User | null>(null);
   const registrationUrl = getRegistrationUrl();
+  const branding = useBranding();
 
   const verifyCode = useCallback(async (codeStr: string) => {
     if (codeStr.length !== 4 || isVerifying) return;
@@ -103,10 +106,12 @@ export const KioskStartupScreen: React.FC<KioskStartupScreenProps> = ({
   }, [handleDigitTap, handleDeleteTap, handleClearTap, verifyCode, digits, isVerifying, successUser]);
 
   return (
-    <div className="h-[100dvh] w-screen overflow-hidden bg-[#0A0713] text-neutral-100 flex flex-col justify-between p-3 sm:p-5 select-none font-['Plus_Jakarta_Sans',sans-serif] relative">
-      {/* Festive Background Ambient Lighting */}
-      <div className="absolute top-0 left-1/4 w-80 h-80 bg-amber-500/10 rounded-full blur-[130px] pointer-events-none" />
-      <div className="absolute bottom-0 right-1/4 w-80 h-80 bg-orange-600/10 rounded-full blur-[130px] pointer-events-none" />
+    <div className="h-[100dvh] w-screen overflow-hidden text-neutral-100 flex flex-col justify-between p-3 sm:p-5 select-none font-['Plus_Jakarta_Sans',sans-serif] relative">
+      <StartBackground
+        url={branding.startBackgroundUrl}
+        type={branding.startBackgroundType}
+        dim={branding.startBackgroundDim}
+      />
 
       {/* TOP HEADER: EXACTLY 3-LINE BRANDING BLOCK */}
       <header className="w-full max-w-5xl mx-auto text-center z-10 shrink-0 pt-1 relative">
@@ -117,7 +122,7 @@ export const KioskStartupScreen: React.FC<KioskStartupScreenProps> = ({
       <main className="w-full max-w-5xl mx-auto my-auto z-10 py-1 flex items-center justify-center">
         <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-8 items-center max-h-[82vh]">
           {/* LEFT: QR CODE SECTION */}
-          <div className="flex flex-col items-center justify-center text-center p-4 sm:p-6 rounded-3xl bg-neutral-900/80 border border-amber-500/30 backdrop-blur-md shadow-[0_0_40px_rgba(245,158,11,0.15)]">
+          <div className="flex flex-col items-center justify-center text-center p-4 sm:p-6 rounded-3xl bg-neutral-900/95 border border-amber-500/30 backdrop-blur-md shadow-[0_0_40px_rgba(245,158,11,0.15)]">
             <h2 className="text-xl sm:text-2xl font-bold text-amber-100 font-['Cinzel',serif] tracking-wider mb-3">
               SCAN TO PLAY
             </h2>
@@ -134,7 +139,7 @@ export const KioskStartupScreen: React.FC<KioskStartupScreenProps> = ({
           </div>
 
           {/* RIGHT: CODE ENTRY & TOUCHSCREEN KEYPAD */}
-          <div className="flex flex-col items-center justify-center p-4 sm:p-6 rounded-3xl bg-neutral-900/90 border border-amber-500/35 backdrop-blur-md shadow-[0_0_45px_rgba(245,158,11,0.15)] w-full">
+          <div className="flex flex-col items-center justify-center p-4 sm:p-6 rounded-3xl bg-neutral-900/95 border border-amber-500/35 backdrop-blur-md shadow-[0_0_45px_rgba(245,158,11,0.15)] w-full">
             <h2 className="text-xl sm:text-2xl font-bold text-amber-100 font-['Cinzel',serif] tracking-wider mb-2">
               ENTER YOUR CODE
             </h2>
