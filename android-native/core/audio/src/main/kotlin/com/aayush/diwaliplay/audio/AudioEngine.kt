@@ -170,10 +170,7 @@ class AudioEngine(context: Context, private val resolver: SoundResolver) {
         return play(source, volume, 0f, rate, ResolvedSound.PRIORITY_LOW)
     }
 
-    fun playVictoryChime(): Int {
-        val (source, volume) = resolver.victoryChime(snapshot.settings)
-        return play(source, volume)
-    }
+    fun playVictoryChime(): Int = play(resolver.victoryChime())
 
     fun startBgm() = onMain {
         if (released) return@onMain

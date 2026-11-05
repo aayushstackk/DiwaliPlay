@@ -8,6 +8,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -26,6 +30,8 @@ import java.util.Locale
 class WheelInputs(
     val rewards: List<RewardItem>,
     val requestSpin: suspend () -> SpinOutcome,
+    /** `completeSession` hasn't answered: not yet. */
+    val held: Boolean = false,
     val onTick: (Float) -> Unit = {},
     val onVictory: () -> Unit = {},
     val onSettled: () -> Unit = {},
@@ -36,7 +42,8 @@ class WheelInputs(
  * The one end-of-round screen, with everything in reach: on the left the photo, who it is, the wish and the Save button;
  * on the right the score, the wheel (or, with rewards off, a larger score), feedback and PLAY AGAIN.
  *
- * Trial rounds have no feedback, as on the web. [wheel] is null with rewards off.
+ * Trial rounds have no feedback, as on the web. [wheel] is null with rewards off. From a spin's request until the prize
+ * is on show there's no way off the screen: the server may have recorded a prize, and the player must see it.
  */
 @Composable
 fun GameOverScreen(
@@ -52,7 +59,8 @@ fun GameOverScreen(
     onPlayAgain: () -> Unit,
     onClose: () -> Unit,
 ) {
-    EndOfRoundFrame(isTrial, autoReturnSeconds, onClose) {
+    var spinBusy by remember { mutableStateOf(false) }
+    EndOfRoundFrame(isTrial, autoReturnSeconds, !spinBusy, onClose) {
         Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
             Column(
                 Modifier.weight(1f).fillMaxHeight(),
@@ -70,14 +78,14 @@ fun GameOverScreen(
                     card.earnedReward?.let { EarnedRewardStrip(it, localFiles) }
                     SpinWheelPanel(
                         wheel.rewards, isTrial, localFiles, wheel.requestSpin, wheel.onTick, wheel.onVictory, wheel.onSettled,
-                        Modifier.weight(1f).fillMaxWidth(), wheel.loadRewards,
+                        Modifier.weight(1f).fillMaxWidth(), wheel.loadRewards, wheel.held, { spinBusy = it },
                     )
                 } else {
                     LargeScorePanel(card, Modifier.weight(1f).fillMaxWidth())
                     card.earnedReward?.let { EarnedRewardStrip(it, localFiles) }
                 }
                 if (!isTrial) FeedbackRow(recordedFeedback, onFeedback)
-                GoldButton("PLAY AGAIN", Tags.PLAY_AGAIN, Icons.RotateCcw, Modifier.fillMaxWidth(), onPlayAgain)
+                GoldButton("PLAY AGAIN", Tags.PLAY_AGAIN, Icons.RotateCcw, Modifier.fillMaxWidth(), !spinBusy, onPlayAgain)
             }
         }
     }

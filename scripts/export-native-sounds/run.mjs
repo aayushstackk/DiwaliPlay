@@ -2,7 +2,10 @@
 /**
  * One-command native sound export.
  *
- *   node scripts/export-native-sounds/run.mjs [--out <wavDir>] [--no-convert]
+ *   node scripts/export-native-sounds/run.mjs [--out <wavDir>] [--no-convert] [--only <key>]
+ *
+ * --only renders that one sound. The other committed files are left exactly as they are (Chrome
+ * differs by +-1 LSB between runs); only the new FLAC and manifest.json change.
  *
  * 1. Starts the repo's Vite dev server (repo vite.config.ts) on a free localhost port.
  * 2. Launches the installed Google Chrome headless with a throwaway profile and drives it
@@ -30,6 +33,8 @@ const args = process.argv.slice(2);
 const outIdx = args.indexOf('--out');
 const OUT = path.resolve(outIdx >= 0 ? args[outIdx + 1] : path.join(os.tmpdir(), 'diwali-native-sounds-wav'));
 const CONVERT = !args.includes('--no-convert');
+const onlyIdx = args.indexOf('--only');
+const ONLY = onlyIdx >= 0 ? args[onlyIdx + 1] : null;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -155,8 +160,14 @@ async function main() {
     if (!ready) throw new Error('export page did not become ready');
 
     const plan = await cdp.evaluate('exportPlan()');
+    if (ONLY && !plan.some((job) => job.key === ONLY)) throw new Error(`unknown job ${ONLY}`);
     const entries = [];
     for (const job of plan) {
+      // The plan stays whole, so manifest.ts still writes and checks every entry.
+      if (ONLY && job.key !== ONLY) {
+        entries.push({ ...job, file: `${job.key}.wav` });
+        continue;
+      }
       const t0 = Date.now();
       const r = await cdp.evaluate(`exportSound(${JSON.stringify(job.key)})`, true);
       const wav = Buffer.from(r.wavBase64, 'base64');
@@ -174,7 +185,7 @@ async function main() {
       path.join(OUT, 'plan.json'),
       JSON.stringify({ sampleRate: 48000, entries }, null, 2) + '\n'
     );
-    console.log(`[export] wrote ${entries.length} WAVs + plan.json to ${OUT}`);
+    console.log(`[export] wrote ${ONLY ? 1 : entries.length} WAVs + plan.json to ${OUT}`);
   } finally {
     if (cdp) cdp.close();
     if (chrome.exitCode === null) {
@@ -190,7 +201,8 @@ async function main() {
   }
 
   if (CONVERT) {
-    const r = spawnSync('bash', [path.join(HERE, 'convert.sh'), OUT], { cwd: REPO, stdio: 'inherit' });
+    const convertArgs = [path.join(HERE, 'convert.sh'), OUT, ...(ONLY ? ['--keep-existing'] : [])];
+    const r = spawnSync('bash', convertArgs, { cwd: REPO, stdio: 'inherit' });
     process.exit(r.status ?? 1);
   }
 }

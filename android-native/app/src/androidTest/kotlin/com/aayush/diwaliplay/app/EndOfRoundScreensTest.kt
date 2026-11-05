@@ -13,9 +13,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.height
 import androidx.compose.ui.unit.width
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -30,6 +33,7 @@ import com.aayush.diwaliplay.app.ui.GameOverScreen
 import com.aayush.diwaliplay.app.ui.PhotoCountdownScreen
 import com.aayush.diwaliplay.app.ui.SpinWheelPanel
 import com.aayush.diwaliplay.app.ui.Tags
+import com.aayush.diwaliplay.app.ui.WISH_MIN_SP
 import com.aayush.diwaliplay.app.ui.WheelInputs
 import com.aayush.diwaliplay.app.ui.renderCard
 import com.aayush.diwaliplay.app.ui.theme.DesignCanvas
@@ -226,7 +230,46 @@ class EndOfRoundScreensTest {
         val long = RoundCard(card.playerName, card.score, card.achievement, longWish, card.photoJpeg, card.targetScore, card.targetAchieved, null)
         gameOver(long)
         assertColumnsInOrder(listOf(Tags.WISH, Tags.SAVE_CARD), listOf(Tags.CARD_SCORE, Tags.PLAY_AGAIN))
+        // At the floor, cut short with an ellipsis, and nothing spilling out of its box.
+        val layout = wishLayout()
+        assertThat(lineHeight(layout)).isWithin(4f).of(WISH_MIN_SP * 1.2f)
+        assertThat(layout.isLineEllipsized(layout.lineCount - 1)).isTrue()
+        assertThat(bounds(Tags.WISH_BODY).bottom).isAtMost(bounds(Tags.SAVE_CARD).top)
         screenshot("native_gameover_longwish.png")
+    }
+
+    /** In design pixels. autoSize's chosen size isn't in the layout's style; its effect on the lines is. */
+    private fun lineHeight(layout: TextLayoutResult) = layout.getLineBottom(0) - layout.getLineTop(0)
+
+    private fun wishLayout(): TextLayoutResult {
+        val results = ArrayList<TextLayoutResult>()
+        compose.onNodeWithTag(Tags.WISH_BODY).fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action!!(results)
+        return results.single()
+    }
+
+    @Test
+    fun anOrdinaryWishIsLargeAndWhole() {
+        gameOver()
+        val layout = wishLayout()
+        assertThat(lineHeight(layout)).isGreaterThan(WISH_MIN_SP * 1.2f + 4f)
+        assertThat(layout.isLineEllipsized(layout.lineCount - 1)).isFalse()
+    }
+
+    @Test
+    fun aHeldWheelSaysSoAndWontSpin() {
+        val spins = AtomicInteger(0)
+        gameOver(
+            wheel = WheelInputs(prizes, {
+                spins.incrementAndGet()
+                awaitCancellation()
+            }, held = true),
+        )
+        assertThat(compose.onAllNodesWithTag(Tags.SPIN_WAITING, useUnmergedTree = true).fetchSemanticsNodes()).isNotEmpty()
+        compose.onNodeWithTag(Tags.SPIN_BUTTON).performClick()
+        compose.mainClock.advanceTimeBy(100)
+        assertThat(spins.get()).isEqualTo(0)
+        compose.onNodeWithTag(Tags.PLAY_AGAIN).assertIsEnabled()
+        screenshot("native_gameover_wheel_held.png")
     }
 
     @Test

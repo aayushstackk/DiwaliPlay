@@ -32,6 +32,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aayush.diwaliplay.app.ui.theme.Fonts
@@ -44,9 +45,13 @@ import kotlinx.coroutines.launch
 /** "Saved!" stays up this long. */
 private const val SAVED_MS = 3000L
 
+/** The wish's readable floor on the 1920 layout. */
+internal const val WISH_MIN_SP = 18
+
 /**
  * The personalised wish, always in view below the photo. Admins write these, so they can be any length: the body takes
- * the room that's left and its text shrinks to fit, rather than running under the Save panel.
+ * the room that's left and its text shrinks to fit, down to a size still readable at kiosk distance, then truncates with
+ * an ellipsis. The saved card is drawn separately and always has the whole wish.
  */
 @Composable
 internal fun WishCard(wish: FormattedPersonalizedWish, brandName: String, modifier: Modifier) {
@@ -73,7 +78,9 @@ internal fun WishCard(wish: FormattedPersonalizedWish, brandName: String, modifi
                     style = TextStyle(
                         fontFamily = Fonts.Body, fontWeight = FontWeight.Medium, color = Palette.Amber100.copy(alpha = 0.95f), textAlign = TextAlign.Center,
                     ),
-                    autoSize = TextAutoSize.StepBased(minFontSize = 12.sp, maxFontSize = 26.sp, stepSize = 1.sp),
+                    modifier = Modifier.testTag(Tags.WISH_BODY),
+                    overflow = TextOverflow.Ellipsis,
+                    autoSize = TextAutoSize.StepBased(minFontSize = WISH_MIN_SP.sp, maxFontSize = 26.sp, stepSize = 1.sp),
                 )
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Amber500.copy(alpha = 0.25f)))

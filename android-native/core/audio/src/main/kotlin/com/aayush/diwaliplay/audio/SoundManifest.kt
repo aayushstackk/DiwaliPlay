@@ -14,6 +14,7 @@ data class SoundManifest(
     val bombPresets: Map<String, String> = emptyMap(),
     val bgm: Map<String, BgmEntry> = emptyMap(),
     val spinTick: String = "",
+    val spinVictory: String = "",
 ) {
     @Serializable
     data class BgmEntry(val file: String, val loop: Boolean = true)

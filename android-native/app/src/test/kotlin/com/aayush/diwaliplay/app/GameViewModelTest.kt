@@ -468,6 +468,79 @@ class GameViewModelTest {
         assertThat((r.vm.phase.value as GamePhase.PhotoCountdown).captured).isTrue()
     }
 
+    /** Stays in `completeSession` until [gate] opens, whatever it then answers. */
+    private fun Rig.slowComplete(gate: CompletableDeferred<Unit>, answer: ApiResult<CompleteSessionResponse>? = null) {
+        api.onComplete = { req ->
+            gate.await()
+            answer ?: ApiResult.Success(CompleteSessionResponse(success = true, session = GameSession(id = req.sessionId, userId = "u1"), user = TEST_USER))
+        }
+    }
+
+    private fun Rig.isHeld() = (vm.phase.value as GamePhase.GameOver).spinHeld
+
+    @Test
+    fun aSlowCompletionHoldsTheWheelUntilItAnswers() = runTest {
+        val r = Rig(this, rewardsOn)
+        val gate = CompletableDeferred<Unit>()
+        r.slowComplete(gate)
+        toSpin(r)
+        advanceTimeBy(3_000)
+        runCurrent()
+        assertThat(r.isHeld()).isTrue()
+        gate.complete(Unit)
+        runCurrent()
+        assertThat(r.isHeld()).isFalse()
+    }
+
+    @Test
+    fun aFailedCompletionReleasesTheWheelOnceTheQueueHasIt() = runTest {
+        val r = Rig(this, rewardsOn)
+        val gate = CompletableDeferred<Unit>()
+        r.slowComplete(gate, ApiResult.NetworkError(IOException("offline")))
+        toSpin(r)
+        assertThat(r.isHeld()).isTrue()
+        gate.complete(Unit)
+        runCurrent() // well inside the time limit
+        assertThat(r.isHeld()).isFalse()
+        assertThat(r.results.queued.single().sessionId).isEqualTo("server_session")
+    }
+
+    @Test
+    fun aCompletionThatNeverAnswersHoldsTheWheelForFiveSecondsAtMost() = runTest {
+        val r = Rig(this, rewardsOn)
+        r.slowComplete(CompletableDeferred())
+        toSpin(r)
+        assertThat(r.isHeld()).isTrue()
+        advanceTimeBy(SPIN_HOLD_MS - 600) // the card took a moment to come up in toSpin; the limit counts from there
+        runCurrent()
+        assertThat(r.isHeld()).isTrue()
+        advanceTimeBy(1_000)
+        runCurrent()
+        assertThat(r.isHeld()).isFalse()
+    }
+
+    @Test
+    fun aTrialIsNeverHeld() = runTest {
+        val r = Rig(this, rewardsOn)
+        r.acceptCode("8536")
+        r.playToCard()
+        assertThat(r.isHeld()).isFalse()
+    }
+
+    @Test
+    fun anOldHoldTimerCantTouchTheNextRound() = runTest {
+        val r = Rig(this, rewardsOn)
+        r.slowComplete(CompletableDeferred())
+        toSpin(r)
+        r.vm.onInterrupted()
+        runCurrent()
+        r.acceptCode()
+        r.playToCard()
+        advanceTimeBy(1_000)
+        runCurrent()
+        assertThat(r.isHeld()).isTrue()
+    }
+
     @Test
     fun feedbackSendsAtOnceAndLeavesTheScreenUpForTheCountdown() = runTest {
         val r = Rig(this, rewardsOn)

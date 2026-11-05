@@ -81,5 +81,6 @@
       "loop": true
     }
   },
-  "spinTick": "spin_tick.flac"
+  "spinTick": "spin_tick.flac",
+  "spinVictory": "spin_victory.flac"
 }

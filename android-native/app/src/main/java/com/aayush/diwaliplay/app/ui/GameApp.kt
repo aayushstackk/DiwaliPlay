@@ -160,6 +160,7 @@ private fun PhaseContent(
                     WheelInputs(
                         rewards = branding.rewards.rewards,
                         requestSpin = { vm.requestSpin(phase) },
+                        held = phase.spinHeld,
                         onTick = vm::playSpinTick,
                         onVictory = vm::playVictoryChime,
                         onSettled = vm::onSpinSettled,

@@ -137,6 +137,23 @@ class GameController(
         _phase.value = p.copy(card = p.card.withEarnedReward(earnedReward))
     }
 
+    /**
+     * `completeSession` is over: the server took it, or the failure is with the queue. The wheel can be spun now: the server
+     * files a spin's prize where completion looks for the score prize, so the spin mustn't arrive first. Keyed like
+     * [onRoundCompleted].
+     */
+    fun onCompletionAnswered(sessionId: String) = locked {
+        if (completed && sessionId == completedSessionId) releaseSpinHold()
+    }
+
+    /** The server is taking too long: the player has waited enough, and the wheel goes ahead anyway. */
+    fun onSpinHoldExpired() = locked { releaseSpinHold() }
+
+    private fun releaseSpinHold() {
+        val p = _phase.value as? GamePhase.GameOver ?: return
+        if (p.spinHeld) _phase.value = p.copy(spinHeld = false)
+    }
+
     /** Touch-mode tap in 1920x1080 space; applied to the bombs on the next [onFrame]. */
     fun onTouch(x: Double, y: Double) = locked {
         if (_phase.value != GamePhase.Playing || !settings.isTouchMode || touchCount >= MAX_QUEUED_TOUCHES) return@locked
@@ -399,11 +416,12 @@ class GameController(
         val s = session ?: return
         val score = director.score
         sound(FlowSoundKeys.GAME_OVER)
-        if (!s.isTrial && sessionId.isNotBlank()) {
+        val completing = !s.isTrial && sessionId.isNotBlank()
+        if (completing) {
             val req = buildCompleteSessionRequest(sessionId, score, jpeg, settings.targetScore)
             outbox += { effects.completeSession(req) }
         }
-        _phase.value = GamePhase.GameOver(buildRoundCard(s.userName, score, jpeg, settings, random), sessionId, s.mobileNumber)
+        _phase.value = GamePhase.GameOver(buildRoundCard(s.userName, score, jpeg, settings, random), sessionId, s.mobileNumber, spinHeld = completing)
     }
 
     private fun resetToStartup() {

@@ -42,7 +42,8 @@ sealed interface GamePhase {
      * The one end-of-round screen: card, wish, wheel (rewards enabled; trial sessions included, as the web's test-mode
      * wheel) and feedback together. [sessionId] and [mobileNumber] are what SpinWheelRequest needs; the id follows the
      * server's (a slow `startSession` can answer with this screen up), and the score prize joins [card] when it arrives.
+     * [spinHeld]: `completeSession` hasn't answered yet, so the wheel can't be spun. See [GameController.onCompletionAnswered].
      * Leave with [GameController.onPlayAgain] or [GameController.onExit].
      */
-    data class GameOver(val card: RoundCard, val sessionId: String, val mobileNumber: String?) : GamePhase
+    data class GameOver(val card: RoundCard, val sessionId: String, val mobileNumber: String?, val spinHeld: Boolean = false) : GamePhase
 }

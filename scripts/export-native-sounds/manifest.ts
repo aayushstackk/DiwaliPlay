@@ -21,8 +21,8 @@ import { SOUND_PROFILES_META } from '../../src/utils/soundEngine';
 
 interface PlanEntry {
   key: string;
-  kind: 'effect' | 'bgm' | 'tick';
-  ids: { sounds?: string[]; crackers?: string[]; bombPresets?: string[]; bgm?: string; spinTick?: boolean };
+  kind: 'effect' | 'bgm' | 'tick' | 'victory';
+  ids: { sounds?: string[]; crackers?: string[]; bombPresets?: string[]; bgm?: string; spinTick?: boolean; spinVictory?: boolean };
 }
 
 interface Manifest {
@@ -31,6 +31,7 @@ interface Manifest {
   bombPresets: Record<string, string>;
   bgm: Record<string, { file: string; loop: true }>;
   spinTick: string;
+  spinVictory: string;
 }
 
 const [wavDir, assetDir] = process.argv.slice(2);
@@ -43,7 +44,7 @@ const REPO = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../.
 const plan: { entries: PlanEntry[] } = JSON.parse(fs.readFileSync(path.join(wavDir, 'plan.json'), 'utf8'));
 
 // ---------------------------------------------------------------- build
-const manifest: Manifest = { sounds: {}, crackers: {}, bombPresets: {}, bgm: {}, spinTick: '' };
+const manifest: Manifest = { sounds: {}, crackers: {}, bombPresets: {}, bgm: {}, spinTick: '', spinVictory: '' };
 const errors: string[] = [];
 const put = (table: Record<string, string>, id: string, file: string, what: string) => {
   if (table[id] && table[id] !== file) errors.push(`${what} '${id}' mapped twice (${table[id]}, ${file})`);
@@ -56,6 +57,7 @@ for (const e of plan.entries) {
   e.ids.bombPresets?.forEach((id) => put(manifest.bombPresets, id, file, 'bomb preset'));
   if (e.ids.bgm) manifest.bgm[e.ids.bgm] = { file, loop: true };
   if (e.ids.spinTick) manifest.spinTick = file;
+  if (e.ids.spinVictory) manifest.spinVictory = file;
 }
 const sortObj = <T>(o: Record<string, T>) =>
   Object.fromEntries(Object.keys(o).sort().map((k) => [k, o[k]])) as Record<string, T>;
@@ -65,6 +67,7 @@ const out = {
   bombPresets: sortObj(manifest.bombPresets),
   bgm: sortObj(manifest.bgm),
   spinTick: manifest.spinTick,
+  spinVictory: manifest.spinVictory,
 };
 fs.writeFileSync(path.join(assetDir, 'manifest.json'), JSON.stringify(out, null, 2) + '\n');
 
@@ -140,6 +143,7 @@ for (const id of casesOf('playBombBurstSound')) {
   checked++;
 }
 if (!out.spinTick) errors.push('missing spinTick');
+if (!out.spinVictory) errors.push('missing spinVictory');
 
 // files: every referenced file exists, every audio file is referenced
 const referenced = new Set<string>([
@@ -148,6 +152,7 @@ const referenced = new Set<string>([
   ...Object.values(out.bombPresets),
   ...Object.values(out.bgm).map((b) => b.file),
   out.spinTick,
+  out.spinVictory,
 ]);
 for (const f of referenced) {
   if (f && !fs.existsSync(path.join(assetDir, f))) errors.push(`file missing on disk: ${f}`);
@@ -157,7 +162,7 @@ for (const f of fs.readdirSync(assetDir).filter((f) => f.endsWith('.flac') || f.
 }
 
 const counts = `${Object.keys(out.sounds).length} sounds, ${Object.keys(out.crackers).length} crackers, ` +
-  `${Object.keys(out.bombPresets).length} bomb presets, ${Object.keys(out.bgm).length} bgm, spinTick ${out.spinTick ? 1 : 0}; ` +
+  `${Object.keys(out.bombPresets).length} bomb presets, ${Object.keys(out.bgm).length} bgm, spinTick ${out.spinTick ? 1 : 0}, spinVictory ${out.spinVictory ? 1 : 0}; ` +
   `${referenced.size} files`;
 if (errors.length) {
   console.error(`[manifest] FAIL (${errors.length} problems):`);

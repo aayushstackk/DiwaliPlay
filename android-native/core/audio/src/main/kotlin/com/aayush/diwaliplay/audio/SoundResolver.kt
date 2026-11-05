@@ -124,13 +124,13 @@ class SoundResolver(
     }
 
     /**
-     * The wheel's win. The web synthesises its own arpeggio (playVictoryChime), which isn't among the exported sounds,
-     * so this is the nearest one that is. Effect bus, like the other effects.
+     * The wheel's win: SpinWheelModal's playVictoryChime, rendered by scripts/export-native-sounds. On the web it plays
+     * straight to the destination, past the master gain, so it's deliberately at full gain here, and master volume and
+     * mute don't reach it. High priority, so the ticks in flight can't take its stream.
      */
-    fun victoryChime(settings: GameAudioSettings): Pair<SoundSource, Float> {
-        if (muted(settings)) return silent
-        val file = manifest.sounds[VICTORY_CHIME_ID] ?: return silent
-        return SoundSource.Asset(SoundManifest.assetPath(file)) to gain(master(settings) * effectChannel)
+    fun victoryChime(): ResolvedSound {
+        if (manifest.spinVictory.isEmpty()) return ResolvedSound(SoundSource.None, 0f)
+        return ResolvedSound(SoundSource.Asset(SoundManifest.assetPath(manifest.spinVictory)), 1f, priority = ResolvedSound.PRIORITY_HIGH)
     }
 
     /**
@@ -187,7 +187,7 @@ class SoundResolver(
         manifest.bombPresets.keys.forEach { rest += bombBurst(it, null, s, files).first }
         bombs.forEach { rest += bombBurst(it.soundPreset, it.soundUrl, s, files).first }
         rest += spinTick().first
-        rest += victoryChime(s).first
+        rest += victoryChime().source
         val critical = criticalSources(settings, files)
         val (large, normal) = (rest - critical - SoundSource.None).partition { isLarge(it) }
         return LinkedHashSet<SoundSource>().apply { addAll(critical); addAll(normal); addAll(large) }
@@ -232,7 +232,6 @@ class SoundResolver(
     companion object {
         const val FALLBACK_ID = "beep_classic"
         private const val DEFAULT_SFX_ID = "explosion_bomb"
-        private const val VICTORY_CHIME_ID = "chime_celebration"
         private const val DEFAULT_STEP_ID = "beep_classic"
         private const val DEFAULT_GO_ID = "chime_celebration"
         private const val DEFAULT_BGM_ID = "bgm_festive_rhythm"

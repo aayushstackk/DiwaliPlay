@@ -286,7 +286,7 @@ class SoundResolverTest {
         assertThat(src).contains(SoundSource.File(f))
         assertThat(src).containsAtLeast(
             SoundSource.Asset("sounds/explosion_mega.flac"), SoundSource.Asset("sounds/bomb_buzz.flac"),
-            SoundSource.Asset("sounds/spin_tick.flac"), SoundSource.Asset("sounds/chime_celebration.flac"),
+            SoundSource.Asset("sounds/spin_tick.flac"), SoundSource.Asset("sounds/spin_victory.flac"),
         )
     }
 
@@ -302,13 +302,20 @@ class SoundResolverTest {
         assertThat(order.takeLast(large.size).toSet()).isEqualTo(large.toSet())
     }
 
-    @Test fun victoryChimeFollowsMasterAndMute() {
-        val s = defaultAudioSettings()
-        val (source, volume) = resolver.victoryChime(s)
-        assertThat(source).isEqualTo(asset("chime_celebration"))
-        assertThat(volume).isGreaterThan(0f)
-        assertThat(resolver.victoryChime(s.copy(isMuted = true)).first).isEqualTo(SoundSource.None)
-        assertThat(resolver.preloadSources(s, none, emptyList())).contains(asset("chime_celebration"))
+    @Test fun victoryChimeIsTheWheelsOwnFanfareAtFullGainWhateverTheSettings() {
+        // playVictoryChime plays straight to the destination on the web: no master gain, and mute doesn't reach it.
+        val expected = ResolvedSound(asset("spin_victory"), 1f, priority = ResolvedSound.PRIORITY_HIGH)
+        assertThat(resolver.victoryChime()).isEqualTo(expected)
+        assertThat(resolver.preloadSources(defaultAudioSettings(), none, emptyList())).contains(asset("spin_victory"))
+        assertThat(resolver.preloadSources(defaultAudioSettings().copy(isMuted = true), none, emptyList())).contains(asset("spin_victory"))
+    }
+
+    @Test fun victoryChimeOutranksTheTick() {
+        assertThat(resolver.victoryChime().priority).isGreaterThan(ResolvedSound.PRIORITY_LOW)
+    }
+
+    @Test fun anOldManifestWithNoFanfareIsSilentNotAnError() {
+        assertThat(SoundResolver(SoundManifest()).victoryChime().source).isEqualTo(SoundSource.None)
     }
 
     @Test fun prioritiesHighForCountdownGameOverMegaBlastLowForCrackers() {

@@ -1,6 +1,8 @@
 package com.aayush.diwaliplay.app
 
 import android.Manifest
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.ComposeTestRule
@@ -107,6 +109,15 @@ class EndOfRoundFlowTest {
         pump()
     }
 
+    /** The hub's own semantics take in its contents, so this tag is only on the unmerged tree. */
+    private fun isWaiting() = compose.onAllNodesWithTag(Tags.SPIN_WAITING, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+
+    /** Taps the hub once the wheel is ready for it. */
+    private fun spin() {
+        waitUntil("the wheel to be ready") { compose.onAllNodesWithText("Tap the wheel to spin and win").fetchSemanticsNodes().isNotEmpty() }
+        tap(Tags.SPIN_BUTTON)
+    }
+
     private fun playToCard(code: String = "1234") {
         code.forEach { tap(Tags.key(it)) }
         tap(Tags.PLAY)
@@ -128,7 +139,7 @@ class EndOfRoundFlowTest {
         }
         assertThat(hasTag(Tags.RETURNING)).isFalse() // an unspun wheel waits
 
-        tap(Tags.SPIN_BUTTON)
+        spin()
         waitForTag(Tags.SPIN_VOUCHER)
         assertThat(hasTag(Tags.WHEEL)).isFalse() // the voucher takes its place
         assertThat(api.spins.single().sessionId).isEqualTo("server_session")
@@ -169,7 +180,7 @@ class EndOfRoundFlowTest {
         launch(rewardsEnabled = true)
         api.onSpin = { ApiResult.NetworkError(IOException("down")) }
         playToCard()
-        tap(Tags.SPIN_BUTTON)
+        spin()
         waitForTag(Tags.SPIN_ERROR)
         waitForTag(Tags.RETURNING)
         assertThat(hasTag(Tags.SPIN_VOUCHER)).isFalse()
@@ -181,7 +192,7 @@ class EndOfRoundFlowTest {
         launch(rewardsEnabled = true)
         api.onStart = { ApiResult.NetworkError(IOException("down")) }
         playToCard()
-        tap(Tags.SPIN_BUTTON)
+        spin()
         waitForTag(Tags.SPIN_ERROR)
         assertThat(api.spins).isEmpty()
     }
@@ -275,7 +286,7 @@ class EndOfRoundFlowTest {
         waitForTag(Tags.CARD_REWARD)
 
         api.onSpin = { ApiResult.NetworkError(IOException("down")) }
-        tap(Tags.SPIN_BUTTON)
+        spin()
         waitForTag(Tags.SPIN_ERROR)
         assertThat(hasTag(Tags.CARD_REWARD)).isTrue()
 
@@ -296,9 +307,103 @@ class EndOfRoundFlowTest {
         waitUntil("today's slices") {
             compose.onAllNodes(hasTestTag(Tags.WHEEL) and hasContentDescription("Brand New")).fetchSemanticsNodes().isNotEmpty()
         }
-        tap(Tags.SPIN_BUTTON)
+        spin()
         waitForTag(Tags.SPIN_VOUCHER)
         assertThat(api.spins).hasSize(1)
+    }
+
+    @Test
+    fun aSlowCompletionHoldsTheWheelThenItSpinsOnItsAnswer() {
+        launch(rewardsEnabled = true)
+        val answer = CompletableDeferred<Unit>()
+        api.onComplete = { req ->
+            answer.await()
+            ApiResult.Success(CompleteSessionResponse(success = true, session = GameSession(id = req.sessionId, userId = "u1"), user = TEST_USER))
+        }
+        api.onSpin = { ApiResult.Success(SpinWheelResponse(success = true, reward = prizes[1], rewardIndex = 1)) }
+        playToCard()
+        waitUntil("the waiting hub") { isWaiting() }
+        compose.onNodeWithTag(Tags.SPIN_BUTTON).performClick() // too soon: ignored, and not remembered
+        pump()
+        assertThat(api.spins).isEmpty()
+        assertThat(isWaiting()).isTrue()
+
+        answer.complete(Unit)
+        spin()
+        waitForTag(Tags.SPIN_VOUCHER)
+        assertThat(api.spins).hasSize(1)
+    }
+
+    @Test
+    fun aCompletionThatNeverAnswersOnlyHoldsTheWheelForFiveSeconds() {
+        launch(rewardsEnabled = true)
+        val never = CompletableDeferred<Unit>()
+        api.onComplete = { never.await(); ApiResult.NetworkError(IOException("never")) }
+        api.onSpin = { ApiResult.NetworkError(IOException("down")) }
+        playToCard()
+        val shown = System.currentTimeMillis()
+        waitUntil("the waiting hub") { isWaiting() }
+        spin()
+        assertThat(System.currentTimeMillis() - shown).isAtLeast(SPIN_HOLD_MS - 1_000)
+        waitForTag(Tags.SPIN_ERROR)
+        assertThat(api.spins).hasSize(1)
+        never.complete(Unit)
+    }
+
+    @Test
+    fun aTrialDoesNotWaitForAnything() {
+        launch(rewardsEnabled = true)
+        api.onSpin = { ApiResult.Success(SpinWheelResponse(success = true, reward = prizes[1], rewardIndex = 1)) }
+        playToCard("8536")
+        // A trial's wheel has its own line; it only ever waits for the rewards, which this fake answers at once.
+        waitUntil("the trial wheel to be ready") { compose.onAllNodesWithText("Master OTP Active: Unlimited spins enabled").fetchSemanticsNodes().isNotEmpty() }
+        assertThat(isWaiting()).isFalse()
+        tap(Tags.SPIN_BUTTON)
+        waitForTag(Tags.SPIN_VOUCHER)
+        assertThat(api.completed).isEmpty()
+    }
+
+    private fun assertWaysOffAre(enabled: Boolean) {
+        val check: androidx.compose.ui.test.SemanticsNodeInteraction.() -> Unit = { if (enabled) assertIsEnabled() else assertIsNotEnabled() }
+        compose.onNodeWithTag(Tags.PLAY_AGAIN).check()
+        compose.onNodeWithTag(Tags.CLOSE).check()
+    }
+
+    @Test
+    fun theWaysOffAreClosedFromTheSpinRequestUntilThePrizeShows() {
+        launch(rewardsEnabled = true)
+        val answer = CompletableDeferred<Unit>()
+        api.onSpin = {
+            answer.await()
+            ApiResult.Success(SpinWheelResponse(success = true, reward = prizes[1], rewardIndex = 1))
+        }
+        playToCard()
+        waitUntil("the wheel to be ready") { compose.onAllNodesWithText("Tap the wheel to spin and win").fetchSemanticsNodes().isNotEmpty() }
+        assertWaysOffAre(true) // Play Again works before spinning
+        spin()
+        assertWaysOffAre(false)
+        compose.onNodeWithTag(Tags.PLAY_AGAIN).performClick()
+        compose.onNodeWithTag(Tags.CLOSE).performClick()
+        pump()
+        assertThat(hasTag(Tags.CARD_SCREEN)).isTrue()
+
+        answer.complete(Unit)
+        waitForTag(Tags.SPIN_VOUCHER)
+        waitForTag(Tags.RETURNING)
+        assertWaysOffAre(true)
+        tap(Tags.PLAY_AGAIN)
+        waitForTag(Tags.START_SCREEN)
+    }
+
+    @Test
+    fun aFailedSpinOpensTheWaysOffAgain() {
+        launch(rewardsEnabled = true)
+        api.onSpin = { ApiResult.NetworkError(IOException("down")) }
+        playToCard()
+        spin()
+        assertWaysOffAre(false)
+        waitForTag(Tags.SPIN_ERROR)
+        assertWaysOffAre(true)
     }
 
     @Test

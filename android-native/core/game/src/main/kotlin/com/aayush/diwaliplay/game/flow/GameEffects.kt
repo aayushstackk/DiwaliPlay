@@ -18,7 +18,10 @@ interface GameEffects {
     /** `POST /api/session/start`; report the returned id with [GameController.onSessionStarted] (same code). */
     fun startSession(code: String)
 
-    /** Report the response's `session.earnedReward` with [GameController.onRoundCompleted] (req.sessionId). */
+    /**
+     * Report the response's `session.earnedReward` with [GameController.onRoundCompleted] (req.sessionId), then, however it
+     * went, [GameController.onCompletionAnswered] once it has an answer or the failure is safely queued.
+     */
     fun completeSession(req: CompleteSessionRequest)
 
     fun abandonSession(sessionId: String, reason: String)

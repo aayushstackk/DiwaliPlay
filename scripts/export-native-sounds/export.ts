@@ -34,6 +34,7 @@ const TAIL_PAD_SECONDS = 0.02; // keep 20 ms after the last sample above -60 dBF
 const FADE_SECONDS = 0.005; // linear fade over the last 5 ms of that pad
 const BGM_RENDER_PERIODS = 3; // render 3 periods, keep the middle one (steady state)
 const SPIN_TICK_GAIN = 0.5; // live tick gain range is 0.2..0.5; export at the max
+const SPIN_VICTORY_SECONDS = 2.2; // the last oscillator stops at 1.98 s; nothing is trimmed
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyEngine = any;
@@ -44,11 +45,12 @@ export interface ManifestIds {
   bombPresets?: string[];
   bgm?: string;
   spinTick?: boolean;
+  spinVictory?: boolean;
 }
 
 interface Job {
   key: string; // also the output file stem
-  kind: 'effect' | 'bgm' | 'tick';
+  kind: 'effect' | 'bgm' | 'tick' | 'victory';
   ids: ManifestIds;
   note: string;
   run?: (e: AnyEngine) => void;
@@ -130,6 +132,9 @@ const JOBS: Job[] = [
 
   // Spin wheel tick (src/utils/spinWheelPhysics.ts getOrCreateTickBuffer)
   { key: 'spin_tick', kind: 'tick', ids: { spinTick: true }, note: `getOrCreateTickBuffer x ${SPIN_TICK_GAIN} (live gain 0.2..0.5)` },
+
+  // Spin wheel win (SpinWheelModal playVictoryChime): its own oscillators, not a SoundEngine sound
+  { key: 'spin_victory', kind: 'victory', ids: { spinVictory: true }, note: 'SpinWheelModal playVictoryChime, straight to destination' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -465,6 +470,63 @@ function renderTick(job: Job): { chs: Float32Array[]; stats: Stats } {
   return { chs, stats: computeStats(chs) };
 }
 
+/**
+ * SpinWheelModal's playVictoryChime, with the same oscillators and timings. It lives outside the SoundEngine and plays
+ * straight to the destination, so there is no limiter, bus or master gain here, and the voices are free to sum past
+ * full scale as they do live. The tail isn't trimmed: the chord's decay is part of the sound.
+ */
+async function renderVictory(): Promise<{ chs: Float32Array[]; stats: Stats }> {
+  const ctx = new OfflineAudioContext(2, Math.round(SAMPLE_RATE * SPIN_VICTORY_SECONDS), SAMPLE_RATE);
+  const now = 0;
+
+  // Stage 1: ascending arpeggio (C5 -> E5 -> G5 -> B5 -> C6 -> E6)
+  [523.25, 659.25, 783.99, 987.77, 1046.5, 1318.51].forEach((freq, idx) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(freq, now + idx * 0.075);
+
+    gain.gain.setValueAtTime(0, now + idx * 0.075);
+    gain.gain.linearRampToValueAtTime(0.25, now + idx * 0.075 + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.075 + 0.65);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now + idx * 0.075);
+    osc.stop(now + idx * 0.075 + 0.7);
+  });
+
+  // Stage 2: finale chord (C5 + G5 + C6 + E6) with a shimmer harmonic on each voice
+  const chordTime = now + 0.48;
+  [523.25, 783.99, 1046.5, 1318.51].forEach((freq) => {
+    const osc = ctx.createOscillator();
+    const oscHarmonic = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(freq, chordTime);
+
+    oscHarmonic.type = 'sine';
+    oscHarmonic.frequency.setValueAtTime(freq * 2.01, chordTime);
+
+    gain.gain.setValueAtTime(0, chordTime);
+    gain.gain.linearRampToValueAtTime(0.18, chordTime + 0.035);
+    gain.gain.exponentialRampToValueAtTime(0.0001, chordTime + 1.45);
+
+    osc.connect(gain);
+    oscHarmonic.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start(chordTime);
+    oscHarmonic.start(chordTime);
+    osc.stop(chordTime + 1.5);
+    oscHarmonic.stop(chordTime + 1.5);
+  });
+
+  const chs = channelsOf(await ctx.startRendering());
+  return { chs, stats: computeStats(chs) };
+}
+
 // ---------------------------------------------------------------------------
 // Page API (driven by run.mjs over CDP)
 // ---------------------------------------------------------------------------
@@ -483,7 +545,13 @@ async function exportSound(key: string): Promise<{ key: string; kind: string; wa
   const job = JOBS.find((j) => j.key === key);
   if (!job) throw new Error(`unknown job ${key}`);
   const { chs, stats } =
-    job.kind === 'bgm' ? await renderBgm(job) : job.kind === 'tick' ? renderTick(job) : await renderEffect(job);
+    job.kind === 'bgm'
+      ? await renderBgm(job)
+      : job.kind === 'tick'
+        ? renderTick(job)
+        : job.kind === 'victory'
+          ? await renderVictory()
+          : await renderEffect(job);
   return { key, kind: job.kind, wavBase64: toBase64(encodeWav16(chs)), stats };
 }
 

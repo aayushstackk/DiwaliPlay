@@ -62,6 +62,9 @@ import kotlinx.coroutines.withContext
 /** bg-gradient-to-r from-amber-100 via-amber-300 to-yellow-200, the web's gold headings. */
 val GoldText = Brush.horizontalGradient(listOf(Palette.Amber100, Palette.Amber300, Palette.Yellow200))
 
+/** The ways off the screen, while a spin is running. */
+private const val DISABLED_ALPHA = 0.4f
+
 /** A reward's image needs no more than this on any of these screens. */
 private const val MAX_REWARD_IMAGE_PX = 512
 
@@ -89,6 +92,7 @@ fun BoxScope.CornerAccents(inset: Dp, length: Dp, color: Color, width: Dp = 2.dp
 fun EndOfRoundFrame(
     isTrial: Boolean,
     autoReturnSeconds: Int?,
+    closeEnabled: Boolean,
     onClose: () -> Unit,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -113,10 +117,11 @@ fun EndOfRoundFrame(
                         Modifier
                             .testTag(Tags.CLOSE)
                             .size(36.dp)
+                            .graphicsLayer { alpha = if (closeEnabled) 1f else DISABLED_ALPHA }
                             .clip(CircleShape)
                             .background(Palette.Neutral900.copy(alpha = 0.9f), CircleShape)
                             .border(1.dp, Palette.Amber500.copy(alpha = 0.5f), CircleShape)
-                            .clickable(onClick = onClose),
+                            .clickable(enabled = closeEnabled, onClick = onClose),
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(Icons.Close, 20.dp, Palette.Amber300, strokeWidth = 2.5f)
@@ -164,16 +169,17 @@ private fun StatusPill(isTrial: Boolean, seconds: Int?) {
 
 /** The big gold button (GameOverModal's PLAY AGAIN). */
 @Composable
-fun GoldButton(text: String, tag: String, icon: LineIcon?, modifier: Modifier = Modifier, onClick: () -> Unit) {
+fun GoldButton(text: String, tag: String, icon: LineIcon?, modifier: Modifier = Modifier, enabled: Boolean = true, onClick: () -> Unit) {
     val shape = RoundedCornerShape(12.dp)
     Row(
         modifier
             .testTag(tag)
             .height(52.dp)
+            .graphicsLayer { alpha = if (enabled) 1f else DISABLED_ALPHA }
             .clip(shape)
             .background(Brush.horizontalGradient(listOf(Palette.Amber500, Palette.Amber400, Palette.Yellow500)), shape)
             .border(1.dp, Palette.Amber300.copy(alpha = 0.4f), shape)
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 24.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),

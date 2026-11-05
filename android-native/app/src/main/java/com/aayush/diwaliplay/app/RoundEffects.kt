@@ -170,6 +170,7 @@ internal class RoundEffects(
             } finally {
                 // Also on the way out of an exception or cancellation: the worker must not be left waiting on this.
                 if (delivered) held?.delivered() else held?.release()
+                controller().onCompletionAnswered(req.sessionId)
             }
         }
     }

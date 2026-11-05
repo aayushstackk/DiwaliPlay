@@ -163,6 +163,20 @@ class OverlayRecompositionTest {
         assertThat(composed).isEmpty()
     }
 
+    @Test
+    fun aHeldWheelWaitingForTheServer() = assertAnimatesWithoutRecomposing {
+        SpinWheelPanel(
+            rewards = listOf(RewardItem(id = "a", name = "20% OFF"), RewardItem(id = "b", name = "Free Mug")),
+            isTrial = false,
+            localFiles = emptyMap(),
+            requestSpin = { awaitCancellation() },
+            onTick = {},
+            onVictory = {},
+            onSettled = {},
+            held = true,
+        )
+    }
+
     /** The debug override of network_security_config. Release's has no domain-config at all. */
     @Test
     fun debugCleartextOnlyToLocalTestServers() {

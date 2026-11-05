@@ -74,9 +74,13 @@ private val STATUS_HEIGHT = 44.dp
 
 private enum class WheelStage { Ready, Spinning, Voucher }
 
+private enum class Hub { Ready, Waiting, Spinning, Spent }
+
 /**
  * GameOverModal's Spin & Win panel, spun in place. [rewards] is everything the admin has set up: the wheel takes its
- * slices from it once, then from [loadRewards]. Once it has given its answer, the voucher takes the wheel's place. The
+ * slices from it once, then from [loadRewards]. Once it has given its answer, the voucher takes the wheel's place. While
+ * [held], or until those slices are in, it can't be spun and says so. [onBusy] is true from a spin's request until its
+ * prize is on show or it has failed. The
  * wheel's angle and needle are read only in layers, so a spin composes nothing per frame.
  *
  * All of this is kept here because it lasts exactly as long as the screen does: leaving the screen ends the spin too.
@@ -92,6 +96,8 @@ fun SpinWheelPanel(
     onSettled: () -> Unit,
     modifier: Modifier = Modifier,
     loadRewards: suspend () -> List<RewardItem>? = { null },
+    held: Boolean = false,
+    onBusy: (Boolean) -> Unit = {},
 ) {
     // The cached copy shows at once; today's replaces it before the wheel can be spun.
     var slices by remember { mutableStateOf(wheelRewards(rewards)) }
@@ -109,6 +115,7 @@ fun SpinWheelPanel(
     val latestVictory by rememberUpdatedState(onVictory)
     val latestSettled by rememberUpdatedState(onSettled)
     val latestLoad by rememberUpdatedState(loadRewards)
+    val latestBusy by rememberUpdatedState(onBusy)
 
     LaunchedEffect(Unit) {
         latestLoad()?.let { slices = it }
@@ -141,6 +148,7 @@ fun SpinWheelPanel(
                 stage = WheelStage.Ready
             }
         }
+        latestBusy(false)
         // Spec §10: after a failure too, the kiosk moves on. The master session is the view model's to leave alone.
         latestSettled()
     }
@@ -173,12 +181,19 @@ fun SpinWheelPanel(
                     } else {
                         // Whatever else the column is showing, the whole wheel and its pointer fit what's left.
                         val size = min(maxWidth, maxHeight * (WEB_WHEEL / (WEB_WHEEL + POINTER_OVERHANG)))
+                        val hub = when {
+                            stage == WheelStage.Spinning -> Hub.Spinning
+                            hasSpun && !isTrial -> Hub.Spent
+                            !loaded || held -> Hub.Waiting
+                            else -> Hub.Ready
+                        }
                         Wheel(
-                            slices, size, angle, flapper, stage == WheelStage.Spinning || !loaded, isTrial, hasSpun,
+                            slices, size, angle, flapper, hub,
                             Modifier.offset(y = size * (POINTER_OVERHANG / WEB_WHEEL) / 2),
                         ) {
-                            if (!loaded || stage == WheelStage.Spinning || (!isTrial && hasSpun)) return@Wheel
+                            if (hub != Hub.Ready) return@Wheel
                             if (!isTrial) hasSpun = true
+                            latestBusy(true)
                             failed = false
                             won = null
                             stage = WheelStage.Spinning
@@ -192,8 +207,8 @@ fun SpinWheelPanel(
                     } else {
                         Label(
                             when {
-                                !loaded -> "Loading wheel..."
                                 stage == WheelStage.Spinning -> "Spinning..."
+                                !loaded || held -> "Getting your wheel ready..."
                                 isTrial -> "Master OTP Active: Unlimited spins enabled"
                                 hasSpun -> "Spin chance used for this game"
                                 else -> "Tap the wheel to spin and win"
@@ -240,15 +255,12 @@ private fun Wheel(
     size: Dp,
     angle: MutableDoubleState,
     flapper: MutableFloatState,
-    spinning: Boolean,
-    isTrial: Boolean,
-    hasSpun: Boolean,
+    hub: Hub,
     modifier: Modifier,
     onSpin: () -> Unit,
 ) {
     val described = slices.joinToString { it.name }
     val scale = size / WEB_WHEEL
-    val canSpin = !spinning && !(hasSpun && !isTrial)
     Box(
         modifier.size(size).testTag(Tags.WHEEL).semantics { contentDescription = described },
         contentAlignment = Alignment.Center,
@@ -259,7 +271,7 @@ private fun Wheel(
                 .fillMaxSize()
                 .clip(CircleShape)
                 .background(Brush.radialGradient(0.9f to Palette.Amber500.copy(alpha = 0.3f), 1f to Color.Transparent), CircleShape)
-                .clickable(enabled = canSpin, onClick = onSpin),
+                .clickable(enabled = hub == Hub.Ready, onClick = onSpin),
         )
         Canvas(
             Modifier
@@ -269,32 +281,40 @@ private fun Wheel(
         ) {
             drawIntoCanvas { drawWheel(it.nativeCanvas, this.size.width, slices) }
         }
-        SpinButton(scale, spinning, hasSpun && !isTrial, onSpin)
+        SpinButton(scale, hub, onSpin)
         Pointer(scale, flapper, Modifier.align(Alignment.TopCenter).offset(y = -(POINTER_OVERHANG * scale)))
     }
 }
 
 @Composable
-private fun SpinButton(scale: Float, spinning: Boolean, spent: Boolean, onSpin: () -> Unit) {
+private fun SpinButton(scale: Float, hub: Hub, onSpin: () -> Unit) {
     Box(
         Modifier
             .testTag(Tags.SPIN_BUTTON)
             .size(64.dp * scale)
-            .graphicsLayer { alpha = if (spinning || spent) 0.75f else 1f }
+            .graphicsLayer { alpha = if (hub == Hub.Spinning || hub == Hub.Spent) 0.75f else 1f }
             .clip(CircleShape)
             .background(Brush.verticalGradient(listOf(Palette.Amber300, Palette.Amber500, Color(0xFFB45309))), CircleShape)
             .border(4.dp * scale / 1.2f, Color(0xFF140D07), CircleShape)
-            .clickable(enabled = !spinning && !spent, onClick = onSpin),
+            .clickable(enabled = hub == Hub.Ready, onClick = onSpin),
         contentAlignment = Alignment.Center,
     ) {
-        Label(
-            when {
-                spinning -> "..."
-                spent -> "DONE"
-                else -> "SPIN"
-            },
-            (13.3f * scale).sp, Palette.Neutral950, family = Fonts.Display, weight = FontWeight.Black, tracking = TrackingWider,
-        )
+        if (hub == Hub.Waiting) {
+            // Moving, so it's plainly on its way rather than broken.
+            Column(Modifier.testTag(Tags.SPIN_WAITING), horizontalAlignment = Alignment.CenterHorizontally) {
+                Spinner(20.dp * scale, Palette.Neutral950)
+                Label("WAIT", (6.5f * scale).sp, Palette.Neutral950, family = Fonts.Display, weight = FontWeight.Black, tracking = TrackingWider)
+            }
+        } else {
+            Label(
+                when (hub) {
+                    Hub.Spinning -> "..."
+                    Hub.Spent -> "DONE"
+                    else -> "SPIN"
+                },
+                (13.3f * scale).sp, Palette.Neutral950, family = Fonts.Display, weight = FontWeight.Black, tracking = TrackingWider,
+            )
+        }
     }
 }
 

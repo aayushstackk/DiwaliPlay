@@ -62,6 +62,12 @@ private const val WELCOME_MS = 800L
 private const val AUDIO_READY_TIMEOUT_MS = 2_000L
 private const val AUDIO_READY_POLL_MS = 50L
 
+/**
+ * The longest the wheel waits for `completeSession` to answer. The server files a spin's prize in the field completion
+ * fills with the score prize, so a spin must not get there first; but a player can't be kept waiting for a cold server.
+ */
+internal const val SPIN_HOLD_MS = 5_000L
+
 /** GameOverModal AUTO_RETURN_SECONDS. */
 internal const val AUTO_RETURN_SECONDS = 20
 
@@ -180,6 +186,7 @@ class GameViewModel(
 
     @Volatile private var activePlayerName = "Player"
     private var autoReturnJob: Job? = null
+    private var spinHoldJob: Job? = null
     private var startJob: Job? = null
     private var previousPhase: GamePhase = GamePhase.Startup
     private var cameraOn = false
@@ -411,6 +418,8 @@ class GameViewModel(
     private fun cancelEndOfRound() {
         autoReturnJob?.cancel()
         autoReturnJob = null
+        spinHoldJob?.cancel()
+        spinHoldJob = null
         _autoReturnSeconds.value = null
         _feedbackRecorded.value = null
     }
@@ -496,6 +505,13 @@ class GameViewModel(
         } else if (!wanted && cameraOn) {
             cameraOn = false
             deps.tracking.stop()
+        }
+
+        if (p is GamePhase.GameOver && p.spinHeld && spinHoldJob == null) {
+            spinHoldJob = scope.launch {
+                delay(SPIN_HOLD_MS)
+                controller.onSpinHoldExpired()
+            }
         }
 
         // A camera that was already running sends no new status (a trial replay of a live-camera touch round).

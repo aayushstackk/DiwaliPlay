@@ -287,6 +287,54 @@ class GameControllerTest {
     }
 
     @Test
+    fun theWheelIsHeldUntilCompletionIsAnswered() {
+        toCard(session)
+        assertThat(over.spinHeld).isTrue()
+        c.onCompletionAnswered("other_session") // not this round's
+        assertThat(over.spinHeld).isTrue()
+        c.onCompletionAnswered("sess_1")
+        assertThat(over.spinHeld).isFalse()
+    }
+
+    @Test
+    fun theHoldCanExpire() {
+        toCard(session)
+        c.onSpinHoldExpired()
+        assertThat(over.spinHeld).isFalse()
+        c.onRoundCompleted("sess_1", mug) // the answer can still come
+        assertThat(over.card.earnedReward).isEqualTo(mug)
+        assertThat(over.spinHeld).isFalse()
+    }
+
+    @Test
+    fun aRoundWithNoCompletionToWaitForIsNotHeld() {
+        toCard(trial)
+        assertThat(over.spinHeld).isFalse()
+        c.onExit()
+        toCard(session.copy(sessionId = ""))
+        assertThat(over.spinHeld).isFalse()
+    }
+
+    @Test
+    fun theHoldSurvivesWhatElseChangesOnTheScreen() {
+        toCard(session)
+        c.onRoundCompleted("sess_1", mug)
+        c.onSessionStarted("1234", "sess_late")
+        assertThat(over.spinHeld).isTrue()
+        c.onCompletionAnswered("sess_1") // keyed by the id completion went out with
+        assertThat(over.spinHeld).isFalse()
+    }
+
+    @Test
+    fun aLateAnswerFromAnEarlierRoundDoesNotReleaseThisOne() {
+        toCard(session)
+        c.onExit()
+        toCard(session.copy(sessionId = "sess_2"))
+        c.onCompletionAnswered("sess_1")
+        assertThat(over.spinHeld).isTrue()
+    }
+
+    @Test
     fun exitGoesHomeFromTheScreenWithoutAbandoning() {
         toCard(session)
         c.onExit()

@@ -2,7 +2,9 @@
 # Converts the WAVs rendered by run.mjs into lossless FLAC assets for the native app, writes
 # manifest.json and checks that every built-in sound id resolves (exits non-zero on a miss).
 #
-#   scripts/export-native-sounds/convert.sh <wavDir>
+#   scripts/export-native-sounds/convert.sh <wavDir> [--keep-existing]
+#
+# --keep-existing encodes only the WAVs in <wavDir> and leaves every other asset alone (run.mjs --only).
 #
 # Encoder: ffmpeg's built-in lossless FLAC encoder (`ffmpeg -i in.wav -c:a flac -compression_level 8
 # out.flac`), keeping the source sample rate and channels. Lossless keeps the files identical to the
@@ -23,7 +25,9 @@ fi
 [[ -f "$WAV_DIR/plan.json" ]] || { echo "convert.sh: $WAV_DIR/plan.json not found (run run.mjs first)" >&2; exit 1; }
 
 mkdir -p "$ASSETS"
-rm -f "$ASSETS"/*.ogg "$ASSETS"/*.flac "$ASSETS/manifest.json"
+if [[ "${2:-}" != "--keep-existing" ]]; then
+  rm -f "$ASSETS"/*.ogg "$ASSETS"/*.flac "$ASSETS/manifest.json"
+fi
 
 count=0
 for wav in "$WAV_DIR"/*.wav; do

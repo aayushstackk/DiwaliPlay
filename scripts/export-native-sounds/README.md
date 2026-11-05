@@ -19,6 +19,9 @@ regenerated assets.
   (`-c:a flac -compression_level 8`), so the files are identical to the web render and the BGM
   loop lengths are exact. FLAC replaces the OGG Vorbis named in spec §8 because the installed
   ffmpeg has no libvorbis and no extra tools are installed (controller ruling).
+- `--only <key>` renders one sound and writes only its FLAC and `manifest.json`, leaving the other
+  committed files alone. Use it to add a sound: Chrome differs by ±1 LSB between runs, so a full
+  re-export would touch every file.
 - `--no-convert` stops after the WAVs. `convert.sh <wavDir>` can then be run on its own.
 - To debug in a browser, run Vite and open `/scripts/export-native-sounds/index.html`. Then call
   `await exportSound('bomb_pop')` from the console.
@@ -55,3 +58,7 @@ regenerated assets.
   previous bar and the limiter carry into it, so it loops seamlessly.
 - **Spin tick.** The `getOrCreateTickBuffer` buffer × 0.5. Live gain is 0.2–0.5, so native volume
   is `liveGain / 0.5`.
+- **Spin win.** `spin_victory` is `SpinWheelModal.playVictoryChime`, which isn't a `SoundEngine` sound:
+  its own oscillators, straight to the destination with no limiter, bus or master gain. It renders for
+  2.2 s (the last oscillator stops at 1.98 s) with no −60 dBFS trim. The native app plays it at full
+  gain, whatever the master volume or mute say, as the web does.
