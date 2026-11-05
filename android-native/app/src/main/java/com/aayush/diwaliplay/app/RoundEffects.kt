@@ -9,6 +9,7 @@ import com.aayush.diwaliplay.game.flow.GameEffects
 import com.aayush.diwaliplay.model.AbandonSessionRequest
 import com.aayush.diwaliplay.model.CompleteSessionRequest
 import com.aayush.diwaliplay.model.GameFeedback
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -46,8 +47,15 @@ internal class RoundEffects(
 ) : GameEffects {
     private val network = Channel<suspend () -> Unit>(Channel.UNLIMITED)
 
-    /** The id the last `startSession` returned. Written by the network worker. */
+    /** The id the last `startSession` to run returned, in FIFO order: what later network effects of that round mean. */
     @Volatile private var startedSessionId: String? = null
+
+    /**
+     * The current round's id, for callers outside the FIFO. Cleared as soon as a round issues `startSession`, and only
+     * that round's job may set it, so a previous round's id can't be read while this one's is still on its way.
+     */
+    @Volatile private var currentRoundSessionId: String? = null
+    private val startGeneration = AtomicInteger(0)
 
     init {
         scope.launch {
@@ -68,18 +76,21 @@ internal class RoundEffects(
         network.close()
     }
 
-    /**
-     * [id] with a stand-in replaced by the server's id. For network effects the FIFO guarantees `startSession` has
-     * finished by then; any other caller gets [id] back unchanged (still `guest_…`) if it hasn't, or if it failed.
-     */
-    fun serverId(id: String) = if (id.startsWith(GUEST_SESSION_PREFIX)) startedSessionId ?: id else id
+    /** [id] with a stand-in replaced by the server's id. For network effects: the FIFO guarantees `startSession` has finished. */
+    private fun serverId(id: String) = if (id.startsWith(GUEST_SESSION_PREFIX)) startedSessionId ?: id else id
+
+    /** [id] with a stand-in replaced by this round's server id, if it has one yet; else [id] unchanged. Any thread. */
+    fun currentServerId(id: String) = if (id.startsWith(GUEST_SESSION_PREFIX)) currentRoundSessionId ?: id else id
 
     override fun startSession(code: String) {
+        val generation = startGeneration.incrementAndGet()
+        currentRoundSessionId = null
         network.trySend {
             startedSessionId = null
             val r = api.startSession(code, KIOSK_ID)
             if (r is ApiResult.Success && r.value.success) {
                 startedSessionId = r.value.session.id
+                if (generation == startGeneration.get()) currentRoundSessionId = r.value.session.id
                 controller().onSessionStarted(code, r.value.session.id)
             } else {
                 Log.w(TAG, "startSession failed: $r")
@@ -132,6 +143,7 @@ internal class RoundEffects(
     override fun requestPhoto() {
         scope.launch {
             val jpeg = withContext(background) { tracking.captureStill() }
+            controller().onStillTaken(jpeg != null)
             delay(PHOTO_FLASH_MS)
             controller().onPhotoCaptured(jpeg)
         }

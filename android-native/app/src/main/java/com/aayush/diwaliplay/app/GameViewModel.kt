@@ -71,6 +71,12 @@ internal const val AUTO_RETURN_SECONDS = 20
  */
 internal const val FEEDBACK_THANKS_MS = 1_500L
 
+/**
+ * How long the wheel waits for today's rewards before using the copy it has. The web shows "Loading wheel..." for as long
+ * as its fetch takes; a kiosk's cold server can take most of a minute, so this one gives up.
+ */
+internal const val WHEEL_REWARDS_TIMEOUT_MS = 2_500L
+
 /** Opening the wish envelope: App.tsx onPlayChime, playSound('FLOWER_POT'). */
 private const val ENVELOPE_CHIME = "FLOWER_POT"
 
@@ -320,26 +326,32 @@ class GameViewModel(
 
     fun onFeedback(feedback: GameFeedback?) = controller.onFeedback(feedback)
 
-    /** Submit on the feedback bar: thanks the player, then sends it and ends the round. Main thread. */
+    /**
+     * Submit on the feedback bar: sends it and thanks the player. With a coupon showing, the existing countdown then runs
+     * out, so the code stays up as long as it does on the web. With none, the round ends after the thanks. Main thread.
+     */
     fun submitFeedback(feedback: GameFeedback) {
-        if (controller.phase.value !is GamePhase.Feedback || _feedbackRecorded.value != null) return
+        val p = controller.phase.value as? GamePhase.Feedback ?: return
+        if (_feedbackRecorded.value != null) return
+        controller.onFeedbackSubmitted(feedback)
+        _feedbackRecorded.value = feedback
+        if (p.reward != null || p.earnedReward != null) return
         autoReturnJob?.cancel()
         _autoReturnSeconds.value = null
-        _feedbackRecorded.value = feedback
         feedbackJob = scope.launch {
             delay(FEEDBACK_THANKS_MS)
-            controller.onFeedback(feedback)
+            controller.onFeedback(null)
         }
     }
 
     /**
      * The × button and the auto-return (GameOverModal triggerExit), from any end-of-round screen. Whatever steps are
-     * left are skipped. Feedback already submitted still goes.
+     * left are skipped.
      */
     fun exitToStart() {
         controller.onCardDone()
         controller.onSpinDone(null)
-        controller.onFeedback(_feedbackRecorded.value)
+        controller.onFeedback(null)
     }
 
     /** PLAY AGAIN: a trial round starts over (App.tsx handlePlayAgain); any other goes home. Main thread. */
@@ -373,11 +385,14 @@ class GameViewModel(
         )
         val r = deps.api.spin(request) as? ApiResult.Success ?: return SpinOutcome.Failed
         val reward = r.value.reward ?: return SpinOutcome.Failed
-        return if (r.value.success || (!trial && r.value.alreadySpun == true)) {
-            SpinOutcome.Won(reward, r.value.rewardIndex)
-        } else {
-            SpinOutcome.Failed
-        }
+        // A session that has already spun gets a 409 from the server, so it fails here with everything else.
+        return if (r.value.success) SpinOutcome.Won(reward, r.value.rewardIndex) else SpinOutcome.Failed
+    }
+
+    /** Today's slices, as the web fetches them at game over. Null if they can't be had in time: use the cached ones. */
+    suspend fun loadWheelRewards(): List<RewardItem>? = withTimeoutOrNull(WHEEL_REWARDS_TIMEOUT_MS) {
+        val info = (deps.api.getRewards() as? ApiResult.Success)?.value
+        if (info != null && info.success && info.rewards.isNotEmpty()) wheelRewards(info.rewards) else null
     }
 
     /**
@@ -429,8 +444,6 @@ class GameViewModel(
     fun onInterrupted() {
         startJob?.cancel()
         startJob = null
-        // Submitted, and only waiting for the thanks to finish.
-        _feedbackRecorded.value?.let(controller::onFeedback)
         controller.onInterrupted()
         syncToPhase(controller.phase.value)
         _startUi.update { StartUi(serverReachable = it.serverReachable) }
@@ -452,7 +465,7 @@ class GameViewModel(
      * [sessionId] (say `GamePhase.Spin.sessionId`) with the server's id if `startSession` has returned one. It stays
      * `guest_…` while that is still in flight, or if it failed. Any thread.
      */
-    fun resolvedSessionId(sessionId: String): String = effects.serverId(sessionId)
+    fun resolvedSessionId(sessionId: String): String = effects.currentServerId(sessionId)
 
     /** For the calibration screen's ring, polled at the web's 50 ms. */
     fun sampleCalibration(nowMs: Double = System.nanoTime() / 1e6): CalibrationUi {
@@ -478,6 +491,9 @@ class GameViewModel(
             deps.tracking.stop()
         }
 
+        // A camera that was already running sends no new status (a trial replay of a live-camera touch round).
+        if (cameraOn && deps.tracking.status.value is TrackingStatus.Running) controller.onPhotoCameraReady()
+
         when {
             p == GamePhase.Startup -> cancelEndOfRound()
             // GameOverModal: with rewards off the countdown starts with the card.
@@ -494,7 +510,12 @@ class GameViewModel(
     }
 
     private fun onTrackingStatus(status: TrackingStatus) {
-        if (cameraOn && (status is TrackingStatus.Failed || status is TrackingStatus.CameraLost)) controller.onCameraLost()
+        if (!cameraOn) return
+        when (status) {
+            is TrackingStatus.Failed, is TrackingStatus.CameraLost -> controller.onCameraLost()
+            is TrackingStatus.Running -> controller.onPhotoCameraReady()
+            TrackingStatus.Starting -> Unit
+        }
     }
 
     /** Only in the lobby: mid-round, a `play` could block on the loading lock. Catches up on the return to Startup. */
@@ -520,8 +541,7 @@ class GameViewModel(
     }
 
     override fun onCleared() {
-        // Report an unfinished round, and feedback waiting on its thanks, before the effects thread goes away.
-        _feedbackRecorded.value?.let(controller::onFeedback)
+        // Report an unfinished round before the effects thread goes away.
         controller.onInterrupted()
         release()
         scope.cancel()

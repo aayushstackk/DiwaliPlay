@@ -1,6 +1,8 @@
 package com.aayush.diwaliplay.app
 
 import android.Manifest
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -16,7 +18,10 @@ import com.aayush.diwaliplay.branding.BrandingState
 import com.aayush.diwaliplay.branding.normalizedForBranding
 import com.aayush.diwaliplay.model.BombConfig
 import com.aayush.diwaliplay.model.DEFAULT_BOMB_SETTINGS
+import com.aayush.diwaliplay.model.CompleteSessionResponse
+import com.aayush.diwaliplay.model.EarnedReward
 import com.aayush.diwaliplay.model.GameFeedback
+import com.aayush.diwaliplay.model.GameSession
 import com.aayush.diwaliplay.model.ListBombsResponse
 import com.aayush.diwaliplay.model.RewardItem
 import com.aayush.diwaliplay.model.RewardsInfo
@@ -24,6 +29,7 @@ import com.aayush.diwaliplay.model.SpinWheelResponse
 import com.aayush.diwaliplay.model.SystemSettings
 import com.google.common.truth.Truth.assertThat
 import java.io.IOException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.After
 import org.junit.Before
@@ -203,6 +209,87 @@ class EndOfRoundFlowTest {
         waitForTag(Tags.HUD_TIMER)
         waitForTag(Tags.CARD_SCREEN)
         assertThat(api.totalCalls).isEqualTo(0)
+    }
+
+    @Test
+    fun aLateCameraHoldsTheCountdownThenThePhotoHappens() {
+        launch(rewardsEnabled = false)
+        tracking.startsReady = false
+        "1234".forEach { tap(Tags.key(it)) }
+        tap(Tags.PLAY)
+        waitForTag(Tags.PHOTO_SCREEN)
+        val waitUntil = System.currentTimeMillis() + 2_000
+        while (System.currentTimeMillis() < waitUntil) {
+            pump()
+            assertThat(hasTag(Tags.PHOTO_COUNT)).isFalse()
+        }
+        tracking.becomeReady()
+        waitForTag(Tags.PHOTO_COUNT)
+        waitForTag(Tags.CARD_SCREEN)
+    }
+
+    @Test
+    fun aFailedCaptureGoesToTheCardWithNoStamp() {
+        launch(rewardsEnabled = false)
+        tracking.still = null
+        "1234".forEach { tap(Tags.key(it)) }
+        tap(Tags.PLAY)
+        waitForTag(Tags.PHOTO_SCREEN)
+        waitUntil("the card") {
+            assertThat(hasTag(Tags.PHOTO_CAPTURED)).isFalse()
+            hasTag(Tags.CARD_SCREEN)
+        }
+    }
+
+    @Test
+    fun aLateScorePrizeShowsOnTheWheelAndOnFeedback() {
+        launch(rewardsEnabled = true)
+        val answer = CompletableDeferred<Unit>()
+        val mug = EarnedReward("m", "Free Mug", "", "", "MUG50")
+        api.onComplete = { req ->
+            answer.await()
+            ApiResult.Success(CompleteSessionResponse(success = true, session = GameSession(id = req.sessionId, userId = "u1", earnedReward = mug), user = TEST_USER))
+        }
+        playToCard()
+        tap(Tags.CARD_CONTINUE)
+        waitForTag(Tags.SPIN_SCREEN)
+        assertThat(hasTag(Tags.CARD_REWARD)).isFalse()
+        answer.complete(Unit)
+        waitForTag(Tags.CARD_REWARD)
+
+        api.onSpin = { ApiResult.NetworkError(IOException("down")) }
+        tap(Tags.SPIN_BUTTON)
+        waitForTag(Tags.SPIN_ERROR)
+        tap(Tags.SPIN_CONTINUE)
+        waitForTag(Tags.FEEDBACK_SCREEN)
+        assertThat(hasTag(Tags.CARD_REWARD)).isTrue()
+
+        // A coupon on show: submitting doesn't take it away.
+        tap(Tags.feedback(GameFeedback.Good.name))
+        tap(Tags.FEEDBACK_SUBMIT)
+        waitForTag(Tags.FEEDBACK_THANKS)
+        waitUntil("the feedback") { api.feedback.isNotEmpty() }
+        val until = System.currentTimeMillis() + FEEDBACK_THANKS_MS + 1_000
+        while (System.currentTimeMillis() < until) pump()
+        assertThat(hasTag(Tags.CARD_REWARD)).isTrue()
+        assertThat(hasTag(Tags.START_SCREEN)).isFalse()
+    }
+
+    @Test
+    fun theWheelSpinsOnTodaysRewards() {
+        launch(rewardsEnabled = true)
+        val fresh = RewardItem(id = "new", name = "Brand New", couponCode = "NEW")
+        api.onGetRewards = { ApiResult.Success(RewardsInfo(success = true, enabled = true, rewards = listOf(fresh))) }
+        api.onSpin = { ApiResult.Success(SpinWheelResponse(success = true, reward = fresh)) }
+        playToCard()
+        tap(Tags.CARD_CONTINUE)
+        waitForTag(Tags.SPIN_SCREEN)
+        waitUntil("today's slices") {
+            compose.onAllNodes(hasTestTag(Tags.WHEEL) and hasContentDescription("Brand New")).fetchSemanticsNodes().isNotEmpty()
+        }
+        tap(Tags.SPIN_BUTTON)
+        waitForTag(Tags.SPIN_VOUCHER)
+        assertThat(api.spins).hasSize(1)
     }
 
     @Test

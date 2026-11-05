@@ -22,6 +22,9 @@ class FakeTrackingPipeline : TrackingSource {
     @Volatile var stops = 0
     @Volatile var still: ByteArray? = byteArrayOf(1, 2, 3)
 
+    /** False: [start] stays at Starting until [becomeReady], as a real camera does while it opens. */
+    @Volatile var startsReady = true
+
     override fun snapshot(): TrackingSnapshot = snapshotValue
     override fun latestFrame(): CameraFrame? = null
     override fun captureStill(): ByteArray? = still
@@ -30,7 +33,7 @@ class FakeTrackingPipeline : TrackingSource {
         if (running) return
         running = true
         starts++
-        _status.value = TrackingStatus.Running("CPU", 5.0, 30.0)
+        _status.value = if (startsReady) RUNNING else TrackingStatus.Starting
     }
 
     override fun stop() {
@@ -40,6 +43,8 @@ class FakeTrackingPipeline : TrackingSource {
     }
 
     fun emit(status: TrackingStatus) { _status.value = status }
+
+    fun becomeReady() = emit(RUNNING)
 
     fun holdHandsInBoxes() { snapshotValue = snapshot(detected = true, inBoxes = true, calibrated = true) }
 
@@ -53,6 +58,10 @@ class FakeTrackingPipeline : TrackingSource {
             ),
             emptyList(),
         )
+    }
+
+    private companion object {
+        val RUNNING = TrackingStatus.Running("CPU", 5.0, 30.0)
     }
 
     private fun snapshot(detected: Boolean, inBoxes: Boolean, calibrated: Boolean) = TrackingSnapshot(

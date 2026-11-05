@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aayush.diwaliplay.app.ui.theme.Fonts
 import com.aayush.diwaliplay.app.ui.theme.Palette
+import com.aayush.diwaliplay.model.EarnedReward
 import com.aayush.diwaliplay.model.GameFeedback
 import com.aayush.diwaliplay.model.RewardItem
 import java.io.File
@@ -53,6 +54,7 @@ fun FeedbackScreen(
     onSubmit: (GameFeedback) -> Unit,
     onPlayAgain: () -> Unit,
     onClose: () -> Unit,
+    earnedReward: EarnedReward? = null,
 ) {
     EndOfRoundFrame(Tags.FEEDBACK_SCREEN, isTrial, autoReturnSeconds, onClose) {
         Column(
@@ -63,6 +65,10 @@ fun FeedbackScreen(
             Column(Modifier.width(860.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 if (reward != null) {
                     VoucherStrip("YOUR FESTIVE PRIZE", reward.name, reward.couponCode, reward.imageUrl.ifEmpty { null }, localFiles, Tags.FEEDBACK_REWARD)
+                    Spacer(Modifier.height(32.dp))
+                }
+                if (earnedReward != null) {
+                    EarnedRewardStrip(earnedReward, localFiles)
                     Spacer(Modifier.height(32.dp))
                 }
                 if (!isTrial) {

@@ -8,7 +8,9 @@ import android.graphics.Color
 import android.provider.MediaStore
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -34,6 +36,8 @@ import com.aayush.diwaliplay.tracking.camera.TrackingStatus
 import com.google.common.truth.Truth.assertThat
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
 import org.junit.Rule
 import org.junit.Test
@@ -148,6 +152,106 @@ class EndOfRoundScreensTest {
         }
         compose.mainClock.advanceTimeBy(200)
         dump(compose.onRoot().captureToImage().asAndroidBitmap(), "task19_photo.png")
+    }
+
+    @Test
+    fun theSpinButtonWaitsForTodaysRewards() {
+        val gate = CompletableDeferred<List<RewardItem>?>()
+        val spins = AtomicInteger(0)
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            DesignCanvas {
+                SpinWheelScreen(
+                    rewards = listOf(RewardItem(id = "old", name = "Old Prize")),
+                    isTrial = false,
+                    autoReturnSeconds = null,
+                    localFiles = emptyMap(),
+                    requestSpin = {
+                        spins.incrementAndGet()
+                        awaitCancellation()
+                    },
+                    onTick = {},
+                    onVictory = {},
+                    onSettled = {},
+                    onContinue = {},
+                    onClose = {},
+                    loadRewards = { gate.await() },
+                )
+            }
+        }
+        compose.mainClock.advanceTimeBy(100)
+        compose.onNodeWithTag(Tags.SPIN_BUTTON).performClick()
+        compose.mainClock.advanceTimeBy(100)
+        assertThat(spins.get()).isEqualTo(0)
+
+        gate.complete(null) // failed: the cached slices stay and the wheel can spin
+        compose.mainClock.advanceTimeBy(100)
+        compose.onNodeWithTag(Tags.SPIN_BUTTON).performClick()
+        compose.mainClock.advanceTimeBy(100)
+        assertThat(spins.get()).isEqualTo(1)
+    }
+
+    private fun photoScreen(phase: GamePhase.PhotoCountdown, status: TrackingStatus = TrackingStatus.Running("CPU", 5.0, 30.0)) {
+        compose.mainClock.autoAdvance = false
+        compose.setContent { DesignCanvas { PhotoCountdownScreen(phase, "Asha", status) { null } } }
+        compose.mainClock.advanceTimeBy(100)
+    }
+
+    private fun shows(tag: String) = compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()
+
+    @Test
+    fun theStampOnlyShowsForARealStill() {
+        photoScreen(GamePhase.PhotoCountdown(0))
+        assertThat(shows(Tags.PHOTO_CAPTURED)).isFalse()
+    }
+
+    @Test
+    fun theStampShowsOnceCaptured() {
+        photoScreen(GamePhase.PhotoCountdown(0, captured = true))
+        assertThat(shows(Tags.PHOTO_CAPTURED)).isTrue()
+    }
+
+    @Test
+    fun noCountdownShowsWhileWaitingForTheCamera() {
+        photoScreen(GamePhase.PhotoCountdown(5, waitingForCamera = true), TrackingStatus.Starting)
+        assertThat(shows(Tags.PHOTO_COUNT)).isFalse()
+        assertThat(shows(Tags.PHOTO_ERROR)).isFalse()
+    }
+
+    @Test
+    fun cameraErrorStateImage() {
+        photoScreen(GamePhase.PhotoCountdown(0, cameraError = true), TrackingStatus.Starting)
+        assertThat(shows(Tags.PHOTO_ERROR)).isTrue()
+        assertThat(shows(Tags.PHOTO_CAPTURED)).isFalse()
+        dump(compose.onRoot().captureToImage().asAndroidBitmap(), "task19_photo_error.png")
+    }
+
+    @Test
+    fun wheelWithAScorePrizeImage() {
+        val rewards = listOf("₹1000/- OFF", "20% OFF", "Free Mug", "₹500").mapIndexed { i, n -> RewardItem(id = "r$i", name = n) }
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            DesignCanvas {
+                SpinWheelScreen(
+                    rewards, false, null, emptyMap(), { SpinOutcome.Failed }, {}, {}, {}, {}, {},
+                    earnedReward = EarnedReward("m", "Free Mug", "", "", "MUG50"),
+                )
+            }
+        }
+        compose.mainClock.advanceTimeBy(100)
+        compose.onNodeWithTag(Tags.SPIN_BUTTON).performClick()
+        compose.mainClock.advanceTimeBy(6_000) // settled: the Continue button is up, the tightest layout
+        dump(compose.onRoot().captureToImage().asAndroidBitmap(), "task19_wheel_prize.png")
+
+        // The message has to be readable, and everything has to fit, in this tightest layout.
+        fun bounds(tag: String) = compose.onNodeWithTag(tag).getBoundsInRoot()
+        val banner = bounds(Tags.SPIN_ERROR)
+        val wheel = bounds(Tags.WHEEL)
+        val pointer = bounds(Tags.POINTER)
+        assertThat(banner.top).isAtLeast(wheel.bottom)
+        assertThat(banner.top).isAtLeast(pointer.bottom)
+        assertThat(banner.bottom).isAtMost(bounds(Tags.CARD_REWARD).top)
+        assertThat(bounds(Tags.CARD_REWARD).bottom).isAtMost(bounds(Tags.SPIN_CONTINUE).top)
     }
 
     @Test

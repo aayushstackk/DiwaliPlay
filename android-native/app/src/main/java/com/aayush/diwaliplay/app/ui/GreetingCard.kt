@@ -1,6 +1,7 @@
 package com.aayush.diwaliplay.app.ui
 
 import android.graphics.LinearGradient
+import android.util.Log
 import android.graphics.Paint
 import android.graphics.Shader
 import android.graphics.Typeface
@@ -8,7 +9,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,7 +43,6 @@ import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
@@ -56,7 +55,7 @@ import com.aayush.diwaliplay.app.CardSaver
 import com.aayush.diwaliplay.app.ui.theme.Fonts
 import com.aayush.diwaliplay.app.ui.theme.Palette
 import com.aayush.diwaliplay.game.flow.RoundCard
-import com.aayush.diwaliplay.model.EarnedReward
+import kotlinx.coroutines.CancellationException
 import java.io.File
 import java.util.Locale
 import kotlin.math.floor
@@ -81,11 +80,19 @@ fun rememberCardSaver(): CardSaver {
 
 /** Renders off the main thread, saves on IO, and frees the bitmap. True if the card was saved. */
 suspend fun saveCard(saver: CardSaver, card: RoundCard, brandName: String): Boolean = withContext(Dispatchers.Default) {
-    val bitmap = renderCard(card.toCardData(brandName))
     try {
-        withContext(Dispatchers.IO) { saver.save(bitmap, card.playerName, card.score.score) } != null
-    } finally {
-        bitmap.recycle()
+        val bitmap = renderCard(card.toCardData(brandName))
+        try {
+            withContext(Dispatchers.IO) { saver.save(bitmap, card.playerName, card.score.score) } != null
+        } finally {
+            bitmap.recycle()
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: RuntimeException) {
+        // In a screen's coroutine this would take the kiosk down; the player gets "Couldn't save" instead.
+        Log.e("GreetingCard", "could not render the card", e)
+        false
     }
 }
 
@@ -280,34 +287,5 @@ private fun Stat(
     ) {
         Label(value, 18.sp, color, family = Fonts.Mono, weight = FontWeight.Bold)
         Label(label, 10.sp, labelColor, family = Fonts.Mono, weight = FontWeight.SemiBold, tracking = TrackingWider)
-    }
-}
-
-@Composable
-private fun EarnedRewardStrip(reward: EarnedReward, localFiles: Map<String, File>) {
-    var copied by remember { mutableStateOf(false) }
-    val clipboard = LocalClipboardManager.current
-    LaunchedEffect(copied) {
-        if (copied) {
-            delay(2_000)
-            copied = false
-        }
-    }
-    VoucherStrip("SCORE PRIZE UNLOCKED!", reward.name, reward.couponCode, reward.imageUrl, localFiles, Tags.CARD_REWARD) {
-        val shape = RoundedCornerShape(8.dp)
-        Box(
-            Modifier
-                .size(36.dp)
-                .clip(shape)
-                .background(Palette.Amber500.copy(alpha = 0.2f), shape)
-                .border(1.dp, Palette.Amber400.copy(alpha = 0.5f), shape)
-                .clickable {
-                    clipboard.setText(AnnotatedString(reward.couponCode))
-                    copied = true
-                },
-            contentAlignment = Alignment.Center,
-        ) {
-            if (copied) Icon(Icons.Check, 16.dp, Palette.Emerald400) else Icon(Icons.Copy, 16.dp, Palette.Amber200)
-        }
     }
 }

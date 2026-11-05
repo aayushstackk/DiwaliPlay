@@ -47,6 +47,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -57,6 +59,7 @@ import com.aayush.diwaliplay.app.parseVoucherTitle
 import com.aayush.diwaliplay.app.ui.theme.Fonts
 import com.aayush.diwaliplay.app.ui.theme.Palette
 import com.aayush.diwaliplay.app.wheelRewards
+import com.aayush.diwaliplay.model.EarnedReward
 import com.aayush.diwaliplay.model.RewardItem
 import java.io.File
 import kotlinx.coroutines.delay
@@ -68,7 +71,8 @@ const val REWARDS_UNAVAILABLE = "Rewards are unavailable right now"
 /** Web: `animate-voucher-zoom`'s length, and the wait before the auto-return starts. */
 private const val VOUCHER_ZOOM_MS = 450
 
-private val WHEEL_SIZE = 760.dp
+/** Leaves room, in the tightest case, for the score prize, Continue, the failure banner and the pointer above the wheel. */
+private val WHEEL_SIZE = 640.dp
 
 /** The web's wheel is 250 px beside the wish; on its own step it's scaled up, and its pointer and button with it. */
 private val POINTER_SCALE = WHEEL_SIZE / 250.dp
@@ -91,8 +95,12 @@ fun SpinWheelScreen(
     onSettled: () -> Unit,
     onContinue: (RewardItem?) -> Unit,
     onClose: () -> Unit,
+    earnedReward: EarnedReward? = null,
+    loadRewards: suspend () -> List<RewardItem>? = { null },
 ) {
-    val slices = remember { wheelRewards(rewards) }
+    // The cached copy shows at once; today's replaces it before the wheel can be spun.
+    var slices by remember { mutableStateOf(wheelRewards(rewards)) }
+    var loaded by remember { mutableStateOf(false) }
     var stage by remember { mutableStateOf(WheelStage.Ready) }
     var spins by remember { mutableIntStateOf(0) }
     var hasSpun by remember { mutableStateOf(false) }
@@ -106,7 +114,12 @@ fun SpinWheelScreen(
     val latestVictory by rememberUpdatedState(onVictory)
     val latestSettled by rememberUpdatedState(onSettled)
 
-    LaunchedEffect(Unit) { if (slices.isEmpty()) latestSettled() }
+    val latestLoad by rememberUpdatedState(loadRewards)
+    LaunchedEffect(Unit) {
+        latestLoad()?.let { slices = it }
+        loaded = true
+        if (slices.isEmpty()) latestSettled()
+    }
 
     LaunchedEffect(spins) {
         if (spins == 0) return@LaunchedEffect
@@ -162,13 +175,12 @@ fun SpinWheelScreen(
                         Label("SPIN & WIN", 20.sp, Palette.Amber200, family = Fonts.Display, weight = FontWeight.Bold, tracking = TrackingWider)
                         Icon(Icons.Sparkles, 18.dp, Palette.Amber400)
                     }
-                    if (failed) ErrorBanner()
                     Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                         if (slices.isEmpty()) {
-                            GiftPass()
+                            if (loaded) GiftPass() else Spinner(48.dp, Palette.Amber400)
                         } else {
-                            Wheel(slices, angle, flapper, stage == WheelStage.Spinning, isTrial, hasSpun) {
-                                if (stage == WheelStage.Spinning || (!isTrial && hasSpun)) return@Wheel
+                            Wheel(slices, angle, flapper, stage == WheelStage.Spinning || !loaded, isTrial, hasSpun) {
+                                if (!loaded || stage == WheelStage.Spinning || (!isTrial && hasSpun)) return@Wheel
                                 if (!isTrial) hasSpun = true
                                 failed = false
                                 won = null
@@ -177,8 +189,10 @@ fun SpinWheelScreen(
                             }
                         }
                     }
+                    if (failed) ErrorBanner()
                     Label(
                         when {
+                            !loaded -> "Loading wheel..."
                             stage == WheelStage.Spinning -> "Spinning..."
                             isTrial -> "Master OTP Active: Unlimited spins enabled"
                             hasSpun -> "Spin chance used for this game"
@@ -189,8 +203,12 @@ fun SpinWheelScreen(
                 }
             }
         }
+        if (earnedReward != null) {
+            Spacer(Modifier.height(10.dp))
+            EarnedRewardStrip(earnedReward, localFiles)
+        }
         // Nothing to wait for once the wheel has answered, or if it has nothing on it.
-        if (stage != WheelStage.Spinning && (won != null || failed || slices.isEmpty())) {
+        if (loaded && stage != WheelStage.Spinning && (won != null || failed || slices.isEmpty())) {
             Spacer(Modifier.height(10.dp))
             GoldButton("CONTINUE", Tags.SPIN_CONTINUE, null, Modifier.fillMaxWidth()) { onContinue(won) }
         }
@@ -202,7 +220,7 @@ private fun ColumnScope.ErrorBanner() {
     val shape = RoundedCornerShape(8.dp)
     Row(
         Modifier
-            .padding(top = 6.dp)
+            .padding(bottom = 6.dp)
             .testTag(Tags.SPIN_ERROR)
             .background(Palette.Rose950.copy(alpha = 0.8f), shape)
             .border(1.dp, Palette.Rose500.copy(alpha = 0.4f), shape)
@@ -235,7 +253,11 @@ private fun Wheel(
     hasSpun: Boolean,
     onSpin: () -> Unit,
 ) {
-    Box(Modifier.size(WHEEL_SIZE), contentAlignment = Alignment.Center) {
+    val described = slices.joinToString { it.name }
+    Box(
+        Modifier.size(WHEEL_SIZE).testTag(Tags.WHEEL).semantics { contentDescription = described },
+        contentAlignment = Alignment.Center,
+    ) {
         // Glow for shadow-[0_0_25px_rgba(245,158,11,0.3)].
         Box(
             Modifier.fillMaxSize().background(
@@ -287,7 +309,7 @@ private fun Pointer(flapper: MutableFloatState, modifier: Modifier) {
     val jewel: Dp = 16.dp * POINTER_SCALE
     val needleWidth: Dp = 14.dp * POINTER_SCALE
     val needleHeight: Dp = 17.dp * POINTER_SCALE
-    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(modifier.testTag(Tags.POINTER), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             Modifier
                 .size(jewel)

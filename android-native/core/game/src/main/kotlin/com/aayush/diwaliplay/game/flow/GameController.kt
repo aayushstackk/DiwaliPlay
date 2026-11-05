@@ -70,6 +70,9 @@ class GameController(
     private var completed = false
     private var completedSessionId = ""
     private var cameraLost = false
+    private var photoCameraReady = false
+    private var earnedReward: EarnedReward? = null
+    private var feedbackSent = false
     private var simResetPending = false
 
     private val touchQueue = DoubleArray(MAX_QUEUED_TOUCHES * 2)
@@ -127,12 +130,17 @@ class GameController(
 
     /**
      * The completeSession response's `session.earnedReward` (App.tsx setEarnedReward). Keyed by [sessionId] (the
-     * id the request was sent with); applied to the card only while that round's [GamePhase.GameOver] is showing.
+     * id the request was sent with). A slow server can answer after the player has left the card, so it applies to
+     * whichever of that round's end-of-round steps is showing, and those after it.
      */
     fun onRoundCompleted(sessionId: String, earnedReward: EarnedReward?) = locked {
-        val p = _phase.value as? GamePhase.GameOver ?: return@locked
-        if (completed && sessionId == completedSessionId && earnedReward != null) {
-            _phase.value = GamePhase.GameOver(p.card.withEarnedReward(earnedReward))
+        if (!completed || sessionId != completedSessionId || earnedReward == null) return@locked
+        this.earnedReward = earnedReward
+        when (val p = _phase.value) {
+            is GamePhase.GameOver -> _phase.value = GamePhase.GameOver(p.card.withEarnedReward(earnedReward))
+            is GamePhase.Spin -> _phase.value = p.copy(earnedReward = earnedReward)
+            is GamePhase.Feedback -> _phase.value = p.copy(earnedReward = earnedReward)
+            else -> Unit
         }
     }
 
@@ -160,6 +168,23 @@ class GameController(
         }
     }
 
+    /**
+     * The camera is delivering frames. Camera rounds have been tracking all along and never wait for this; a touch round
+     * does, because its camera may only open for the photo. PhotoCaptureModal: the countdown starts "strictly once camera
+     * is verified ready". May come at any time; it holds for the rest of the round.
+     */
+    fun onPhotoCameraReady() = locked {
+        photoCameraReady = true
+        val p = _phase.value
+        if (p is GamePhase.PhotoCountdown && p.waitingForCamera) startPhotoCountdown(clock())
+    }
+
+    /** The capture has run, ahead of [onPhotoCaptured]. Only a real still gets the flash and the stamp. */
+    fun onStillTaken(success: Boolean) = locked {
+        val p = _phase.value
+        if (success && photoRequested && p is GamePhase.PhotoCountdown && !p.cameraError) _phase.value = p.copy(captured = true)
+    }
+
     /** The still requested via [GameEffects.requestPhoto] (null when capture failed). */
     fun onPhotoCaptured(jpeg: ByteArray?) = locked {
         if (_phase.value is GamePhase.PhotoCountdown) finishRound(jpeg)
@@ -173,25 +198,37 @@ class GameController(
         if (_phase.value !is GamePhase.GameOver) return@locked
         val s = session ?: return@locked
         _phase.value = if (settings.rewardsEnabled) {
-            GamePhase.Spin(sessionId = sessionId, playerName = s.userName, mobileNumber = s.mobileNumber)
+            GamePhase.Spin(sessionId = sessionId, playerName = s.userName, mobileNumber = s.mobileNumber, earnedReward = earnedReward)
         } else {
-            GamePhase.Feedback(null)
+            GamePhase.Feedback(null, earnedReward)
         }
     }
 
     /** The wheel finished ([reward] null when none/failed). */
     fun onSpinDone(reward: RewardItem?) = locked {
-        if (_phase.value is GamePhase.Spin) _phase.value = GamePhase.Feedback(reward)
+        if (_phase.value is GamePhase.Spin) _phase.value = GamePhase.Feedback(reward, earnedReward)
+    }
+
+    /**
+     * The player submitted feedback, and the feedback step stays up (the web's bar doesn't close its screen). Sends it
+     * now, once; leave later with `onFeedback(null)`. Trial rounds send nothing.
+     */
+    fun onFeedbackSubmitted(feedback: GameFeedback) = locked {
+        if (_phase.value is GamePhase.Feedback) sendFeedback(feedback)
+    }
+
+    private fun sendFeedback(feedback: GameFeedback) {
+        val s = session
+        if (feedbackSent || s == null || s.isTrial || sessionId.isBlank()) return
+        feedbackSent = true
+        val id = sessionId
+        outbox += { effects.submitFeedback(id, feedback) }
     }
 
     /** Feedback chosen (null = skipped / auto-return); submits it unless trial, then resets to [GamePhase.Startup]. */
     fun onFeedback(feedback: GameFeedback?) = locked {
         if (_phase.value !is GamePhase.Feedback) return@locked
-        val s = session
-        if (feedback != null && s != null && !s.isTrial && sessionId.isNotBlank()) {
-            val id = sessionId
-            outbox += { effects.submitFeedback(id, feedback) }
-        }
+        if (feedback != null) sendFeedback(feedback)
         resetToStartup()
     }
 
@@ -341,11 +378,18 @@ class GameController(
         photoRequested = false
         if (cameraLost) {
             enterPhotoCameraError(now)
+        } else if (!settings.isTouchMode || photoCameraReady) {
+            startPhotoCountdown(now)
         } else {
-            photoStep = PHOTO_COUNTDOWN_START
-            _phase.value = GamePhase.PhotoCountdown(PHOTO_COUNTDOWN_START)
-            sound(FlowSoundKeys.COUNTDOWN_1)  // handlePlayTick = playCountdownStep(1)
+            _phase.value = GamePhase.PhotoCountdown(PHOTO_COUNTDOWN_START, waitingForCamera = true)
         }
+    }
+
+    private fun startPhotoCountdown(now: Double) {
+        phaseStartMs = now
+        photoStep = PHOTO_COUNTDOWN_START
+        _phase.value = GamePhase.PhotoCountdown(PHOTO_COUNTDOWN_START)
+        sound(FlowSoundKeys.COUNTDOWN_1)  // handlePlayTick = playCountdownStep(1)
     }
 
     private fun enterPhotoCameraError(now: Double) {
@@ -356,6 +400,10 @@ class GameController(
     private fun advancePhoto(p: GamePhase.PhotoCountdown, now: Double) {
         if (p.cameraError) {
             if (now - phaseStartMs >= PHOTO_CAMERA_ERROR_MS) finishRound(null)
+            return
+        }
+        if (p.waitingForCamera) {
+            if (now - phaseStartMs >= PHOTO_WATCHDOG_MS) enterPhotoCameraError(now)
             return
         }
         if (photoRequested) {
@@ -409,6 +457,9 @@ class GameController(
         completed = false
         completedSessionId = ""
         cameraLost = false
+        photoCameraReady = false
+        earnedReward = null
+        feedbackSent = false
         photoRequested = false
         simResetPending = true
     }

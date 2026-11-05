@@ -82,11 +82,172 @@ class GameControllerTest {
 
     /** Plays [s] through to the card. */
     private fun toCard(s: SessionInfo, settings: RoundSettings = camera) {
+        c.onPhotoCameraReady() // holds for the round: a touch round doesn't wait
         toPlaying(s, settings)
         run(35_100.0)
         run(5_100.0)
         c.onPhotoCaptured(null)
         assertThat(c.phase.value).isInstanceOf(GamePhase.GameOver::class.java)
+    }
+
+    private fun touchRoundToPhoto() {
+        toPlaying(settings = touch)
+        run(35_100.0)
+    }
+
+    @Test
+    fun aLateCameraHoldsTheCountdownUntilItIsReady() {
+        touchRoundToPhoto()
+        assertThat(c.phase.value).isEqualTo(GamePhase.PhotoCountdown(5, waitingForCamera = true))
+        val ticks = fx.sounds.count { it == FlowSoundKeys.COUNTDOWN_1 }
+        run(7_000.0)
+        assertThat(c.phase.value).isEqualTo(GamePhase.PhotoCountdown(5, waitingForCamera = true))
+        assertThat(fx.calls).doesNotContain("photo")
+
+        c.onPhotoCameraReady()
+        assertThat(c.phase.value).isEqualTo(GamePhase.PhotoCountdown(5))
+        assertThat(fx.sounds.count { it == FlowSoundKeys.COUNTDOWN_1 }).isEqualTo(ticks + 1)
+        run(4_000.0)
+        assertThat(c.phase.value).isEqualTo(GamePhase.PhotoCountdown(1))
+        run(1_000.0)
+        assertThat(c.phase.value).isEqualTo(GamePhase.PhotoCountdown(0))
+        assertThat(fx.calls).contains("photo")
+    }
+
+    @Test
+    fun theWatchdogTakesAMissingCameraToTheErrorPathAt8000Ms() {
+        toPlaying(settings = touch)
+        // Land exactly on the round's end, so the wait is measured from a known moment.
+        var guard = 0
+        while (c.phase.value !is GamePhase.PhotoCountdown && guard++ < 40_000) run(1.0)
+        run(7_999.0, stepMs = 1.0)
+        assertThat(c.phase.value).isEqualTo(GamePhase.PhotoCountdown(5, waitingForCamera = true))
+        run(1.0)
+        assertThat(c.phase.value).isEqualTo(GamePhase.PhotoCountdown(0, cameraError = true))
+
+        c.onPhotoCameraReady() // too late: it changes nothing
+        assertThat(c.phase.value).isEqualTo(GamePhase.PhotoCountdown(0, cameraError = true))
+        run(2_200.0)
+        assertThat(c.phase.value).isInstanceOf(GamePhase.GameOver::class.java)
+    }
+
+    @Test
+    fun aCameraFailureWhileWaitingGoesToTheErrorPathAtOnce() {
+        touchRoundToPhoto()
+        c.onCameraLost()
+        assertThat(c.phase.value).isEqualTo(GamePhase.PhotoCountdown(0, cameraError = true))
+    }
+
+    @Test
+    fun aCameraReadyDuringTheRoundDoesNotWait() {
+        toPlaying(settings = touch)
+        c.onPhotoCameraReady()
+        run(35_100.0)
+        assertThat(c.phase.value).isEqualTo(GamePhase.PhotoCountdown(5))
+    }
+
+    @Test
+    fun cameraRoundsNeverWait() {
+        toPlaying()
+        run(35_100.0)
+        assertThat(c.phase.value).isEqualTo(GamePhase.PhotoCountdown(5))
+    }
+
+    @Test
+    fun cameraReadinessDoesNotCarryIntoTheNextRound() {
+        toCard(trial, touch)
+        c.onPlayAgain()
+        run(3_400.0)
+        run(35_100.0)
+        assertThat(c.phase.value).isEqualTo(GamePhase.PhotoCountdown(5, waitingForCamera = true))
+    }
+
+    private fun toPhotoStepZero() {
+        toPlaying()
+        run(35_100.0)
+        run(5_000.0)
+        assertThat(c.phase.value).isEqualTo(GamePhase.PhotoCountdown(0))
+    }
+
+    @Test
+    fun aRealStillIsMarkedCaptured() {
+        toPhotoStepZero()
+        c.onStillTaken(true)
+        assertThat(c.phase.value).isEqualTo(GamePhase.PhotoCountdown(0, captured = true))
+    }
+
+    @Test
+    fun aNullCaptureIsNeverMarkedCaptured() {
+        toPhotoStepZero()
+        c.onStillTaken(false)
+        assertThat((c.phase.value as GamePhase.PhotoCountdown).captured).isFalse()
+        c.onPhotoCaptured(null)
+        assertThat(c.phase.value).isInstanceOf(GamePhase.GameOver::class.java)
+    }
+
+    private val mug = EarnedReward(id = "r", name = "Mug", description = "", imageUrl = "", couponCode = "C")
+
+    @Test
+    fun aLateEarnedRewardFollowsThePlayerThroughSpinAndFeedback() {
+        toCard(session)
+        c.onCardDone()
+        assertThat((c.phase.value as GamePhase.Spin).earnedReward).isNull()
+        c.onRoundCompleted("sess_1", mug)
+        assertThat((c.phase.value as GamePhase.Spin).earnedReward).isEqualTo(mug)
+        c.onSpinDone(null)
+        assertThat(c.phase.value).isEqualTo(GamePhase.Feedback(null, mug))
+    }
+
+    @Test
+    fun anEarnedRewardOnTheCardCarriesOn() {
+        toCard(session, camera.copy(rewardsEnabled = false))
+        c.onRoundCompleted("sess_1", mug)
+        assertThat((c.phase.value as GamePhase.GameOver).card.earnedReward).isEqualTo(mug)
+        c.onCardDone()
+        assertThat(c.phase.value).isEqualTo(GamePhase.Feedback(null, mug))
+    }
+
+    @Test
+    fun anEarnedRewardArrivingOnFeedbackIsShown() {
+        toCard(session, camera.copy(rewardsEnabled = false))
+        c.onCardDone()
+        c.onRoundCompleted("sess_1", mug)
+        assertThat(c.phase.value).isEqualTo(GamePhase.Feedback(null, mug))
+    }
+
+    @Test
+    fun anEarnedRewardForAnotherSessionIsIgnored() {
+        toCard(session)
+        c.onCardDone()
+        c.onRoundCompleted("other", mug)
+        assertThat((c.phase.value as GamePhase.Spin).earnedReward).isNull()
+    }
+
+    @Test
+    fun anEarnedRewardDoesNotCarryIntoTheNextRound() {
+        toCard(trial)
+        c.onPlayAgain()
+        run(0.0); c.onFrame(0.016, noHand, noHand, calibrated = true)
+        run(350.0)
+        run(3_400.0)
+        run(35_100.0)
+        run(5_100.0)
+        c.onPhotoCaptured(null)
+        c.onCardDone()
+        assertThat((c.phase.value as GamePhase.Spin).earnedReward).isNull()
+    }
+
+    @Test
+    fun submittedFeedbackGoesOnceAndTheStepStaysUp() {
+        toCard(session, camera.copy(rewardsEnabled = false))
+        c.onCardDone()
+        c.onFeedbackSubmitted(GameFeedback.Good)
+        assertThat(fx.calls.filter { it.startsWith("feedback") }).containsExactly("feedback:sess_1:Good")
+        assertThat(c.phase.value).isInstanceOf(GamePhase.Feedback::class.java)
+        c.onFeedbackSubmitted(GameFeedback.Excellent)
+        c.onFeedback(GameFeedback.Excellent)
+        assertThat(fx.calls.filter { it.startsWith("feedback") }).hasSize(1)
+        assertThat(c.phase.value).isEqualTo(GamePhase.Startup)
     }
 
     @Test

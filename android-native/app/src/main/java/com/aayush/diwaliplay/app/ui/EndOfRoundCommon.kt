@@ -28,8 +28,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -40,15 +44,19 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aayush.diwaliplay.app.ui.theme.Fonts
 import com.aayush.diwaliplay.app.ui.theme.Palette
+import com.aayush.diwaliplay.model.EarnedReward
 import java.io.File
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 /** bg-gradient-to-r from-amber-100 via-amber-300 to-yellow-200, the web's gold headings. */
@@ -264,5 +272,35 @@ fun Modifier.pinging(): Modifier {
         scaleX = s
         scaleY = s
         alpha = 1f - t
+    }
+}
+
+/** The score prize, on whichever end-of-round step is showing. */
+@Composable
+fun EarnedRewardStrip(reward: EarnedReward, localFiles: Map<String, File>) {
+    var copied by remember { mutableStateOf(false) }
+    val clipboard = LocalClipboardManager.current
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(2_000)
+            copied = false
+        }
+    }
+    VoucherStrip("SCORE PRIZE UNLOCKED!", reward.name, reward.couponCode, reward.imageUrl, localFiles, Tags.CARD_REWARD) {
+        val shape = RoundedCornerShape(8.dp)
+        Box(
+            Modifier
+                .size(36.dp)
+                .clip(shape)
+                .background(Palette.Amber500.copy(alpha = 0.2f), shape)
+                .border(1.dp, Palette.Amber400.copy(alpha = 0.5f), shape)
+                .clickable {
+                    clipboard.setText(AnnotatedString(reward.couponCode))
+                    copied = true
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            if (copied) Icon(Icons.Check, 16.dp, Palette.Emerald400) else Icon(Icons.Copy, 16.dp, Palette.Amber200)
+        }
     }
 }

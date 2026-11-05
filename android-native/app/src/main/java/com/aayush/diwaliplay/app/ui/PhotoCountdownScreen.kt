@@ -46,13 +46,13 @@ import com.aayush.diwaliplay.tracking.camera.TrackingStatus
 import java.util.Locale
 
 /**
- * PhotoCaptureModal. The controller runs the countdown and the capture; this only shows them. On the web, "CLICK!" is
- * replaced by "PHOTO CAPTURED!" in the same tick, so step 0 shows the flash and the stamp, as it does there.
+ * PhotoCaptureModal. The controller runs the countdown and the capture; this only shows them. The flash and "PHOTO
+ * CAPTURED!" wait for a still to exist, so a failed capture announces nothing.
  */
 @Composable
 fun PhotoCountdownScreen(phase: GamePhase.PhotoCountdown, playerName: String, status: TrackingStatus, frames: () -> CameraFrame?) {
-    val ready = status is TrackingStatus.Running
-    val captured = phase.step == 0 && !phase.cameraError
+    val ready = !phase.waitingForCamera && !phase.cameraError
+    val captured = phase.captured
     Box(
         Modifier.fillMaxSize().testTag(Tags.PHOTO_SCREEN).background(Palette.Neutral950.copy(alpha = 0.92f)),
         contentAlignment = Alignment.Center,
@@ -64,8 +64,11 @@ fun PhotoCountdownScreen(phase: GamePhase.PhotoCountdown, playerName: String, st
                 Header(playerName)
                 Spacer(Modifier.height(12.dp))
                 Viewport(phase, ready, captured, status, frames)
-                Spacer(Modifier.height(16.dp))
-                StatusBar(phase, ready, captured)
+                // The error state says what's happening. The web's bar reads "Starting selfie camera..." beneath it.
+                if (!phase.cameraError) {
+                    Spacer(Modifier.height(16.dp))
+                    StatusBar(phase, ready, captured)
+                }
             }
         }
         if (captured) Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.95f)))
@@ -104,7 +107,7 @@ private fun Viewport(phase: GamePhase.PhotoCountdown, ready: Boolean, captured: 
             .background(Palette.Neutral900, shape)
             .border(2.dp, Palette.Amber400.copy(alpha = 0.7f), shape),
     ) {
-        if (ready && !phase.cameraError) LivePreview(frames, Modifier.fillMaxSize())
+        if (ready) LivePreview(frames, Modifier.fillMaxSize())
         CornerAccents(8.dp, 16.dp, Palette.Amber300.copy(alpha = 0.8f))
         when {
             phase.cameraError -> CameraErrorState(status)
@@ -120,6 +123,7 @@ private fun Viewport(phase: GamePhase.PhotoCountdown, ready: Boolean, captured: 
                     family = Fonts.Mono, weight = FontWeight.Bold, tracking = TrackingWider,
                 )
                 if (phase.step > 0) CountdownRing(phase.step, Modifier.align(Alignment.TopEnd).padding(12.dp))
+                if (phase.step == 0 && !captured) ClickBadge(Modifier.align(Alignment.Center))
             }
         }
         if (captured) CapturedStamp()
@@ -192,10 +196,13 @@ private fun StartingState() {
 @Composable
 private fun CameraErrorState(status: TrackingStatus) {
     val reason = (status as? TrackingStatus.Failed)?.reason.orEmpty()
-    val message = if (reason.contains("permission", ignoreCase = true)) {
-        "Camera permission was denied. Continuing automatically to your celebration results..."
-    } else {
-        "Front camera unavailable. Continuing automatically to your celebration results..."
+    val message = when {
+        reason.contains("permission", ignoreCase = true) ->
+            "Camera permission was denied. Continuing automatically to your celebration results..."
+        // The camera never failed; it just never delivered a frame (the 8 s watchdog).
+        status is TrackingStatus.Starting || status is TrackingStatus.Running ->
+            "Camera failed to start video feed. Continuing to celebration results..."
+        else -> "Front camera unavailable. Continuing automatically to your celebration results..."
     }
     Column(
         Modifier.fillMaxSize().testTag(Tags.PHOTO_ERROR).background(Palette.Neutral950.copy(alpha = 0.9f)).padding(20.dp),
@@ -221,6 +228,22 @@ private fun CameraErrorState(status: TrackingStatus) {
             Spinner(14.dp, Palette.Amber400)
             Label("Continuing to results...", 12.sp, Palette.Amber300, family = Fonts.Mono)
         }
+    }
+}
+
+/** "CLICK!", while the capture runs. */
+@Composable
+private fun ClickBadge(modifier: Modifier) {
+    val shape = RoundedCornerShape(16.dp)
+    Row(
+        modifier
+            .background(Brush.horizontalGradient(listOf(Palette.Amber500, Palette.Amber400, Palette.Yellow300)), shape)
+            .padding(horizontal = 24.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Icon(Icons.Camera, 28.dp, Palette.Neutral950, strokeWidth = 2.5f)
+        Label("CLICK! \uD83D\uDCF8", 30.sp, Palette.Neutral950, family = Fonts.Display, weight = FontWeight.Black, tracking = TrackingWider)
     }
 }
 
@@ -255,7 +278,11 @@ private fun StatusBar(phase: GamePhase.PhotoCountdown, ready: Boolean, captured:
                 Icon(Icons.Check, 14.dp, Palette.Emerald400)
                 Label("Transferring to celebration results...", 12.sp, Palette.Emerald300, family = Fonts.Mono, weight = FontWeight.Bold)
             }
-            ready && !phase.cameraError -> {
+            ready && phase.step == 0 -> {
+                Icon(Icons.Camera, 14.dp, Palette.Amber400, Modifier.pulsing())
+                Label("Capturing your celebration moment!", 12.sp, Palette.Amber300, family = Fonts.Mono, weight = FontWeight.Bold)
+            }
+            ready -> {
                 Icon(Icons.Sparkles, 14.dp, Palette.Amber400, Modifier.spinning())
                 Label("Auto-capturing in ${phase.step}s • Strike your pose!", 12.sp, Palette.Amber200, family = Fonts.Mono, weight = FontWeight.Medium)
             }

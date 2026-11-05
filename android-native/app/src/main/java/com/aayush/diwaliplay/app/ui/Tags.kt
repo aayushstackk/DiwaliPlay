@@ -30,6 +30,8 @@ object Tags {
     const val CLOSE = "end_of_round_close"
     const val RETURNING = "end_of_round_returning"
     const val SPIN_SCREEN = "spin_screen"
+    const val WHEEL = "spin_wheel"
+    const val POINTER = "spin_pointer"
     const val SPIN_BUTTON = "spin_button"
     const val SPIN_ERROR = "spin_error"
     const val SPIN_VOUCHER = "spin_voucher"

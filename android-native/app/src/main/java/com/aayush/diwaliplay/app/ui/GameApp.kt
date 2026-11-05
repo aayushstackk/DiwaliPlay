@@ -149,6 +149,8 @@ private fun PhaseContent(vm: GameViewModel, phase: GamePhase, branding: Branding
                 onSettled = vm::onSpinSettled,
                 onContinue = vm::onSpinDone,
                 onClose = vm::exitToStart,
+                earnedReward = phase.earnedReward,
+                loadRewards = vm::loadWheelRewards,
             )
         }
         is GamePhase.Feedback -> {
@@ -164,6 +166,7 @@ private fun PhaseContent(vm: GameViewModel, phase: GamePhase, branding: Branding
                 onSubmit = vm::submitFeedback,
                 onPlayAgain = vm::onPlayAgain,
                 onClose = vm::exitToStart,
+                earnedReward = phase.earnedReward,
             )
         }
     }

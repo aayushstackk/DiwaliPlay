@@ -51,6 +51,7 @@ class FakeGameApi : GameApi {
     }
 
     val spins = CopyOnWriteArrayList<SpinWheelRequest>()
+    var onGetRewards: suspend () -> ApiResult<RewardsInfo> = { offline() }
     var onSpin: suspend (SpinWheelRequest) -> ApiResult<SpinWheelResponse> = { offline() }
 
     val totalCalls: Int get() = verified.size + started.size + completed.size + abandoned.size + feedback.size + spins.size
@@ -83,7 +84,7 @@ class FakeGameApi : GameApi {
     private fun <T> offline(): ApiResult<T> = ApiResult.NetworkError(UnsupportedOperationException("not scripted"))
     override suspend fun getSettings(): ApiResult<SettingsResponse> = offline()
     override suspend fun getBombs(): ApiResult<ListBombsResponse> = offline()
-    override suspend fun getRewards(): ApiResult<RewardsInfo> = offline()
+    override suspend fun getRewards(): ApiResult<RewardsInfo> = onGetRewards()
     override suspend fun spin(req: SpinWheelRequest): ApiResult<SpinWheelResponse> {
         spins += req
         return onSpin(req)

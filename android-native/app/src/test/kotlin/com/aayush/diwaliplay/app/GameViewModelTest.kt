@@ -11,6 +11,7 @@ import com.aayush.diwaliplay.model.EarnedReward
 import com.aayush.diwaliplay.model.GameFeedback
 import com.aayush.diwaliplay.model.GameSession
 import com.aayush.diwaliplay.model.RewardItem
+import com.aayush.diwaliplay.model.RewardsInfo
 import com.aayush.diwaliplay.model.SpinWheelResponse
 import com.aayush.diwaliplay.model.SystemSettings
 import com.aayush.diwaliplay.model.VerifyCodeResponse
@@ -161,11 +162,261 @@ class GameViewModelTest {
     }
 
     @Test
-    fun aSpinAlreadyTakenShowsItsPrize() = runTest {
+    fun aSpinAlreadyTakenFailsLikeAnyOther() = runTest {
         val r = Rig(this, rewardsOn)
         val spin = toSpin(r)
-        r.api.onSpin = { ApiResult.Success(SpinWheelResponse(success = false, alreadySpun = true, reward = prize, rewardIndex = 1)) }
-        assertThat(r.vm.requestSpin(spin)).isEqualTo(SpinOutcome.Won(prize, 1))
+        // What server/routes/rewards.ts really answers: a 409, with the old prize in the body.
+        r.api.onSpin = { ApiResult.HttpError(409, """{"success":false,"alreadySpun":true,"reward":{"id":"r1"}}""") }
+        assertThat(r.vm.requestSpin(spin)).isEqualTo(SpinOutcome.Failed)
+    }
+
+    @Test
+    fun wheelRewardsComeFreshFromTheServer() = runTest {
+        val r = Rig(this, rewardsOn)
+        r.api.onGetRewards = {
+            ApiResult.Success(RewardsInfo(success = true, enabled = true, rewards = listOf(prize, RewardItem(id = "s", mode = "score"))))
+        }
+        assertThat(r.vm.loadWheelRewards()).containsExactly(prize)
+    }
+
+    @Test
+    fun wheelRewardsThatCantBeHadLeaveTheCachedOnes() = runTest {
+        val r = Rig(this, rewardsOn)
+        assertThat(r.vm.loadWheelRewards()).isNull() // offline
+        r.api.onGetRewards = { ApiResult.Success(RewardsInfo(success = true, enabled = true, rewards = emptyList())) }
+        assertThat(r.vm.loadWheelRewards()).isNull()
+    }
+
+    @Test
+    fun aSlowRewardsFetchGivesUpAtTheTimeout() = runTest {
+        val r = Rig(this, rewardsOn)
+        r.api.onGetRewards = {
+            delay(60_000)
+            ApiResult.Success(RewardsInfo(success = true, enabled = true, rewards = listOf(prize)))
+        }
+        val start = testScheduler.currentTime
+        assertThat(r.vm.loadWheelRewards()).isNull()
+        assertThat(testScheduler.currentTime - start).isEqualTo(WHEEL_REWARDS_TIMEOUT_MS)
+    }
+
+    @Test
+    fun aPreviousRoundsIdIsNeverGivenToTheNextRound() = runTest {
+        val r = Rig(this, rewardsOn)
+        r.api.serverSessionId = "first_round"
+        r.acceptCode()
+        r.playThroughCountdown()
+        runCurrent()
+        assertThat(r.vm.resolvedSessionId("guest_1_2")).isEqualTo("first_round")
+        r.vm.onInterrupted()
+        runCurrent()
+
+        val second = CompletableDeferred<Unit>()
+        r.api.onStart = {
+            second.await()
+            ApiResult.Success(
+                com.aayush.diwaliplay.model.StartSessionResponse(success = true, session = GameSession(id = "second_round", userId = "u1"), user = TEST_USER),
+            )
+        }
+        r.acceptCode()
+        r.playThroughCountdown()
+        assertThat(r.vm.resolvedSessionId("guest_1_2")).isEqualTo("guest_1_2") // cleared as soon as it was issued
+        second.complete(Unit)
+        runCurrent()
+        assertThat(r.vm.resolvedSessionId("guest_1_2")).isEqualTo("second_round")
+    }
+
+    @Test
+    fun aSlowStartFromThePreviousRoundCantPublishItsIdIntoTheNextRound() = runTest {
+        val r = Rig(this, rewardsOn)
+        val first = CompletableDeferred<Unit>()
+        val second = CompletableDeferred<Unit>()
+        var starts = 0
+        r.api.onStart = {
+            val mine = ++starts
+            (if (mine == 1) first else second).await()
+            ApiResult.Success(
+                com.aayush.diwaliplay.model.StartSessionResponse(success = true, session = GameSession(id = "round_$mine", userId = "u1"), user = TEST_USER),
+            )
+        }
+        r.acceptCode()
+        r.playThroughCountdown()
+        r.vm.onInterrupted()
+        runCurrent()
+        r.acceptCode()
+        r.playThroughCountdown()
+
+        first.complete(Unit) // round 1's job finishes while round 2's is queued behind it
+        runCurrent()
+        assertThat(r.vm.resolvedSessionId("guest_1_2")).isEqualTo("guest_1_2")
+        second.complete(Unit)
+        runCurrent()
+        assertThat(r.vm.resolvedSessionId("guest_1_2")).isEqualTo("round_2")
+    }
+
+    @Test
+    fun anAbandonStillNamesItsOwnRoundsSession() = runTest {
+        val r = Rig(this, rewardsOn)
+        val first = CompletableDeferred<Unit>()
+        var starts = 0
+        r.api.onStart = {
+            val mine = ++starts
+            if (mine == 1) first.await()
+            ApiResult.Success(
+                com.aayush.diwaliplay.model.StartSessionResponse(success = true, session = GameSession(id = "round_$mine", userId = "u1"), user = TEST_USER),
+            )
+        }
+        r.acceptCode()
+        r.playThroughCountdown()
+        r.vm.onInterrupted() // queued behind the start, under the guest id
+        runCurrent()
+        r.acceptCode()
+        r.playThroughCountdown()
+        first.complete(Unit)
+        runCurrent()
+        assertThat(r.api.abandoned.first().sessionId).isEqualTo("round_1")
+    }
+
+    @Test
+    fun aTouchRoundWithAWallpaperWaitsForItsCamera() = runTest {
+        val r = Rig(this, SystemSettings(gameplayMode = "touch", rewardsEnabled = false))
+        r.tracking.startsReady = false
+        r.acceptCode()
+        r.frames(3_600)
+        r.frames(35_100)
+        assertThat(r.tracking.running).isTrue() // it opens for the photo
+        assertThat(r.vm.phase.value).isEqualTo(GamePhase.PhotoCountdown(5, waitingForCamera = true))
+        r.frames(3_000)
+        assertThat(r.vm.phase.value).isEqualTo(GamePhase.PhotoCountdown(5, waitingForCamera = true))
+
+        r.tracking.becomeReady()
+        runCurrent()
+        assertThat(r.vm.phase.value).isEqualTo(GamePhase.PhotoCountdown(5))
+    }
+
+    @Test
+    fun aTouchRoundWhoseCameraNeverComesGoesOnWithoutAPhoto() = runTest {
+        val r = Rig(this, SystemSettings(gameplayMode = "touch", rewardsEnabled = false))
+        r.tracking.startsReady = false
+        r.acceptCode()
+        r.frames(3_600)
+        r.frames(35_100)
+        r.frames(8_100)
+        assertThat(r.vm.phase.value).isEqualTo(GamePhase.PhotoCountdown(0, cameraError = true))
+        r.frames(2_300)
+        assertThat((r.vm.phase.value as GamePhase.GameOver).card.photoJpeg).isNull()
+    }
+
+    @Test
+    fun aTrialReplayWithItsCameraAlreadyOnDoesNotWait() = runTest {
+        val r = Rig(this, SystemSettings(gameplayMode = "touch", wallpaperEnabled = false, rewardsEnabled = false))
+        r.acceptCode("8536")
+        r.frames(3_600)
+        r.frames(35_100)
+        assertThat(r.vm.phase.value).isEqualTo(GamePhase.PhotoCountdown(5))
+        r.frames(5_100)
+        advanceTimeBy(500)
+        runCurrent()
+        r.frames(50)
+        r.vm.onPlayAgain()
+        runCurrent()
+        r.frames(3_600)
+        r.frames(35_100)
+        assertThat(r.vm.phase.value).isEqualTo(GamePhase.PhotoCountdown(5))
+    }
+
+    @Test
+    fun aNullStillIsNotAnnouncedAsCaptured() = runTest {
+        val r = Rig(this)
+        r.tracking.still = null
+        r.acceptCode()
+        r.playToPhotoCountdown()
+        r.frames(5_020)
+        runCurrent()
+        val p = r.vm.phase.value as GamePhase.PhotoCountdown
+        assertThat(p.step).isEqualTo(0)
+        assertThat(p.captured).isFalse()
+    }
+
+    @Test
+    fun aRealStillIsAnnouncedAsCaptured() = runTest {
+        val r = Rig(this)
+        r.acceptCode()
+        r.playToPhotoCountdown()
+        r.frames(5_020)
+        runCurrent()
+        assertThat((r.vm.phase.value as GamePhase.PhotoCountdown).captured).isTrue()
+    }
+
+    @Test
+    fun feedbackWithAWonCouponSendsAtOnceAndLeavesItUpForTheCountdown() = runTest {
+        val r = Rig(this, rewardsOn)
+        toSpin(r)
+        r.vm.onSpinSettled()
+        runCurrent()
+        advanceTimeBy(5_000)
+        r.vm.onSpinDone(prize)
+        runCurrent()
+        r.vm.submitFeedback(GameFeedback.Good)
+        runCurrent()
+        assertThat(r.api.feedback.single().second).isEqualTo(GameFeedback.Good)
+
+        advanceTimeBy(FEEDBACK_THANKS_MS + 1_000)
+        runCurrent()
+        assertThat(r.vm.phase.value).isInstanceOf(GamePhase.Feedback::class.java) // no 1.5 s exit
+        assertThat(r.vm.feedbackRecorded.value).isEqualTo(GameFeedback.Good)
+        assertThat(r.vm.autoReturnSeconds.value).isNotNull()
+
+        advanceTimeBy(15_000)
+        runCurrent()
+        assertThat(r.vm.phase.value).isEqualTo(GamePhase.Startup)
+        assertThat(r.api.feedback).hasSize(1)
+    }
+
+    @Test
+    fun feedbackWithAScorePrizeAlsoLeavesItUp() = runTest {
+        val r = Rig(this)
+        val mug = EarnedReward(id = "r", name = "Mug", description = "", imageUrl = "", couponCode = "C")
+        r.api.onComplete = { req ->
+            ApiResult.Success(CompleteSessionResponse(success = true, session = GameSession(id = req.sessionId, userId = "u1", earnedReward = mug), user = TEST_USER))
+        }
+        r.acceptCode()
+        r.playToCard()
+        runCurrent()
+        r.vm.onCardDone()
+        runCurrent()
+        r.vm.submitFeedback(GameFeedback.Good)
+        advanceTimeBy(FEEDBACK_THANKS_MS + 1_000)
+        runCurrent()
+        assertThat(r.vm.phase.value).isEqualTo(GamePhase.Feedback(null, mug))
+    }
+
+    @Test
+    fun interruptingDuringTheCountdownLeavesNothingForTheNextRound() = runTest {
+        val r = Rig(this)
+        r.acceptCode()
+        r.playToCard()
+        runCurrent()
+        advanceTimeBy(5_000)
+        runCurrent()
+        assertThat(r.vm.autoReturnSeconds.value).isEqualTo(15)
+
+        r.vm.onInterrupted()
+        runCurrent()
+        assertThat(r.vm.autoReturnSeconds.value).isNull()
+
+        // The next round is well under way when the old countdown would have run out.
+        r.acceptCode()
+        val phaseNow = r.vm.phase.value
+        assertThat(phaseNow).isEqualTo(GamePhase.Calibrating(ready = false))
+        advanceTimeBy(60_000)
+        runCurrent()
+        assertThat(r.vm.phase.value).isEqualTo(phaseNow)
+        assertThat(r.vm.autoReturnSeconds.value).isNull()
+
+        // Its own card gets its own full 20 s.
+        r.playToCard()
+        runCurrent()
+        assertThat(r.vm.autoReturnSeconds.value).isEqualTo(20)
     }
 
     @Test

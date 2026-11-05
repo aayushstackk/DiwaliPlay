@@ -14,8 +14,8 @@ internal const val PHOTO_STEP_MS = 1000.0
 internal const val PHOTO_CAMERA_ERROR_MS = 2200.0
 
 /**
- * Safety net if no photo arrives after it was requested: PhotoCaptureModal's 8 s camera watchdog. The web
- * applies it before the countdown; here it guards the capture itself so the round can never get stuck.
+ * PhotoCaptureModal's 8 s camera watchdog: how long the countdown waits for the camera before the camera-error path.
+ * The same limit also guards the capture itself, so the round can never get stuck.
  */
 internal const val PHOTO_WATCHDOG_MS = 8000.0
 

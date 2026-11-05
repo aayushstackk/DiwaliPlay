@@ -27,8 +27,8 @@ interface GameEffects {
     fun playSound(key: String)
 
     /**
-     * Capture a mirrored still. Deliver it (or null) with [GameController.onPhotoCaptured] once the UI's
-     * 450 ms "CLICK!" flash is over (PhotoCaptureModal triggerCaptureSequence).
+     * Capture a mirrored still. Say whether one was taken with [GameController.onStillTaken], then deliver it (or null)
+     * with [GameController.onPhotoCaptured] once the UI's 450 ms flash is over (PhotoCaptureModal triggerCaptureSequence).
      */
     fun requestPhoto()
 
