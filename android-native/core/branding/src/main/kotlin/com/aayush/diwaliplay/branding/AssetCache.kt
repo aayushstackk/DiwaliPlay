@@ -13,7 +13,11 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -54,15 +58,18 @@ class AssetCache(
         return fileFor(resolved).takeIf { it.isFile }
     }
 
-    /** Local file for [url] (downloaded or revalidated), the last good copy if that fails, else null. */
-    suspend fun get(url: String): File? {
+    /**
+     * Local file for [url] (downloaded or revalidated), the last good copy if that fails, else null.
+     * [callTimeoutMs] replaces the usual limit on the whole transfer, for a file too big to arrive within it on a slow link.
+     */
+    suspend fun get(url: String, callTimeoutMs: Long? = null): File? {
         val resolved = resolve(url) ?: return null
         val target = fileFor(resolved)
         return locks.getOrPut(target.name) { Mutex() }.withLock {
             withContext(ioDispatcher) {
                 try {
                     if (isData(resolved)) target.takeIf { it.isFile } ?: writeDataUrl(resolved, target)
-                    else fetch(resolved, target)
+                    else fetch(resolved, target, callTimeoutMs)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (_: Exception) {
@@ -91,7 +98,7 @@ class AssetCache(
 
     private fun metaFor(target: File) = File(dir, target.name + ".meta")
 
-    private suspend fun fetch(resolved: String, target: File): File? {
+    private suspend fun fetch(resolved: String, target: File, callTimeoutMs: Long?): File? {
         dir.mkdirs()
         val existing = target.takeIf { it.isFile }
         val meta = if (existing != null) readMeta(target) else Meta()
@@ -99,7 +106,26 @@ class AssetCache(
             meta.etag?.let { header("If-None-Match", it) }
             meta.lastModified?.let { header("If-Modified-Since", it) }
         }.build()
-        val response = http.newCall(req).await()
+        val call = http.newCall(req)
+        callTimeoutMs?.let { call.timeout().timeout(it, TimeUnit.MILLISECONDS) }
+        return coroutineScope {
+            // Reading the body blocks, so cancelling the coroutine alone wouldn't stop it. This closes the socket under it.
+            val canceller = launch(start = CoroutineStart.UNDISPATCHED) {
+                try {
+                    awaitCancellation()
+                } finally {
+                    call.cancel()
+                }
+            }
+            try {
+                store(call.await(), target, existing)
+            } finally {
+                canceller.cancel()
+            }
+        }
+    }
+
+    private fun store(response: Response, target: File, existing: File?): File? {
         response.use { r ->
             return when {
                 r.code == 304 && existing != null -> existing

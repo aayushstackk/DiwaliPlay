@@ -608,6 +608,259 @@ class SettingsRepositoryTest {
         assertThat(store.isFile).isTrue()
     }
 
+    // ---- the start background downloads on its own: up to 40 MB, and links can be slow ------------------------
+
+    private class BackgroundRig(private val tmp: File, pollIntervalMs: Long = SettingsRepository.POLL_INTERVAL_MS) {
+        val server = MockWebServer()
+        val hits = java.util.concurrent.ConcurrentHashMap<String, Int>()
+        val release = java.util.concurrent.CountDownLatch(1)
+        /** What each path answers; a path not listed gets a small file. */
+        val responses = java.util.concurrent.ConcurrentHashMap<String, () -> MockResponse>()
+        var nowMs = 0L
+        val api = FakeApi()
+        val scope = CoroutineScope(Job() + Dispatchers.IO)
+        val assets = File(tmp, "assets").also { it.mkdirs() }
+        val repo: SettingsRepository
+
+        init {
+            server.dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    hits.merge(request.path!!, 1, Int::plus)
+                    return responses[request.path!!]?.invoke() ?: MockResponse().setBody("body:" + request.path)
+                }
+            }
+            server.start()
+            api.bombs = ApiResult.Success(ListBombsResponse(success = true, bombs = emptyList(), settings = DEFAULT_BOMB_SETTINGS))
+            api.rewards = ApiResult.Success(RewardsInfo(success = true, enabled = false, rewards = emptyList()))
+            repo = SettingsRepository(
+                api = api,
+                cache = AssetCache(assets, OkHttpClient()),
+                store = File(tmp, "branding.json"),
+                scope = scope,
+                pollIntervalMs = pollIntervalMs,
+                nowMs = { nowMs },
+            )
+        }
+
+        fun url(path: String) = server.url(path).toString()
+
+        fun settings(background: String?, logo: String = "/logo.png") {
+            api.settings = settingsOf(SystemSettings(brandLogoUrl = url(logo), startBackgroundUrl = background?.let(::url)))
+        }
+
+        /** Answers with headers, then holds the body back until [release]. */
+        fun hanging(body: String = "HELD"): () -> MockResponse = {
+            release.await(30, java.util.concurrent.TimeUnit.SECONDS)
+            MockResponse().setBody(body)
+        }
+
+        /** Headers at once, then a body far too slow to finish during a test. */
+        fun crawling(): () -> MockResponse = {
+            MockResponse().setBody("x".repeat(100_000)).throttleBody(1_000, 1, java.util.concurrent.TimeUnit.SECONDS)
+        }
+
+        fun files() = repo.state.value.localFiles
+
+        fun close() {
+            release.countDown()
+            scope.coroutineContext[Job]!!.cancel()
+            server.shutdown()
+        }
+    }
+
+    private suspend fun eventually(what: String, timeoutMs: Long = 10_000, condition: () -> Boolean) {
+        val deadline = System.nanoTime() + timeoutMs * 1_000_000
+        while (!condition()) {
+            check(System.nanoTime() < deadline) { "Timed out waiting: $what" }
+            delay(10)
+        }
+    }
+
+    @Test fun otherAssetsPublishWhileTheBackgroundHangs() = runBlocking {
+        val rig = BackgroundRig(tmp.root)
+        try {
+            rig.responses["/bg.mp4"] = rig.hanging()
+            rig.settings("/bg.mp4")
+            kotlinx.coroutines.withTimeout(10_000) { rig.repo.refreshNow() }
+            assertThat(rig.files()).containsKey(rig.url("/logo.png"))
+            assertThat(rig.files()).doesNotContainKey(rig.url("/bg.mp4"))
+
+            rig.release.countDown()
+            eventually("background published") { rig.files().containsKey(rig.url("/bg.mp4")) }
+            assertThat(rig.files().getValue(rig.url("/bg.mp4")).readText()).isEqualTo("HELD")
+            assertThat(rig.files()).containsKey(rig.url("/logo.png"))
+        } finally {
+            rig.close()
+        }
+    }
+
+    @Test fun pollingContinuesWhileTheBackgroundHangsWithOneDownload() = runBlocking {
+        val rig = BackgroundRig(tmp.root, pollIntervalMs = 20)
+        try {
+            rig.responses["/bg.mp4"] = rig.hanging()
+            rig.settings("/bg.mp4")
+            rig.repo.start()
+            eventually("several polls") { rig.api.settingsCalls >= 5 }
+            assertThat(rig.hits["/bg.mp4"]).isEqualTo(1)
+        } finally {
+            rig.close()
+        }
+    }
+
+    @Test fun aRefreshDoesNotEraseThePublishedBackground() = runBlocking {
+        val rig = BackgroundRig(tmp.root)
+        try {
+            rig.settings("/bg.mp4")
+            rig.repo.refreshNow()
+            eventually("background published") { rig.files().containsKey(rig.url("/bg.mp4")) }
+            repeat(3) {
+                rig.repo.refreshNow()
+                assertThat(rig.files()).containsKey(rig.url("/bg.mp4"))
+            }
+            assertThat(rig.hits["/bg.mp4"]).isEqualTo(1)
+        } finally {
+            rig.close()
+        }
+    }
+
+    @Test fun aFailedBackgroundBacksOff() = runBlocking {
+        val rig = BackgroundRig(tmp.root)
+        try {
+            rig.responses["/bg.mp4"] = { MockResponse().setResponseCode(503) }
+            rig.settings("/bg.mp4")
+            suspend fun pollUntil(endMs: Long) {
+                while (rig.nowMs < endMs) {
+                    rig.nowMs = minOf(endMs, rig.nowMs + SettingsRepository.POLL_INTERVAL_MS)
+                    rig.repo.refreshNow()
+                    delay(20) // room for a wrongly started download to reach the server
+                }
+            }
+            rig.repo.refreshNow()
+            eventually("first attempt") { rig.hits["/bg.mp4"] == 1 }
+            delay(100) // the attempt's failure is recorded just after the server answers
+
+            pollUntil(SettingsRepository.START_BACKGROUND_RETRY_MS - 1)
+            assertThat(rig.hits["/bg.mp4"]).isEqualTo(1)
+            pollUntil(SettingsRepository.START_BACKGROUND_RETRY_MS)
+            eventually("second attempt") { rig.hits["/bg.mp4"] == 2 }
+            delay(100)
+
+            // The wait doubles.
+            pollUntil(SettingsRepository.START_BACKGROUND_RETRY_MS * 3 - 1)
+            assertThat(rig.hits["/bg.mp4"]).isEqualTo(2)
+            pollUntil(SettingsRepository.START_BACKGROUND_RETRY_MS * 3)
+            eventually("third attempt") { rig.hits["/bg.mp4"] == 3 }
+            assertThat(rig.files()).doesNotContainKey(rig.url("/bg.mp4"))
+            assertThat(rig.files()).containsKey(rig.url("/logo.png"))
+        } finally {
+            rig.close()
+        }
+    }
+
+    @Test fun aNewUrlDoesNotInheritTheBackoff() = runBlocking {
+        val rig = BackgroundRig(tmp.root)
+        try {
+            rig.responses["/bad.mp4"] = { MockResponse().setResponseCode(503) }
+            rig.settings("/bad.mp4")
+            rig.repo.refreshNow()
+            eventually("first attempt") { rig.hits["/bad.mp4"] == 1 }
+            delay(100)
+            rig.settings("/good.mp4")
+            rig.repo.refreshNow()
+            eventually("new background published") { rig.files().containsKey(rig.url("/good.mp4")) }
+        } finally {
+            rig.close()
+        }
+    }
+
+    @Test fun pausedStartsNoDownload() = runBlocking {
+        val rig = BackgroundRig(tmp.root)
+        try {
+            rig.settings("/bg.mp4")
+            rig.repo.setPollingPaused(true)
+            rig.repo.refreshNow() // a refresh that was already under way when the round began
+            delay(200)
+            assertThat(rig.hits["/bg.mp4"]).isNull()
+        } finally {
+            rig.close()
+        }
+    }
+
+    @Test fun pausingStopsADownloadInProgressAndResumingStartsAgain() = runBlocking {
+        val rig = BackgroundRig(tmp.root)
+        try {
+            rig.responses["/bg.mp4"] = rig.crawling()
+            rig.settings("/bg.mp4")
+            rig.repo.refreshNow()
+            fun partial() = rig.assets.listFiles()!!.filter { it.name.endsWith(".tmp") }
+            eventually("download under way") { partial().any { it.length() > 0 } }
+
+            rig.repo.setPollingPaused(true)
+            eventually("partial file removed", timeoutMs = 3_000) { partial().isEmpty() }
+            assertThat(rig.files()).doesNotContainKey(rig.url("/bg.mp4"))
+
+            rig.responses["/bg.mp4"] = { MockResponse().setBody("WHOLE") }
+            rig.repo.setPollingPaused(false)
+            eventually("published after resuming") { rig.files().containsKey(rig.url("/bg.mp4")) }
+            assertThat(rig.files().getValue(rig.url("/bg.mp4")).readText()).isEqualTo("WHOLE")
+        } finally {
+            rig.close()
+        }
+    }
+
+    @Test fun aReplacedUrlCancelsTheOldDownload() = runBlocking {
+        val rig = BackgroundRig(tmp.root)
+        try {
+            rig.responses["/old.mp4"] = rig.crawling()
+            rig.settings("/old.mp4")
+            rig.repo.refreshNow()
+            eventually("old download under way") { rig.assets.listFiles()!!.any { it.name.endsWith(".tmp") && it.length() > 0 } }
+
+            rig.settings("/new.mp4")
+            rig.repo.refreshNow()
+            eventually("new background published") { rig.files().containsKey(rig.url("/new.mp4")) }
+            eventually("old partial file removed", timeoutMs = 3_000) { rig.assets.listFiles()!!.none { it.name.endsWith(".tmp") } }
+            assertThat(rig.files()).doesNotContainKey(rig.url("/old.mp4"))
+        } finally {
+            rig.close()
+        }
+    }
+
+    @Test fun anOldDownloadFinishingLateIsIgnored() = runBlocking {
+        val rig = BackgroundRig(tmp.root)
+        try {
+            // Still waiting on the server's answer when it's replaced, and answers anyway afterwards.
+            rig.responses["/old.mp4"] = rig.hanging()
+            rig.settings("/old.mp4")
+            rig.repo.refreshNow()
+            eventually("old request sent") { rig.hits["/old.mp4"] == 1 }
+
+            rig.settings("/new.mp4")
+            rig.repo.refreshNow()
+            eventually("new background published") { rig.files().containsKey(rig.url("/new.mp4")) }
+            rig.release.countDown()
+            delay(200)
+            assertThat(rig.files()).doesNotContainKey(rig.url("/old.mp4"))
+        } finally {
+            rig.close()
+        }
+    }
+
+    @Test fun removingTheBackgroundUnpublishesIt() = runBlocking {
+        val rig = BackgroundRig(tmp.root)
+        try {
+            rig.settings("/bg.mp4")
+            rig.repo.refreshNow()
+            eventually("background published") { rig.files().containsKey(rig.url("/bg.mp4")) }
+            rig.settings(null)
+            rig.repo.refreshNow()
+            assertThat(rig.files()).doesNotContainKey(rig.url("/bg.mp4"))
+            assertThat(rig.files()).containsKey(rig.url("/logo.png"))
+        } finally {
+            rig.close()
+        }
+    }
+
     @Test fun startBackgroundIsCached() {
         val withBg = BrandingState(settings = SystemSettings(startBackgroundUrl = "http://x/bg.mp4").normalizedForBranding())
         assertThat(collectAssetUrls(withBg)).contains("http://x/bg.mp4")

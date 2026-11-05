@@ -37,6 +37,7 @@ import kotlinx.serialization.Serializable
 /**
  * Native `useBranding`: keeps [state] in sync with the admin panel (settings, bombs, rewards),
  * persists the last good copy to [store] and prefetches every referenced asset into [cache].
+ * The start background can be 40 MB, so it downloads in a job of its own that neither the poll nor the other assets wait for.
  * Polls every [pollIntervalMs] (8 s, like the web) unless paused; resuming refreshes immediately.
  */
 class SettingsRepository(
@@ -75,6 +76,12 @@ class SettingsRepository(
     /** When each URL in use was last fetched or revalidated. Refreshes never overlap, but they do change threads. */
     private val lastChecked = ConcurrentHashMap<String, Long>()
 
+    // The start background's download. All guarded by this object's lock, like [paused].
+    private var backgroundUrl: String? = null
+    private var backgroundJob: Job? = null
+    private var backgroundFailures = 0
+    private var backgroundRetryAtMs = 0L
+
     init {
         loadFromDisk()
     }
@@ -97,6 +104,7 @@ class SettingsRepository(
         val changed = synchronized(this) {
             val c = this.paused != paused
             this.paused = paused
+            if (paused) backgroundJob?.cancel()
             c
         }
         if (changed && !paused) scope.launch { runCatchingRefresh() }
@@ -180,31 +188,77 @@ class SettingsRepository(
         if (okSettings != null || okBombs != null || okRewards != null) {
             withContext(ioDispatcher) { persist() }
         }
+        syncStartBackground()
         prefetch()
     }
 
     /**
-     * The settings poll every 8 s, and the server reads and hashes each asset on every request, even for a 304. So a
+     * Keeps one download running for the current start background: a new URL replaces the old one's job and any backoff,
+     * and it waits while polling is paused, so it doesn't compete with a round.
+     */
+    private fun syncStartBackground() {
+        val url = _state.value.settings.startBackgroundUrl?.takeIf { it.isNotBlank() }
+        synchronized(this) {
+            if (url != backgroundUrl) {
+                backgroundJob?.cancel()
+                backgroundUrl = url
+                backgroundFailures = 0
+            }
+            if (url == null || paused || backgroundJob?.isActive == true) return
+            if (backgroundFailures > 0 && nowMs() < backgroundRetryAtMs) return
+            backgroundJob = scope.launch { downloadStartBackground(url) }
+        }
+    }
+
+    private suspend fun downloadStartBackground(url: String) {
+        val file = try {
+            fileFor(url, START_BACKGROUND_CALL_TIMEOUT_MS)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+        synchronized(this) {
+            if (url != backgroundUrl) return
+            if (file != null) {
+                backgroundFailures = 0
+                _state.update { it.copy(localFiles = it.localFiles + (url to file)) }
+            } else {
+                val wait = START_BACKGROUND_RETRY_MS shl backgroundFailures.coerceAtMost(MAX_BACKOFF_DOUBLINGS)
+                backgroundRetryAtMs = nowMs() + wait.coerceAtMost(START_BACKGROUND_MAX_RETRY_MS)
+                backgroundFailures++
+            }
+        }
+    }
+
+    /**
+     * The settings poll every 8 s, and a revalidation is still a request per asset. So a
      * URL is fetched the first time it's seen, then revalidated at most every [ASSET_REVALIDATE_MS]. A URL with no file
      * yet (its fetch failed) doesn't wait: without it the screen would go without the image.
      */
     private suspend fun prefetch() {
-        val urls = collectAssetUrls(_state.value)
-        lastChecked.keys.retainAll(urls.toSet()) // a URL that comes back counts as new
+        val state = _state.value
+        val all = collectAssetUrls(state)
+        lastChecked.keys.retainAll(all.toSet()) // a URL that comes back counts as new
+        val urls = all - state.settings.startBackgroundUrl.orEmpty()
         val gate = Semaphore(maxParallelDownloads)
         val files = coroutineScope {
             urls.map { u -> async { gate.withPermit { u to fileFor(u) } } }.awaitAll()
         }
         val resolved = files.mapNotNull { (u, f) -> f?.let { u to it } }.toMap()
-        _state.update { it.copy(localFiles = resolved) }
+        _state.update { s ->
+            // The start background is published by its own job, and only the current one is kept.
+            val background = s.settings.startBackgroundUrl?.let { u -> s.localFiles[u]?.let { u to it } }
+            s.copy(localFiles = if (background != null) resolved + background else resolved)
+        }
     }
 
-    private suspend fun fileFor(url: String): File? {
+    private suspend fun fileFor(url: String, callTimeoutMs: Long? = null): File? {
         val checked = lastChecked[url]
         if (checked != null && nowMs() - checked < ASSET_REVALIDATE_MS) {
             withContext(ioDispatcher) { cache.peek(url) }?.let { return it }
         }
-        return cache.get(url).also { lastChecked[url] = nowMs() }
+        return cache.get(url, callTimeoutMs).also { lastChecked[url] = nowMs() }
     }
 
     private fun persist() {
@@ -262,5 +316,13 @@ class SettingsRepository(
 
         /** How often an asset already on disk is checked with the server. */
         const val ASSET_REVALIDATE_MS = 30 * 60_000L
+
+        /** First wait after a failed start background download; doubles each time up to [START_BACKGROUND_MAX_RETRY_MS]. */
+        const val START_BACKGROUND_RETRY_MS = 60_000L
+        const val START_BACKGROUND_MAX_RETRY_MS = 15 * 60_000L
+        private const val MAX_BACKOFF_DOUBLINGS = 8
+
+        /** 40 MB gets through at about 0.55 Mbps. A stalled link still fails sooner, on the cache's read timeout. */
+        const val START_BACKGROUND_CALL_TIMEOUT_MS = 10 * 60_000L
     }
 }
