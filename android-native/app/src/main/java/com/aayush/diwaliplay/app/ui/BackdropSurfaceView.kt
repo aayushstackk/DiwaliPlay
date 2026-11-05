@@ -3,6 +3,7 @@ package com.aayush.diwaliplay.app.ui
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Matrix
 import android.graphics.Paint
@@ -19,7 +20,13 @@ import java.io.File
 import kotlin.math.max
 
 /** What the backdrop shows. */
-data class BackdropContent(val kind: BackdropKind, val wallpaperFile: File?, val wallpaperOpacity: Double)
+data class BackdropContent(
+    val kind: BackdropKind,
+    val wallpaperFile: File?,
+    val wallpaperOpacity: Double,
+    /** Black drawn over a [BackdropKind.StartBackground] image, 0..204. */
+    val dimAlpha: Int = 0,
+)
 
 /**
  * The layer behind the game surface: the wallpaper or the mirrored live camera, on a 1920x1080 surface of its own.
@@ -112,7 +119,7 @@ class BackdropSurfaceView(context: Context, private val frames: () -> CameraFram
 
     private fun draw(c: BackdropContent, frame: CameraFrame?) {
         // Decoded ahead of the lock: a wallpaper can take a while, and surfaceDestroyed waits on the lock.
-        if (c.kind == BackdropKind.Wallpaper) loadImage(c.wallpaperFile)
+        if (c.kind == BackdropKind.Wallpaper || c.kind == BackdropKind.StartBackground) loadImage(c.wallpaperFile)
         synchronized(drawLock) {
             if (!hasSurface) return
             val canvas = try {
@@ -126,6 +133,11 @@ class BackdropSurfaceView(context: Context, private val frames: () -> CameraFram
                 when (c.kind) {
                     BackdropKind.Dark -> canvas.drawColor(BACKGROUND_COLOR)
                     BackdropKind.Wallpaper -> drawWallpaper(canvas, image, c.wallpaperOpacity)
+                    BackdropKind.StartBackground -> {
+                        drawWallpaper(canvas, image, 100.0)
+                        // An undecodable file shows the built-in, undimmed.
+                        if (image != null && c.dimAlpha > 0) canvas.drawColor(Color.argb(c.dimAlpha, 0, 0, 0))
+                    }
                     BackdropKind.CameraStrongVignette -> drawCamera(canvas, frame, strongVignette)
                     BackdropKind.CameraSoftVignette -> drawCamera(canvas, frame, softVignette)
                 }

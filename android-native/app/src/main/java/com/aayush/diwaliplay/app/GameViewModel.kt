@@ -177,8 +177,8 @@ class GameViewModel(
     val round: StateFlow<ActiveRound?> = _round.asStateFlow()
 
     val backdrop: StateFlow<BackdropKind> = combine(controller.phase, _round) { p, r ->
-        if (r == null) BackdropKind.Dark else backdropFor(p, r.settings.isTouchMode, r.wallpaperEnabled)
-    }.stateIn(scope, SharingStarted.Eagerly, BackdropKind.Dark)
+        if (r == null) BackdropKind.StartBackground else backdropFor(p, r.settings.isTouchMode, r.wallpaperEnabled)
+    }.stateIn(scope, SharingStarted.Eagerly, BackdropKind.StartBackground)
 
     private val _autoReturnSeconds = MutableStateFlow<Int?>(null)
 

@@ -3,13 +3,13 @@ package com.aayush.diwaliplay.app
 import com.aayush.diwaliplay.game.flow.GamePhase
 
 /** What sits behind the game surface. The two camera kinds differ in vignette strength (App.tsx). */
-enum class BackdropKind { Dark, Wallpaper, CameraStrongVignette, CameraSoftVignette }
+enum class BackdropKind { Dark, StartBackground, Wallpaper, CameraStrongVignette, CameraSoftVignette }
 
 private fun GamePhase.isCalibratingOrCountdown() = this is GamePhase.Calibrating || this is GamePhase.Countdown
 
 /** App.tsx `isCameraPreviewVisible` / `isWallpaperVisible`. */
 fun backdropFor(phase: GamePhase, touch: Boolean, wallpaperEnabled: Boolean): BackdropKind {
-    if (phase == GamePhase.Startup) return BackdropKind.Dark
+    if (phase == GamePhase.Startup) return BackdropKind.StartBackground
     val camera = (!wallpaperEnabled && (phase == GamePhase.Playing || phase is GamePhase.Countdown || phase is GamePhase.GameOver)) ||
         (!touch && phase.isCalibratingOrCountdown())
     if (camera) {

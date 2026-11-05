@@ -71,9 +71,6 @@ fun StartScreen(
         Modifier
             .fillMaxSize()
             .testTag(Tags.START_SCREEN)
-            .background(Palette.Background)
-            .ambientGlow(Palette.Amber500.copy(alpha = 0.10f), 0.333f, 0.148f, 420.dp)
-            .ambientGlow(Palette.Orange600.copy(alpha = 0.10f), 0.667f, 0.852f, 420.dp)
             .focusRequester(focus)
             .onPreviewKeyEvent { e ->
                 // KioskStartupScreen's physical keyboard support.

@@ -26,8 +26,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.aayush.diwaliplay.app.BackdropKind
 import com.aayush.diwaliplay.app.CalibrationUi
 import com.aayush.diwaliplay.app.GameViewModel
+import com.aayush.diwaliplay.app.StartBackgroundChoice
+import com.aayush.diwaliplay.app.chooseStartBackground
+import com.aayush.diwaliplay.app.startDimAlpha
 import com.aayush.diwaliplay.app.ui.admin.AdminPinDialog
 import com.aayush.diwaliplay.app.ui.admin.AdminScreen
 import com.aayush.diwaliplay.app.ui.admin.AdminStage
@@ -85,11 +89,21 @@ private fun BackdropLayer(vm: GameViewModel, branding: BrandingState) {
     val backdrop = view
     val round by vm.round.collectAsState()
     val active = round
-    val content = BackdropContent(
-        kind,
-        branding.localFiles[active?.wallpaperUrl ?: branding.currentWallpaperUrl],
-        active?.wallpaperOpacity ?: branding.settings.wallpaperOpacity,
-    )
+    val content = if (kind == BackdropKind.StartBackground) {
+        // A Video draws the built-in beneath it, for now.
+        val choice = chooseStartBackground(branding.settings, branding.localFiles, failedVideo = null)
+        if (choice is StartBackgroundChoice.Image) {
+            BackdropContent(kind, choice.file, 100.0, startDimAlpha(choice.dimPercent))
+        } else {
+            BackdropContent(kind, null, 100.0)
+        }
+    } else {
+        BackdropContent(
+            kind,
+            branding.localFiles[active?.wallpaperUrl ?: branding.currentWallpaperUrl],
+            active?.wallpaperOpacity ?: branding.settings.wallpaperOpacity,
+        )
+    }
     LaunchedEffect(backdrop, content) { backdrop?.show(content) }
     DisposableEffect(backdrop) { onDispose { backdrop?.shutdown() } }
 }

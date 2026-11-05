@@ -21,7 +21,7 @@ class RoundPolicyTest {
 
     @Test
     fun cameraModeWithWallpaperShowsCameraThenWallpaper() {
-        assertThat(backdropFor(GamePhase.Startup, touch = false, wallpaperEnabled = true)).isEqualTo(BackdropKind.Dark)
+        assertThat(backdropFor(GamePhase.Startup, touch = false, wallpaperEnabled = true)).isEqualTo(BackdropKind.StartBackground)
         assertThat(backdropFor(calibrating, false, true)).isEqualTo(BackdropKind.CameraStrongVignette)
         assertThat(backdropFor(countdown, false, true)).isEqualTo(BackdropKind.CameraStrongVignette)
         assertThat(backdropFor(GamePhase.Playing, false, true)).isEqualTo(BackdropKind.Wallpaper)
