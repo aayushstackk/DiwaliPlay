@@ -72,6 +72,18 @@ class GameFrameStepperTest {
     }
 
     @Test
+    fun aNewRoundWithoutLowEndGivesTheSimItsFullEffectsBack() {
+        var low = true
+        stepper.attachSurface(this, { _, _ -> }) { low }
+        accept()
+        stepper.step(0.016, 1_000.0)
+        assertThat(controller.crackers.flashEnabled).isFalse()
+        low = false
+        assertThat(stepper.step(0.016, 1_016.0).lowEnd).isFalse()
+        assertThat(controller.crackers.flashEnabled).isTrue()
+    }
+
+    @Test
     fun preparedRoundIsWarmedOnTheRenderThreadOnce() {
         val warmed = mutableListOf<Pair<List<BombConfig>, BombGameSettings>>()
         stepper.attachSurface(this, { c, s -> warmed += c to s }) { false }

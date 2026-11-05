@@ -39,7 +39,7 @@ export DIWALI_KEY_PASSWORD=...
 
 Without `DIWALI_KEYSTORE_PATH` the build still succeeds but is unsigned, and an unsigned APK can't be installed. Always install updates signed with the same key: Android refuses an update signed with a different one.
 
-The release build runs R8 (code shrinking and resource shrinking). The keep rules are in `app/proguard-rules.pro`, each with its reason. MediaPipe needs them: without the Flogger rule, hand tracking fails at start with "no caller found on the stack". After changing dependencies, install the release APK, play a trial round (code `8536`) and confirm there is no "Hand tracking unavailable" message.
+The release build runs R8 (code shrinking and resource shrinking). The keep rules are in `app/proguard-rules.pro`, each with its reason. MediaPipe needs them: without the Flogger rule, hand tracking fails at start with "no caller found on the stack". The release APK carries native libraries for `arm64-v8a` and `armeabi-v7a` only, which saves the x86 copies MediaPipe ships: both stay, so as not to assume which the display runs. Debug builds keep every ABI. After changing dependencies, install the release APK, play a trial round (code `8536`) and confirm there is no "Hand tracking unavailable" message.
 
 ### Tests
 
@@ -157,6 +157,6 @@ Test exit stops the app. It comes back in about 5 seconds only for a device owne
 - **"Hand tracking unavailable" or no hands detected.** Check the camera is listed: `adb -s <serial> shell pm list features | grep camera`. Open the admin screen, Camera test: it shows the live camera and landmarks, and the status line says what failed. **Retry** restarts the camera. An unplugged camera shows "Camera lost".
 - **GPU or CPU.** Hand tracking tries the GPU delegate first and falls back to the CPU if it fails. The performance overlay shows which one is running. CPU is slower; if inference is well over 33 ms there, check the display actually got the GPU.
 - **Cold start.** The server on Render's free tier sleeps when idle and is slow to answer the first request. The app shows a connecting state and retries; the trial code `8536` works meanwhile. Finished rounds that can't be sent are queued and sent later.
-- **Venue Wi-Fi with a captive portal.** Sign in to the portal from another device first. A blocked relay shows as "Pairing rejected" or "Not connected: retrying".
-- **Logs:** `adb -s <serial> logcat -s TrackingPipeline LandmarkerHost KioskController`.
+- **Venue Wi-Fi with a captive portal.** Sign in to the portal from another device first. A blocked relay shows as "Not connected: retrying", and connects by itself once the portal lets it through.
+- **Logs:** `adb -s <serial> logcat -s TrackingPipeline LandmarkerHost KioskController CrashRestarter RelayManager`.
 - **Release build crashes at hand tracking but debug doesn't.** R8: see `app/proguard-rules.pro` and the signing section above.

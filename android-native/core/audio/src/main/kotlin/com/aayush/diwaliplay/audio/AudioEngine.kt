@@ -22,9 +22,10 @@ import java.util.concurrent.ConcurrentHashMap
  * Media3 [ExoPlayer]. All selection and gain logic lives in the pure [SoundResolver]; this class only does I/O.
  *
  * ## Threads
- * - [apply], [play] and the `play*` helpers are non-blocking and may be called from any thread (the game's
- *   effects executor, the render thread, the UI thread). [SoundPool] is thread-safe; the settings snapshot is
- *   `@Volatile` and replaced atomically.
+ * - [apply], [play] and the `play*` helpers may be called from any thread except the render thread, which never
+ *   touches audio: the game's effects executor and the UI thread do. They don't wait on decoding, but [apply] and a
+ *   [play] of a sample not yet started do take [loadLock] for SoundPool's load calls. [SoundPool] is thread-safe; the
+ *   settings snapshot is `@Volatile` and replaced atomically.
  * - ExoPlayer may only be touched from its application looper. It is created with, and every access is posted to,
  *   the **main looper**; [startBgm], [stopBgm] and [release] are therefore callable from any thread (they run inline
  *   when already on main, otherwise they are posted, so their effect is asynchronous).
@@ -124,7 +125,7 @@ class AudioEngine(context: Context, private val resolver: SoundResolver) {
     fun hasFailed(source: SoundSource): Boolean = source in failed
 
     /**
-     * Non-blocking; see the class doc for the not-yet-loaded rule. [rate] is SoundPool's 0.5..2.0 playback rate,
+     * Doesn't wait on decoding; see the class doc for the not-yet-loaded rule. [rate] is SoundPool's 0.5..2.0 playback rate,
      * [priority] its stream priority. Returns the SoundPool stream id, or 0 when nothing was started.
      */
     fun play(source: SoundSource, volume: Float, pan: Float = 0f, rate: Float = 1f, priority: Int = ResolvedSound.PRIORITY_NORMAL): Int {

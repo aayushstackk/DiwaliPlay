@@ -34,12 +34,14 @@ fun interface LiveResultListener {
  * model loaded from assets ([MODEL_ASSET_PATH]).
  *
  * GPU first, CPU fallback. Some GPUs (the emulator's, for one) create the GPU delegate fine and
- * then fail on the first inference, so the GPU is accepted only after a probe inference succeeds.
- * If the GPU still fails later (a detect call throws, or LIVE_STREAM reports an error), the
- * landmarker is recreated on the CPU: sync detect calls retry the frame; LIVE_STREAM skips the
- * failed frame. [delegate] always names the active delegate.
+ * then fail on the first inference, so the GPU is accepted only after a probe inference succeeds;
+ * the answer is remembered for the process ([GpuProbeMemo]). If the GPU still fails later (a detect
+ * call throws, or LIVE_STREAM reports an error), the landmarker is recreated on the CPU: sync detect
+ * calls retry the frame; LIVE_STREAM skips the failed frame. That rebuild is the one model load that
+ * happens on the detect thread. [delegate] always names the active delegate.
  *
- * Not thread-safe: call detect / detectForVideo / detectAsync / close from one thread.
+ * Not thread-safe: once built (on any thread), call detect / detectForVideo / detectAsync / close
+ * from one thread. A host lives for many runs, so its timestamps must keep increasing across them.
  */
 class LandmarkerHost private constructor(
     private val context: Context,
@@ -97,6 +99,7 @@ class LandmarkerHost private constructor(
 
     private fun fallBackToCpu(cause: Exception?) {
         Log.w(TAG, "GPU delegate failed at runtime, recreating on CPU", cause)
+        gpuProbe.markUnusable()
         closeLandmarker()
         liveGpuError = false
         landmarker = try {
@@ -118,16 +121,15 @@ class LandmarkerHost private constructor(
     }
 
     private fun init(preferGpu: Boolean) {
-        if (preferGpu) {
+        if (preferGpu && gpuProbe.usable(::probeGpu)) {
             try {
-                if (probeGpu()) {
-                    landmarker = build(Delegate.GPU)
-                    delegate = DELEGATE_GPU
-                    return
-                }
+                landmarker = build(Delegate.GPU)
+                delegate = DELEGATE_GPU
+                return
             } catch (e: Throwable) {
                 if (e is VirtualMachineError) throw e
                 Log.w(TAG, "GPU delegate failed, falling back to CPU", e)
+                gpuProbe.markUnusable()
                 closeLandmarker()
             }
         }
@@ -208,6 +210,9 @@ class LandmarkerHost private constructor(
         const val NUM_HANDS = 2
         const val CONFIDENCE = 0.35f
         private const val PROBE_SIZE = 64
+
+        /** For the process, not the host: the probe loads the whole model. */
+        private val gpuProbe = GpuProbeMemo()
 
         /**
          * Creates the landmarker, GPU first unless [preferGpu] is false, then CPU.

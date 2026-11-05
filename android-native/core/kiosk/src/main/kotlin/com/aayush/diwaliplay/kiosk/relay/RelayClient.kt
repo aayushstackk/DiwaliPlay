@@ -205,7 +205,6 @@ class RelayClient(
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.w(TAG, "socket failed: ${t.javaClass.simpleName}${response?.let { " (HTTP ${it.code})" }.orEmpty()}")
-                if (response?.code == 401 || response?.code == 403) link.closeCode = CLOSE_UNAUTHORIZED
                 ended.complete(Unit)
             }
         }

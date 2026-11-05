@@ -1,10 +1,12 @@
 package com.aayush.diwaliplay.kiosk
 
+import android.app.ActivityOptions
 import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.Bundle
 import android.os.Process
 import android.os.SystemClock
 import android.util.Log
@@ -36,6 +38,19 @@ object CrashRestarter {
     internal fun install(context: Context, delayMs: Long, now: () -> Long) {
         Thread.setDefaultUncaughtExceptionHandler(Handler(context.applicationContext, delayMs, now, now()))
     }
+
+    /**
+     * For an app targeting Android 15, on 15 and up, a PendingIntent's creator no longer lends it its right to start an
+     * activity from the background unless it says so. This one has that right as a device owner or home app (see above).
+     */
+    internal fun relaunchOptions(): Bundle? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            ActivityOptions.makeBasic()
+                .setPendingIntentCreatorBackgroundActivityStartMode(ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED)
+                .toBundle()
+        } else {
+            null
+        }
 
     private class Handler(
         private val context: Context,
@@ -84,6 +99,7 @@ object CrashRestarter {
             launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             val operation = PendingIntent.getActivity(
                 context, 0, launch, PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                relaunchOptions(),
             )
             val alarms = context.getSystemService(AlarmManager::class.java)
             val at = SystemClock.elapsedRealtime() + delayMs

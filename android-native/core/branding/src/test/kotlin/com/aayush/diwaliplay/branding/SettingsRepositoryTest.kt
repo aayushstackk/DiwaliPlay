@@ -433,4 +433,157 @@ class SettingsRepositoryTest {
             server.shutdown()
         }
     }
+
+    // ---- assets: not re-downloaded on every 8 s poll --------------------------------------------------------
+
+    private class AssetRig(tmp: File) {
+        val server = MockWebServer()
+        val counts = java.util.concurrent.ConcurrentHashMap<String, Int>()
+        var nowMs = 0L
+        val api = FakeApi()
+        val repo: SettingsRepository
+
+        init {
+            server.dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    counts.merge(request.path!!, 1, Int::plus)
+                    return if (request.getHeader("If-None-Match") != null) MockResponse().setResponseCode(304)
+                    else MockResponse().setHeader("ETag", "\"v1\"").setBody("IMG")
+                }
+            }
+            server.start()
+            api.settings = settingsOf(SystemSettings(brandLogoUrl = server.url("/logo.png").toString()))
+            api.bombs = ApiResult.Success(ListBombsResponse(success = true, bombs = emptyList(), settings = DEFAULT_BOMB_SETTINGS))
+            api.rewards = ApiResult.Success(RewardsInfo(success = true, enabled = false, rewards = emptyList()))
+            repo = SettingsRepository(
+                api = api,
+                cache = AssetCache(File(tmp, "assets").also { it.mkdirs() }, OkHttpClient()),
+                store = File(tmp, "branding.json"),
+                scope = CoroutineScope(Job() + Dispatchers.IO),
+                nowMs = { nowMs },
+            )
+        }
+
+        fun logo(path: String = "/logo.png") { api.settings = settingsOf(SystemSettings(brandLogoUrl = server.url(path).toString())) }
+    }
+
+    @Test fun assetIsRevalidatedAtMostEvery30Minutes() = runBlocking {
+        val rig = AssetRig(tmp.root)
+        try {
+            rig.repo.refreshNow()
+            assertThat(rig.counts["/logo.png"]).isEqualTo(1)
+            val url = rig.server.url("/logo.png").toString()
+            assertThat(rig.repo.state.value.localFiles[url]).isNotNull()
+
+            // 30 minutes of 8 s polls, less one poll: nothing goes to the server, and the file stays published.
+            while (rig.nowMs + SettingsRepository.POLL_INTERVAL_MS < SettingsRepository.ASSET_REVALIDATE_MS) {
+                rig.nowMs += SettingsRepository.POLL_INTERVAL_MS
+                rig.repo.refreshNow()
+            }
+            assertThat(rig.counts["/logo.png"]).isEqualTo(1)
+            assertThat(rig.repo.state.value.localFiles[url]).isNotNull()
+
+            rig.nowMs = SettingsRepository.ASSET_REVALIDATE_MS
+            rig.repo.refreshNow()
+            assertThat(rig.counts["/logo.png"]).isEqualTo(2)
+            rig.nowMs += SettingsRepository.POLL_INTERVAL_MS
+            rig.repo.refreshNow()
+            assertThat(rig.counts["/logo.png"]).isEqualTo(2)
+        } finally {
+            rig.server.shutdown()
+        }
+    }
+
+    @Test fun aChangedUrlIsFetchedAtOnce() = runBlocking {
+        val rig = AssetRig(tmp.root)
+        try {
+            rig.repo.refreshNow()
+            rig.logo("/new.png")
+            rig.nowMs += SettingsRepository.POLL_INTERVAL_MS
+            rig.repo.refreshNow()
+            assertThat(rig.counts["/new.png"]).isEqualTo(1)
+            assertThat(rig.repo.state.value.localFiles[rig.server.url("/new.png").toString()]).isNotNull()
+        } finally {
+            rig.server.shutdown()
+        }
+    }
+
+    /** Admin switches back to a logo from before: as far as anyone can tell that's a change. */
+    @Test fun aUrlThatComesBackIsFetchedAtOnce() = runBlocking {
+        val rig = AssetRig(tmp.root)
+        try {
+            rig.repo.refreshNow()
+            rig.logo("/new.png")
+            rig.repo.refreshNow()
+            rig.logo("/logo.png")
+            rig.repo.refreshNow()
+            assertThat(rig.counts["/logo.png"]).isEqualTo(2)
+        } finally {
+            rig.server.shutdown()
+        }
+    }
+
+    @Test fun anAssetThatNeverArrivedIsRetriedOnTheNextPoll() = runBlocking {
+        val rig = AssetRig(tmp.root)
+        try {
+            rig.server.dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    val n = rig.counts.merge(request.path!!, 1, Int::plus)!!
+                    return if (n == 1) MockResponse().setResponseCode(503) else MockResponse().setBody("IMG")
+                }
+            }
+            rig.repo.refreshNow()
+            assertThat(rig.repo.state.value.localFiles).isEmpty()
+            rig.nowMs += SettingsRepository.POLL_INTERVAL_MS
+            rig.repo.refreshNow()
+            assertThat(rig.repo.state.value.localFiles).hasSize(1)
+        } finally {
+            rig.server.shutdown()
+        }
+    }
+
+    // ---- branding.json is written only when it changes ------------------------------------------------------
+
+    /** Writing replaces the file, so an old timestamp survives only if nothing wrote. */
+    @Test fun unchangedBrandingIsNotRewritten() = runTest {
+        val store = File(tmp.root, "branding.json")
+        val api = FakeApi()
+        val r = repo(api, store)
+        r.refreshNow()
+        assertThat(store.isFile).isTrue()
+        store.setLastModified(1_000_000L)
+        r.refreshNow()
+        assertThat(store.lastModified()).isEqualTo(1_000_000L)
+
+        val changed = api.settings as ApiResult.Success
+        api.settings = ApiResult.Success(changed.value.copy(settings = changed.value.settings.copy(brandName = "Other")))
+        r.refreshNow()
+        assertThat(store.lastModified()).isNotEqualTo(1_000_000L)
+        assertThat(store.readText()).contains("Other")
+    }
+
+    /** The disk copy is what's being compared with after a restart too, not only this process's last write. */
+    @Test fun aRestartDoesNotRewriteUnchangedBranding() = runTest {
+        val store = File(tmp.root, "branding.json")
+        val api = FakeApi()
+        repo(api, store).refreshNow()
+        val saved = store.readText()
+        store.setLastModified(1_000_000L)
+        val r = repo(api, store)
+        r.refreshNow()
+        assertThat(store.readText()).isEqualTo(saved)
+        assertThat(store.lastModified()).isEqualTo(1_000_000L)
+    }
+
+    @Test fun aFailedWriteIsRetriedOnTheNextRefresh() = runTest {
+        val dir = File(tmp.root, "blocked")
+        val store = File(dir, "branding.json")
+        dir.writeText("a file where the directory should be")
+        val api = FakeApi()
+        val r = repo(api, store)
+        r.refreshNow()
+        dir.delete()
+        r.refreshNow()
+        assertThat(store.isFile).isTrue()
+    }
 }

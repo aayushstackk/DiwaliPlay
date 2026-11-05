@@ -5,6 +5,7 @@ import android.os.HandlerThread
 import android.os.Process
 import android.view.Choreographer
 import android.view.SurfaceHolder
+import com.aayush.diwaliplay.game.flow.GamePhase
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,8 +29,10 @@ import kotlinx.coroutines.flow.asStateFlow
 class RenderLoop(
     private val holder: SurfaceHolder,
     private val renderer: Renderer,
-    private val monitor: FrameRateMonitor = FrameRateMonitor(),
+    monitor: FrameRateMonitor = FrameRateMonitor(),
 ) {
+    private val roundLowEnd = RoundLowEnd(monitor)
+
     private val lock = Any()        // guards generation creation/teardown and onFrame assignment
     /** Held for a whole frame (running check, onFrame, lock/draw/post); taken by stop()/surfaceDestroyed(). */
     private val frameLock = Any()
@@ -44,7 +47,7 @@ class RenderLoop(
     val fps: StateFlow<Float> = _fps.asStateFlow()
 
     private val _lowEnd = MutableStateFlow(false)
-    /** Becomes (and stays) true once [FrameRateMonitor] decides low-end mode should switch on. */
+    /** Whether this round (or, between rounds, the last one) tripped low-end mode: see [RoundLowEnd]. */
     val lowEnd: StateFlow<Boolean> = _lowEnd.asStateFlow()
 
     fun start(onFrame: (dtSeconds: Double, nowMs: Double) -> RenderFrame) {
@@ -143,11 +146,12 @@ class RenderLoop(
                 if (!running || !hasSurface || callback == null || !isCurrent()) return
 
                 val dtSeconds = if (lastFrameNanos == 0L) 1.0 / 60.0 else (frameTimeNanos - lastFrameNanos) / 1e9
-                if (lastFrameNanos != 0L && monitor.record(dtSeconds * 1000.0) && !_lowEnd.value) _lowEnd.value = true
+                val dtMs = if (lastFrameNanos == 0L) -1.0 else dtSeconds * 1000.0
                 lastFrameNanos = frameTimeNanos
                 updateFps(frameTimeNanos)
 
                 val frame = callback(dtSeconds, frameTimeNanos / 1_000_000.0)
+                _lowEnd.value = roundLowEnd.onFrame(frame.phase == GamePhase.Playing, dtMs)
                 val canvas = try {
                     holder.lockHardwareCanvas()
                 } catch (_: IllegalStateException) {

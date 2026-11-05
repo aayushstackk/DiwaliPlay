@@ -5,6 +5,7 @@ import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import androidx.annotation.MainThread
+import com.aayush.diwaliplay.api.HeldResult
 import com.aayush.diwaliplay.api.ResultQueue
 import com.aayush.diwaliplay.audio.AudioEngine
 import com.aayush.diwaliplay.branding.BrandingState
@@ -230,13 +231,22 @@ class LazyBrandingSource(
     }
 }
 
-/** Where a finished round goes when the server can't take it right now. */
+/**
+ * Where a finished round is kept until the server has it. All disk: not on the main thread.
+ * [hold] and [enqueue] throw if it can't be written.
+ */
 interface ResultSink {
     fun start()
+
+    /** On disk when this returns, and not sent by the sink until released. Survives the process. */
+    fun hold(req: CompleteSessionRequest): HeldResult
+
+    /** On disk when this returns, and the sink's to send. */
     fun enqueue(req: CompleteSessionRequest)
 }
 
 class QueueResultSink(private val queue: Lazy<ResultQueue>) : ResultSink {
     override fun start() = queue.value.start()
+    override fun hold(req: CompleteSessionRequest): HeldResult = queue.value.hold(req)
     override fun enqueue(req: CompleteSessionRequest) = queue.value.enqueue(req)
 }

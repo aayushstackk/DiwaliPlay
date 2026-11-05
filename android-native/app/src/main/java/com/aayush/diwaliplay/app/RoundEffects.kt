@@ -3,6 +3,7 @@ package com.aayush.diwaliplay.app
 import android.util.Log
 import com.aayush.diwaliplay.api.ApiResult
 import com.aayush.diwaliplay.api.GameApi
+import com.aayush.diwaliplay.api.HeldResult
 import com.aayush.diwaliplay.api.UndecodableResponseException
 import com.aayush.diwaliplay.game.flow.GameController
 import com.aayush.diwaliplay.game.flow.GameEffects
@@ -31,6 +32,13 @@ internal const val GUEST_SESSION_PREFIX = "guest_"
 
 /** The reason sent for a round found unfinished on the next start. */
 internal const val ABANDON_CRASH = "crash"
+
+/** Status or exception class only. The bodies and messages can carry a player's name or mobile number, so never log them. */
+internal fun ApiResult<*>.logSummary(): String = when (this) {
+    is ApiResult.Success -> "unsuccessful response"
+    is ApiResult.HttpError -> "HTTP $code"
+    is ApiResult.NetworkError -> cause.javaClass.simpleName
+}
 
 /**
  * [GameEffects] on one single-threaded [scope], whichever thread the controller called from.
@@ -69,7 +77,7 @@ internal class RoundEffects(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    Log.e(TAG, "network effect failed", e)
+                    Log.e(TAG, "network effect failed: ${e.javaClass.simpleName}")
                 }
             }
         }
@@ -81,9 +89,17 @@ internal class RoundEffects(
             val id = activeSession.takeLeftover()
             if (id != null && isServerSession(id)) {
                 val r = api.abandonSession(AbandonSessionRequest(id, ABANDON_CRASH))
-                if (r !is ApiResult.Success) Log.w(TAG, "crash abandon failed: $r")
+                if (r !is ApiResult.Success) Log.w(TAG, "crash abandon failed: ${r.logSummary()}")
             }
         }
+    }
+
+    /**
+     * Starts the result queue, behind the crash report in the FIFO. A round that died between its result reaching the
+     * disk and the store being cleared is in both; abandon then complete leaves it COMPLETED, the other order wouldn't.
+     */
+    fun startResults() {
+        network.trySend { withContext(background) { results.start() } } // lists its directory
     }
 
     /** The server has never heard of the others. */
@@ -118,36 +134,64 @@ internal class RoundEffects(
                 if (generation == startGeneration.get()) currentRoundSessionId = r.value.session.id
                 controller().onSessionStarted(code, r.value.session.id)
             } else {
-                Log.w(TAG, "startSession failed: $r")
+                Log.w(TAG, "startSession failed: ${r.logSummary()}")
             }
         }
     }
 
+    /**
+     * The result reaches the disk before the first attempt, and the round stops being "unfinished" there and then: a
+     * crash or power cut during a send of up to a minute and a half loses neither score nor photo, and doesn't turn the
+     * round into an abandon on the next start. This attempt is still made here, so the card can show its reward.
+     */
     override fun completeSession(req: CompleteSessionRequest) {
         network.trySend {
             val sent = req.copy(sessionId = serverId(req.sessionId))
-            when (val r = api.completeSession(sent)) {
-                is ApiResult.Success -> {
-                    activeSession.clear()
-                    controller().onRoundCompleted(req.sessionId, r.value.session.earnedReward)
+            val held = hold(sent)
+            var delivered = false
+            try {
+                when (val r = api.completeSession(sent)) {
+                    is ApiResult.Success -> {
+                        delivered = true
+                        if (held == null) activeSession.clear()
+                        controller().onRoundCompleted(req.sessionId, r.value.session.earnedReward)
+                    }
+                    // The queue applies the retry policy: it drops what can never succeed.
+                    is ApiResult.HttpError -> if (held == null) enqueue(sent)
+                    is ApiResult.NetworkError ->
+                        // A 2xx with an undecodable body: the idempotent endpoint took it.
+                        if (r.cause is UndecodableResponseException) {
+                            delivered = true
+                            if (held == null) activeSession.clear()
+                        } else if (held == null) {
+                            enqueue(sent)
+                        }
                 }
-                // The queue applies the retry policy: it drops what can never succeed.
-                is ApiResult.HttpError -> enqueue(sent)
-                is ApiResult.NetworkError ->
-                    // A 2xx with an undecodable body: the idempotent endpoint took it.
-                    if (r.cause is UndecodableResponseException) activeSession.clear() else enqueue(sent)
+            } finally {
+                // Also on the way out of an exception or cancellation: the worker must not be left waiting on this.
+                if (delivered) held?.delivered() else held?.release()
             }
         }
     }
 
-    /** Once queued the result will get there, so the round is no longer unfinished. If it can't be, it still is. */
+    /** Null if it couldn't be written: the round stays unfinished, and the attempt goes ahead without a safety net. */
+    private suspend fun hold(req: CompleteSessionRequest): HeldResult? = withContext(background) {
+        try {
+            results.hold(req).also { activeSession.clear() }
+        } catch (e: Exception) {
+            Log.e(TAG, "could not store the result: ${e.javaClass.simpleName}")
+            null
+        }
+    }
+
+    /** The disk failed once already; one more try now the send has failed too. If it can't be queued, the round stays unfinished. */
     private suspend fun enqueue(req: CompleteSessionRequest) {
         withContext(background) {
             try {
                 results.enqueue(req)
                 activeSession.clear()
             } catch (e: Exception) {
-                Log.e(TAG, "could not queue result for ${req.sessionId}", e)
+                Log.e(TAG, "could not queue the result: ${e.javaClass.simpleName}")
             }
         }
     }
@@ -156,14 +200,14 @@ internal class RoundEffects(
         network.trySend {
             val r = api.abandonSession(AbandonSessionRequest(serverId(sessionId), reason))
             activeSession.clear()
-            if (r !is ApiResult.Success) Log.w(TAG, "abandonSession failed: $r")
+            if (r !is ApiResult.Success) Log.w(TAG, "abandonSession failed: ${r.logSummary()}")
         }
     }
 
     override fun submitFeedback(sessionId: String, feedback: GameFeedback) {
         network.trySend {
             val r = api.submitFeedback(serverId(sessionId), feedback)
-            if (r !is ApiResult.Success) Log.w(TAG, "submitFeedback failed: $r")
+            if (r !is ApiResult.Success) Log.w(TAG, "submitFeedback failed: ${r.logSummary()}")
         }
     }
 

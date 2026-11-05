@@ -8,10 +8,11 @@ Record: date ____  tester ____  display serial ____  app version ____
 
 ## 1. Performance
 
-- [ ] **Render rate in the heaviest reachable case.** Hand movement alone fires no crackers or points (as on the web), so a mega combo can't be made by waving. The heavy case that can be reached is **sustained bomb bursts**: play a bomb round with both hands, popping bombs as fast as you can for 60 s. Pass: overlay render fps **>= 58 on average** and never below 45 for more than 1 s. Measured: ____ fps. If the overlay says "(low-end)", the display fell back to the cheaper renderer: record it as a fail for this check and note when it switched.
+- [ ] **Render rate in the heaviest reachable case.** Hand movement alone fires no crackers or points (as on the web), so a mega combo can't be made by waving. The heavy case that can be reached is **sustained bomb bursts**: play a bomb round with both hands, popping bombs as fast as you can for 60 s. Pass: overlay render fps **>= 58 on average** and never below 45 for more than 1 s. Measured: ____ fps. If the overlay says "(low-end)", the display fell back to the cheaper renderer: record it as a fail for this check and note when it switched. (Low-end is judged per round on the frames of play alone, so the overlay can clear at the next round's start.)
 - [ ] **Inference keeps up with the camera.** Overlay, during a round with hands in view. Pass: **inference <= 33 ms** and camera fps >= 28. Measured: ____ ms, ____ fps.
 - [ ] **GPU delegate really chosen.** Pass: overlay says `Tracking GPU` on the Mali-G52, not CPU. If it says CPU, note inference ms there and whether it still passes the line above.
-- [ ] **Soak.** Leave the app running unattended for 30 min with rewards on, then play a round. Pass: no restart, no fps drop below the lines above, no memory warning in `adb logcat`.
+- [ ] **Soak.** Leave the app running unattended for 8 h on the start screen with rewards on, then play 100 rounds. Record `adb -s <serial> shell dumpsys meminfo com.aayush.diwaliplay.kiosk` (the TOTAL PSS line, in KB) at the start, after the 8 h, after round 1, and every 25 rounds. The hand-tracking model stays loaded between rounds, so one step up after round 1 is expected. Pass: no restart, no fps drop below the lines above, no memory warning in `adb logcat`, and PSS flat from round 25 to round 100 (growth under 10%). Measured PSS: start ____, after 8 h ____, round 1 ____, 25 ____, 50 ____, 75 ____, 100 ____.
+- [ ] **Second round starts fast.** Overlay on. The first camera round after launch loads the model: the live camera or wallpaper shows at once, tracking starts a few seconds later. The second round's tracking starts with no wait, on the same delegate. Measured, first round: ____ s; second: ____ s.
 
 ## 2. Camera and hand tracking
 
@@ -27,9 +28,11 @@ Record: date ____  tester ____  display serial ____  app version ____
 - [ ] **End to end.** Scan the QR with a phone, register, enter the code, calibrate, count down, play, photo, card, spin the wheel, give feedback, and return to the start screen by itself. Pass: no stuck screen and no error shown.
 - [ ] **Admin reports.** The round appears in the web admin panel's reports with the right name and score.
 - [ ] **Photo.** The photo appears on the card and in the admin panel, and is mirrored the same way as the live preview (your right hand is on the right in both).
+- [ ] **SVG artwork.** In the web panel set an SVG as the logo, a bomb's image, a reward's image and a wallpaper (the default rewards already are SVG). Pass: each one shows on the display: the logo on the start screen, the bomb in a bomb round, the reward on the wheel or card, the wallpaper in a round using it as background; none falls back to the built-in drawing; edges are sharp. SVG filters aren't drawn, so a drop shadow in the artwork is missing: note anything else that looks different from the web: ____________.
 - [ ] **QR scans on a real phone** from the start screen at normal viewing distance (about 2 m), in the venue's lighting.
+- [ ] **Power cut in the send.** Block the server (turn the venue Wi-Fi off) as the card appears, and pull the power within a few seconds. Restore both. Pass: the round is in the admin panel as completed, with its score and photo, within a few minutes of the display coming back.
 - [ ] **Unattended with rewards on.** Leave a round at the wheel / card screen and walk away. Pass: it behaves as the web game does (no timeout of its own; the next player can use the display). Note what you saw: ____________.
-- [ ] **Venue Wi-Fi with a captive portal.** Behind the portal (before signing in), the app shows a connecting state, not a crash; the trial code `8536` still works; the relay shows "Not connected: retrying" or "Pairing rejected", and recovers after signing in or re-pairing.
+- [ ] **Venue Wi-Fi with a captive portal.** Behind the portal (before signing in), the app shows a connecting state, not a crash; the trial code `8536` still works; the relay shows "Not connected: retrying", never "Pairing rejected", and recovers by itself after signing in.
 
 ## 4. Sound (nobody has listened to these yet)
 
@@ -51,7 +54,7 @@ Provision first, as in the README. Use a display with no accounts.
 - [ ] **Unlock.** Admin screen (5 logo taps in 3 s, then the PIN), turn **Lock this kiosk** off: Home works. Turn it on again: the lock is back.
 - [ ] **Boot launch.** Reboot the display (`adb -s <serial> reboot`). Pass: the game starts by itself, no other launcher on top.
 - [ ] **Crash recovery.** Make the app crash, e.g. `adb -s <serial> shell am crash com.aayush.diwaliplay.kiosk`. Pass: the game is back in **about 5 s**. Measured: ____ s.
-- [ ] **Native crash.** `adb -s <serial> shell kill -SEGV $(adb -s <serial> shell pidof com.aayush.diwaliplay.kiosk)`. Pass: the app comes back (a native crash skips the Java handler, so this may rely on the home-app relaunch). Measured: ____ s, or "did not return".
+- [ ] **Native crash.** adb's shell user can't signal another app's process, so a plain `kill` from `adb shell` is refused. Pick the one the display allows, and note which: **with su** (a rooted or userdebug display), on the signed release APK, `adb -s <serial> shell su -c 'kill -SEGV $(pidof com.aayush.diwaliplay.kiosk)'`; **or on a debug build**, `adb -s <serial> shell run-as com.aayush.diwaliplay.kiosk sh -c 'kill -SEGV $(pidof com.aayush.diwaliplay.kiosk)'`. Used: ____. Pass: the app comes back (a native crash skips the Java handler, so this may rely on the home-app relaunch). Measured: ____ s, or "did not return".
 - [ ] **PIN lockout.** Enter 5 wrong PINs: the dialog refuses for 15 minutes, and a right PIN is refused too until then.
 - [ ] **Remove device owner.** Admin screen, **Remove device owner**, confirm, PIN. Pass: `adb -s <serial> shell dpm list-owners` says no owners, Home works, `adb -s <serial> uninstall com.aayush.diwaliplay.kiosk` succeeds. Then provision again with the README command, to check it can be done.
 
@@ -70,6 +73,15 @@ Provision first, as in the README. Use a display with no accounts.
 - [ ] The panel's Android-specific text reads correctly: optional passcode box, test exit tooltip (about 5 s), error text such as "Invalid passcode: 4 attempts left".
 - [ ] Deleting the device in the panel makes the display show "Pairing rejected: unpair and pair again."
 - [ ] Heartbeats keep the device online in the panel for 10 minutes of idle.
+
+## 8. The signed release APK, for R8
+
+R8 can remove or rename what's only reached by reflection, and only this APK shows it. On the emulator it has launched and reached calibration with the trial code, twice in a row; none of the below has been run on it. Everything below on the **signed release APK**, watching `adb -s <serial> logcat -b crash` for `ClassNotFoundException`, `NoSuchMethodError` or `NoSuchFieldError`.
+
+- [ ] **Audio:** the countdown, a bomb, the music and a custom sound uploaded in the panel all play.
+- [ ] **Wheel:** spins, ticks, lands, and shows the prize with its (SVG) image.
+- [ ] **Card:** shows with the photo, and saves.
+- [ ] **Relay:** pairs, connects, and answers status, enable, disable from the panel.
 
 ## Result
 

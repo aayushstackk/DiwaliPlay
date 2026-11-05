@@ -205,8 +205,8 @@ class GameViewModel(
 
     init {
         effects.reportLeftoverSession()
+        effects.startResults()
         deps.branding.start()
-        effectsScope.launch { withContext(background) { deps.results.start() } } // lists its directory
         scope.launch { controller.phase.collect(::syncToPhase) }
         scope.launch { deps.tracking.status.collect(::onTrackingStatus) }
         scope.launch { deps.serverReachable.collect { r -> _startUi.update { it.copy(serverReachable = r) } } }

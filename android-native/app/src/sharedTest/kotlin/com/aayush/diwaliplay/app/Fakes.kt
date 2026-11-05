@@ -3,6 +3,7 @@ package com.aayush.diwaliplay.app
 import com.aayush.diwaliplay.api.AbandonSessionResponse
 import com.aayush.diwaliplay.api.ApiResult
 import com.aayush.diwaliplay.api.GameApi
+import com.aayush.diwaliplay.api.HeldResult
 import com.aayush.diwaliplay.branding.BrandingState
 import com.aayush.diwaliplay.model.AbandonSessionRequest
 import com.aayush.diwaliplay.model.BombConfig
@@ -44,6 +45,9 @@ class FakeGameApi : GameApi {
             StartSessionResponse(success = true, session = GameSession(id = serverSessionId, userId = "u1"), user = TEST_USER),
         )
     }
+    var onAbandon: suspend (AbandonSessionRequest) -> ApiResult<AbandonSessionResponse> = {
+        ApiResult.Success(AbandonSessionResponse(success = true))
+    }
     var onComplete: suspend (CompleteSessionRequest) -> ApiResult<CompleteSessionResponse> = { req ->
         ApiResult.Success(
             CompleteSessionResponse(success = true, session = GameSession(id = req.sessionId, userId = "u1"), user = TEST_USER),
@@ -73,7 +77,7 @@ class FakeGameApi : GameApi {
 
     override suspend fun abandonSession(req: AbandonSessionRequest): ApiResult<AbandonSessionResponse> {
         abandoned += req
-        return ApiResult.Success(AbandonSessionResponse(success = true))
+        return onAbandon(req)
     }
 
     override suspend fun submitFeedback(sessionId: String, feedback: GameFeedback): ApiResult<SubmitFeedbackResponse> {
@@ -92,11 +96,25 @@ class FakeGameApi : GameApi {
 }
 
 class FakeResultSink : ResultSink {
+    /** Everything written to disk, whoever is sending it. */
+    val stored = CopyOnWriteArrayList<CompleteSessionRequest>()
+    /** What is now the sink's to send. */
     val queued = CopyOnWriteArrayList<CompleteSessionRequest>()
+    val delivered = CopyOnWriteArrayList<CompleteSessionRequest>()
     @Volatile var failEnqueue = false
-    override fun start() = Unit
+    @Volatile var startCalls = 0
+    override fun start() { startCalls++ }
+    override fun hold(req: CompleteSessionRequest): HeldResult {
+        if (failEnqueue) throw java.io.IOException("disk full")
+        stored += req
+        return object : HeldResult {
+            override fun delivered() { this@FakeResultSink.delivered += req }
+            override fun release() { queued += req }
+        }
+    }
     override fun enqueue(req: CompleteSessionRequest) {
         if (failEnqueue) throw java.io.IOException("disk full")
+        stored += req
         queued += req
     }
 }

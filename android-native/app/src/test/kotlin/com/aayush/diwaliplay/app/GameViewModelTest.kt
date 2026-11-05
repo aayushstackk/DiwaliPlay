@@ -43,8 +43,9 @@ class GameViewModelTest {
         private val test: TestScope,
         settings: SystemSettings = SystemSettings(rewardsEnabled = false),
         val activeSession: FakeActiveSessionStore = FakeActiveSessionStore(),
+        beforeInit: (FakeGameApi) -> Unit = {},
     ) {
-        val api = FakeGameApi()
+        val api = FakeGameApi().also(beforeInit)
         val results = FakeResultSink()
         val audio = FakeGameAudio()
         val tracking = FakeTrackingPipeline()
@@ -1362,6 +1363,89 @@ class GameViewModelTest {
         r.playThroughCountdown()
         runCurrent()
         assertThat(r.activeSession.everSet).isEmpty()
+    }
+
+    /** The first attempt can take a minute and a half, and the process can die in it. */
+    @Test
+    fun resultIsDurableAndTheRoundForgottenBeforeTheFirstSend() = runTest {
+        val r = Rig(this)
+        val gate = CompletableDeferred<Unit>()
+        var storedAtSend = -1
+        var activeAtSend: String? = "unset"
+        r.api.onComplete = { req ->
+            storedAtSend = r.results.stored.size
+            activeAtSend = r.activeSession.current
+            gate.await()
+            ApiResult.Success(CompleteSessionResponse(success = true, session = GameSession(id = req.sessionId, userId = "u1"), user = TEST_USER))
+        }
+        r.acceptCode()
+        r.playToCard()
+        settle()
+        assertThat(storedAtSend).isEqualTo(1)
+        assertThat(activeAtSend).isNull()
+        assertThat(r.results.stored.single().sessionId).isEqualTo("server_session")
+        assertThat(r.results.queued).isEmpty() // nobody but the first attempt is sending it
+
+        gate.complete(Unit)
+        settle()
+        assertThat(r.results.delivered).hasSize(1)
+        assertThat(r.results.queued).isEmpty()
+    }
+
+    @Test
+    fun undecodableCompleteRemovesTheStoredResult() = runTest {
+        val r = Rig(this)
+        r.api.onComplete = { ApiResult.NetworkError(UndecodableResponseException(200, "x", IOException())) }
+        r.acceptCode()
+        r.playToCard()
+        settle()
+        assertThat(r.results.delivered).hasSize(1)
+        assertThat(r.results.queued).isEmpty()
+    }
+
+    @Test
+    fun aThrowingFirstAttemptLeavesTheResultToTheQueue() = runTest {
+        val r = Rig(this)
+        r.api.onComplete = { throw IllegalStateException("boom") }
+        r.acceptCode()
+        r.playToCard()
+        settle()
+        assertThat(r.results.queued).hasSize(1)
+        assertThat(r.results.delivered).isEmpty()
+    }
+
+    /** Nothing on disk, so the round is still open until the server has it. */
+    @Test
+    fun unwritableResultStillTriesTheServerAndIsForgottenOnSuccess() = runTest {
+        val r = Rig(this)
+        r.results.failEnqueue = true
+        r.acceptCode()
+        r.playToCard()
+        settle()
+        assertThat(r.api.completed).hasSize(1)
+        assertThat(r.activeSession.current).isNull()
+    }
+
+    /** A leftover that also has a stored result: complete must land after abandon, or the round ends up ABANDONED. */
+    @Test
+    fun resultQueueStartsOnlyAfterTheCrashReport() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val r = Rig(this, activeSession = FakeActiveSessionStore(leftover = "dead_session"), beforeInit = { api ->
+            api.onAbandon = { gate.await(); ApiResult.Success(com.aayush.diwaliplay.api.AbandonSessionResponse(success = true)) }
+        })
+        settle()
+        assertThat(r.api.abandoned).hasSize(1)
+        assertThat(r.results.startCalls).isEqualTo(0)
+        gate.complete(Unit)
+        settle()
+        assertThat(r.results.startCalls).isEqualTo(1)
+    }
+
+    @Test
+    fun logSummariesCarryNoPlayerData() {
+        assertThat(ApiResult.HttpError(500, "mobile 9990001111").logSummary()).isEqualTo("HTTP 500")
+        assertThat(ApiResult.NetworkError(IOException("9990001111")).logSummary()).isEqualTo("IOException")
+        assertThat(ApiResult.Success("Asha 9990001111").logSummary()).doesNotContain("9990001111")
     }
 
     // ---- admin camera test ------------------------------------------------------------------------------------

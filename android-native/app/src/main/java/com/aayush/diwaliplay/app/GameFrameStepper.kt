@@ -55,7 +55,7 @@ class GameFrameStepper(
     @Volatile var spriteWarmer: SpriteWarmer? = null
         private set
 
-    /** The attached surface's `GameSurfaceView.lowEnd`, sticky for the session. */
+    /** The attached surface's `GameSurfaceView.lowEnd`: sticky within a round, judged afresh for the next. */
     @Volatile var lowEndSource: () -> Boolean = NEVER_LOW_END
         private set
 
@@ -85,9 +85,9 @@ class GameFrameStepper(
             pendingRound.getAndSet(null)?.let { spriteWarmer?.warm(it.configs, it.settings) }
 
             val lowEnd = lowEndSource()
-            if (lowEnd && !lowEndApplied) {
-                lowEndApplied = true
-                controller.crackers.setLowEndMode(true)
+            if (lowEnd != lowEndApplied) {
+                lowEndApplied = lowEnd
+                controller.crackers.setLowEndMode(lowEnd)
             }
 
             val snap = tracking.snapshot()

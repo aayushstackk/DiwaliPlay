@@ -22,6 +22,7 @@ import java.io.ByteArrayOutputStream
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.flow.StateFlow
 
@@ -82,20 +83,24 @@ internal class FrameRoute<F>(
  *
  * Threading:
  * - [start] / [stop]: main thread (CameraX binding). Both are idempotent. The owner's ON_DESTROY
- *   also stops the pipeline.
- * - analysis thread ("tracking-analysis"): CameraX analyzer, landmarker create / detectAsync / close.
+ *   also stops the pipeline and releases the landmarker.
+ * - analysis thread ("tracking-analysis"): CameraX analyzer, landmarker detectAsync / close.
+ * - build thread ("tracking-landmarker"): creates the landmarker, so frames keep coming while the model loads.
  * - MediaPipe result thread: only hands the converted [HandFrame] to the result thread.
  * - result thread ("tracking-result"): the ONLY thread that calls [tracker] after construction. See
  *   [TrackingPublisher].
  * - [captureStill]: any thread.
  *
+ * The landmarker is built by the first run that tracks hands and kept across runs, until [releaseLandmarker]. Its
+ * timestamps strictly increase for its whole life, and each run's generation goes with its frames ([RunStamps]), so
+ * results that arrive after [stop] (or from a previous start) are dropped. [HandTracker] is reset per run.
+ *
  * Landmarks reach HandTracker raw (it mirrors x itself); only the preview and the still are
- * mirrored. Non-16:9 frames (the 640×480 fallback) go through [cropToSixteenNine]. Results that
- * arrive after [stop] (or from a previous start) are dropped. A frame that fails is dropped; after
+ * mirrored. Non-16:9 frames (the 640×480 fallback) go through [cropToSixteenNine]. A frame that fails is dropped; after
  * [MAX_CONSECUTIVE_FRAME_FAILURES] in a row, or on an unrecoverable landmarker or tracker error,
  * hand tracking ends as [TrackingStatus.Failed] with empty hands, never an uncaught exception, while
  * the camera carries on supplying [latestFrame] and [captureStill] ([TrackingStatus.Failed.cameraAlive]).
- * Call stop() then start() to retry.
+ * Call stop() then start() to retry: a landmarker that failed is replaced at that start.
  */
 class TrackingPipeline(
     context: Context,
@@ -109,6 +114,7 @@ class TrackingPipeline(
     // can't overlap old and new work on the landmarker or tracker. Idle threads exit on their own.
     private val analysisExecutor = serialExecutor("tracking-analysis")
     private val resultExecutor = serialExecutor("tracking-result")
+    private val buildExecutor = serialExecutor("tracking-landmarker")
 
     private val publisher = TrackingPublisher(
         tracker,
@@ -128,7 +134,10 @@ class TrackingPipeline(
     // Main-thread state.
     private var running = false
     private val destroyObserver = LifecycleEventObserver { _, event ->
-        if (event == Lifecycle.Event.ON_DESTROY) stop()
+        if (event == Lifecycle.Event.ON_DESTROY) {
+            stop()
+            landmarkers.release()
+        }
     }
 
     @Volatile private var frameW = 0
@@ -139,13 +148,33 @@ class TrackingPipeline(
     @Volatile private var cameraDead = false
     @Volatile private var trackHands = true
 
-    /** Delegate of the live landmarker, mirrored from the analysis thread for the result path. */
+    /** The run errors from the landmarker go to, whichever run its frame came from: the landmarker is shared. */
+    @Volatile private var currentGeneration = -1
+
+    /** Delegate of the live landmarker, mirrored for the result path. */
     @Volatile private var activeDelegate: String? = null
 
     private val latestFrame = AtomicReference<CameraFrame?>(null)
 
+    private val landmarkers = LandmarkerKeeper(
+        buildExecutor,
+        analysisExecutor,
+        build = {
+            beforeLandmarkerBuild?.invoke()
+            landmarkerBuilds.incrementAndGet()
+            LandmarkerHost.create(
+                appContext,
+                RunningMode.LIVE_STREAM,
+                preferGpu = preferGpu,
+                listener = ::onLandmarkerResult,
+                onError = ::onLandmarkerError,
+            )
+        },
+        close = LandmarkerHost::close,
+    )
+    private val runs = RunStamps()
+
     // Analysis-thread state.
-    private var landmarker: LandmarkerHost? = null
     private val timestamps = MonotonicTimestamp()
     private var fpsWindowStart = 0L
     private var fpsWindowFrames = 0
@@ -159,6 +188,12 @@ class TrackingPipeline(
     /** Test seam: runs on the analysis thread just before each detect, to inject a failure. */
     @Volatile internal var beforeDetect: (() -> Unit)? = null
 
+    /** Test seam: runs on the build thread before the model loads, to hold the build up. */
+    @Volatile internal var beforeLandmarkerBuild: (() -> Unit)? = null
+
+    /** How many landmarkers this pipeline has built. */
+    internal val landmarkerBuilds = AtomicInteger(0)
+
     /**
      * Does nothing while a run is in progress, and that includes a run that has reached
      * [TrackingStatus.Failed]: to retry after Failed, call [stop] then start.
@@ -166,8 +201,8 @@ class TrackingPipeline(
      * Emits Failed("camera permission denied") and does not begin a run when CAMERA isn't granted,
      * so that case alone can be retried with start.
      *
-     * [trackHands] false is for rounds that don't use hands (touch mode): no landmarker is built, frames still reach
-     * [latestFrame] and [captureStill], [hands] stays empty, and [status] goes to Running with [DELEGATE_NONE] on the
+     * [trackHands] false is for rounds that don't use hands (touch mode): no landmarker is built or used (one already
+     * built stays loaded), frames still reach [latestFrame] and [captureStill], [hands] stays empty, and [status] goes to Running with [DELEGATE_NONE] on the
      * first camera frame. The mode lasts for the run: it's ignored if one is already in progress.
      */
     @MainThread
@@ -182,6 +217,7 @@ class TrackingPipeline(
         this.trackHands = trackHands
         cameraDead = false
         val gen = publisher.begin()
+        currentGeneration = gen
         cameraFps = 0.0
         val route = routeFor(gen, trackHands)
         lifecycleOwner.lifecycle.addObserver(destroyObserver)
@@ -189,7 +225,15 @@ class TrackingPipeline(
             fpsWindowStart = 0L
             fpsWindowFrames = 0
             consecutiveFrameFailures = 0
-            if (route.wantsLandmarker) createLandmarker(gen)
+        }
+        if (route.wantsLandmarker) {
+            landmarkers.ensure(
+                onReady = { host ->
+                    activeDelegate = host.delegate
+                    Log.i(TAG, "landmarker ready on ${host.delegate}")
+                },
+                onFailed = { t -> fail(gen, "landmarker init failed: ${t.message ?: t.javaClass.simpleName}", t) },
+            )
         }
         camera.bind(showPreview, analysisExecutor, { image -> analyze(gen, route, image) }) { reason ->
             failCamera(gen, reason, null)
@@ -201,11 +245,20 @@ class TrackingPipeline(
         checkMain()
         if (!running) return
         running = false
-        lifecycleOwner.lifecycle.removeObserver(destroyObserver)
         camera.unbind()
         publisher.end()
         clearStill()
-        analysisExecutor.execute { closeLandmarker() }
+    }
+
+    /**
+     * Gives the landmarker's memory back, for when the system is short of it. Ignored while a run needs it; the next run
+     * that does builds another (the GPU probe isn't repeated).
+     */
+    @MainThread
+    fun releaseLandmarker() {
+        checkMain()
+        if (running && trackHands) return
+        landmarkers.release()
     }
 
     /**
@@ -261,41 +314,16 @@ class TrackingPipeline(
 
     // ---- analysis thread ----
 
-    private fun createLandmarker(gen: Int) {
-        if (!publisher.isCurrent(gen)) return
-        closeLandmarker()
-        try {
-            val host = LandmarkerHost.create(
-                appContext,
-                RunningMode.LIVE_STREAM,
-                preferGpu = preferGpu,
-                listener = { frame, ts -> onLandmarkerResult(gen, frame, ts) },
-                onError = { e -> fail(gen, "landmarker failed: ${e.message}", e) },
-            )
-            landmarker = host
-            activeDelegate = host.delegate
-            Log.i(TAG, "landmarker ready on ${host.delegate}")
-        } catch (t: Throwable) {
-            fail(gen, "landmarker init failed: ${t.message ?: t.javaClass.simpleName}", t)
-        }
-    }
-
-    private fun closeLandmarker() {
-        activeDelegate = null
-        landmarker?.close()
-        landmarker = null
-    }
-
     private fun routeFor(gen: Int, trackHands: Boolean) = FrameRoute<CameraFrame>(
         trackHands = trackHands,
         cameraAlive = { !cameraDead && publisher.cameraAlive(gen) },
-        readyToDetect = { publisher.acceptsFrames(gen) && landmarker != null },
+        readyToDetect = { publisher.acceptsFrames(gen) && landmarkers.host != null },
         store = latestFrame::set,
         onCameraFrame = {
             consecutiveFrameFailures = 0
             publisher.onCameraFrame(gen, cameraFps)
         },
-        detect = ::detect,
+        detect = { frame -> detect(gen, frame) },
     )
 
     private fun analyze(gen: Int, route: FrameRoute<CameraFrame>, image: ImageProxy) {
@@ -305,6 +333,7 @@ class TrackingPipeline(
                 CameraFrame(image.toBitmap(), image.imageInfo.rotationDegrees)
             }
         } catch (e: LandmarkerRebuildException) {
+            landmarkers.markBroken()
             fail(gen, e.message ?: "landmarker rebuild failed", e)
         } catch (t: Throwable) {
             onFrameFailed(gen, t)
@@ -313,8 +342,8 @@ class TrackingPipeline(
         }
     }
 
-    private fun detect(frame: CameraFrame) {
-        val host = landmarker ?: return
+    private fun detect(gen: Int, frame: CameraFrame) {
+        val host = landmarkers.host ?: return
         beforeDetect?.invoke()
         val bitmap = frame.bitmap
         val rotation = frame.rotationDegrees
@@ -323,7 +352,9 @@ class TrackingPipeline(
         } else {
             frameW = bitmap.height; frameH = bitmap.width
         }
-        host.detectAsync(bitmap, timestamps.next(SystemClock.uptimeMillis()), rotation)
+        val timestampMs = timestamps.next(SystemClock.uptimeMillis())
+        if (!runs.onFrame(gen, timestampMs)) return
+        host.detectAsync(bitmap, timestampMs, rotation)
         activeDelegate = host.delegate // detectAsync may have fallen back to CPU
         consecutiveFrameFailures = 0
     }
@@ -333,6 +364,7 @@ class TrackingPipeline(
         val failures = ++consecutiveFrameFailures
         val message = t.message ?: t.javaClass.simpleName
         if (failures >= MAX_CONSECUTIVE_FRAME_FAILURES) {
+            landmarkers.markBroken()
             fail(gen, "detect failed on $failures frames in a row: $message", t)
         } else {
             Log.w(TAG, "frame dropped ($failures/$MAX_CONSECUTIVE_FRAME_FAILURES)", t)
@@ -353,9 +385,16 @@ class TrackingPipeline(
 
     // ---- MediaPipe result thread ----
 
-    private fun onLandmarkerResult(gen: Int, frame: HandFrame, timestampMs: Long) {
+    private fun onLandmarkerResult(frame: HandFrame, timestampMs: Long) {
+        val gen = runs.generationOf(timestampMs) ?: return
         val delegate = activeDelegate ?: return
         publisher.onResult(gen, frame, timestampMs, delegate, frameW, frameH, cameraFps)
+    }
+
+    /** A kept landmarker is replaced at the next start, as one built per run used to be. A touch round has no use for it, so it isn't that round's failure. */
+    private fun onLandmarkerError(e: RuntimeException) {
+        landmarkers.markBroken()
+        if (trackHands) fail(currentGeneration, "landmarker failed: ${e.message}", e)
     }
 
     // ---- camera callbacks (main thread) ----

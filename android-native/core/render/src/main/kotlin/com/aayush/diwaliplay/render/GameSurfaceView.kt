@@ -26,7 +26,7 @@ class GameSurfaceView @JvmOverloads constructor(
     /** Render rate, updated twice a second while running. */
     val fps: StateFlow<Float> get() = loop.fps
 
-    /** Sticky: true once the render rate averaged below 45 fps for 2 s (spec §5 low-end fallback). */
+    /** True once the render rate averaged below 45 fps for 2 s of play. Judged afresh each round (spec §14). */
     val lowEnd: StateFlow<Boolean> get() = loop.lowEnd
 
     init {

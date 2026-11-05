@@ -1,0 +1,30 @@
+
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="160" height="160">
+  <defs>
+    <linearGradient id="gGift" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#EC4899"/>
+      <stop offset="50%" stop-color="#F472B6"/>
+      <stop offset="100%" stop-color="#DB2777"/>
+    </linearGradient>
+    <linearGradient id="gRibbon" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FDE047"/>
+      <stop offset="100%" stop-color="#EAB308"/>
+    </linearGradient>
+    <filter id="shadow4" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+  <!-- Box Base -->
+  <rect x="28" y="60" width="104" height="74" rx="10" fill="url(#gGift)" stroke="#FDF2F8" stroke-width="3" filter="url(#shadow4)"/>
+  <!-- Box Lid -->
+  <rect x="22" y="44" width="116" height="22" rx="6" fill="#F43F5E" stroke="#FFE4E6" stroke-width="2.5"/>
+  <!-- Vertical Ribbon -->
+  <rect x="70" y="44" width="20" height="90" fill="url(#gRibbon)"/>
+  <!-- Horizontal Ribbon on Lid -->
+  <rect x="22" y="51" width="116" height="8" fill="url(#gRibbon)" fill-opacity="0.85"/>
+  <!-- Bow Knots -->
+  <ellipse cx="64" cy="36" rx="14" ry="10" fill="url(#gRibbon)" transform="rotate(-20 64 36)"/>
+  <ellipse cx="96" cy="36" rx="14" ry="10" fill="url(#gRibbon)" transform="rotate(20 96 36)"/>
+  <circle cx="80" cy="38" r="7" fill="#CA8A04"/>
+  <text x="80" y="112" text-anchor="middle" font-family="'Cinzel', sans-serif" font-weight="900" font-size="14" fill="#FFFFFF">FREE GIFT</text>
+</svg>

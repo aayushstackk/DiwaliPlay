@@ -259,4 +259,136 @@ class ResultQueueTest {
         runCurrent()
         assertThat(seen).isEqualTo(full)
     }
+
+    // ---- a head that keeps failing doesn't block what's behind it ------------------------------------------
+
+    @Test fun failingHeadDoesNotBlockLaterFiles() = runTest {
+        val dir = tmp.newFolder()
+        val api = fake { if (it.sessionId == "a") ApiResult.HttpError(500, "x") else ApiResult.Success(okResp) }
+        val q = ResultQueue(dir, api, backgroundScope)
+        q.enqueue(req("a")); q.enqueue(req("b")); q.enqueue(req("c"))
+        q.start()
+        runCurrent()
+        // One pass, no waiting: b and c go at once. a is kept for the next pass.
+        assertThat(api.calls).containsExactly("a" to 0L, "b" to 0L, "c" to 0L).inOrder()
+        assertThat(q.pending.value).isEqualTo(1)
+    }
+
+    @Test fun unreadableHeadDoesNotBlockLaterFiles() = runTest {
+        val dir = tmp.newFolder()
+        val api = fake { ApiResult.Success(okResp) }
+        var unreadable: String? = null
+        val q = ResultQueue(dir, api, backgroundScope) { f ->
+            if (f.name == unreadable) throw java.io.IOException("bad sector") else f.readText()
+        }
+        q.enqueue(req("a")); q.enqueue(req("b"))
+        unreadable = files(dir).minByOrNull { it.name }!!.name
+        q.start()
+        runCurrent()
+        assertThat(api.calls.map { it.first }).containsExactly("b")
+        assertThat(files(dir).map { it.name }).containsExactly(unreadable)
+    }
+
+    @Test fun backoffAppliesPerPassNotPerFile() = runTest {
+        val dir = tmp.newFolder()
+        val api = fake { ApiResult.NetworkError(RuntimeException("down")) }
+        val q = ResultQueue(dir, api, backgroundScope)
+        q.enqueue(req("a")); q.enqueue(req("b"))
+        q.start()
+        runCurrent()
+        advanceTimeBy(5_000 + 10_000 + 1)
+        runCurrent()
+        assertThat(api.calls).containsExactly(
+            "a" to 0L, "b" to 0L,
+            "a" to 5_000L, "b" to 5_000L,
+            "a" to 15_000L, "b" to 15_000L,
+        ).inOrder()
+    }
+
+    @Test fun aDeliveryResetsTheBackoff() = runTest {
+        val dir = tmp.newFolder()
+        var bGoesThrough = false
+        val api = fake {
+            if (it.sessionId == "b" && bGoesThrough) ApiResult.Success(okResp) else ApiResult.HttpError(503, "x")
+        }
+        val q = ResultQueue(dir, api, backgroundScope)
+        q.enqueue(req("a")); q.enqueue(req("b"))
+        q.start()
+        runCurrent()
+        advanceTimeBy(5_000 + 10_000 + 1) // two failed passes: the next wait would be 20 s
+        bGoesThrough = true
+        advanceTimeBy(20_000)
+        runCurrent()
+        assertThat(api.calls.takeLast(2)).containsExactly("a" to 35_000L, "b" to 35_000L).inOrder()
+        api.calls.clear()
+        advanceTimeBy(5_000)
+        runCurrent()
+        assertThat(api.calls).containsExactly("a" to 40_000L)
+    }
+
+    // ---- durable before the first send ----------------------------------------------------------------------
+
+    @Test fun heldResultIsOnDiskButNotSent() = runTest {
+        val dir = tmp.newFolder()
+        val api = fake { ApiResult.Success(okResp) }
+        val q = ResultQueue(dir, api, backgroundScope)
+        q.start()
+        runCurrent()
+        q.hold(req("a"))
+        assertThat(files(dir)).hasSize(1)
+        assertThat(q.pending.value).isEqualTo(1)
+        advanceTimeBy(600_000)
+        runCurrent()
+        assertThat(api.calls).isEmpty()
+    }
+
+    @Test fun deliveredHeldResultIsGoneAndNeverSent() = runTest {
+        val dir = tmp.newFolder()
+        val api = fake { ApiResult.Success(okResp) }
+        val q = ResultQueue(dir, api, backgroundScope)
+        q.start()
+        val held = q.hold(req("a"))
+        held.delivered()
+        held.release() // too late: nothing to do
+        runCurrent()
+        assertThat(files(dir)).isEmpty()
+        assertThat(q.pending.value).isEqualTo(0)
+        assertThat(api.calls).isEmpty()
+    }
+
+    @Test fun releasedHeldResultGoesToTheWorker() = runTest {
+        val dir = tmp.newFolder()
+        val api = fake { ApiResult.Success(okResp) }
+        val q = ResultQueue(dir, api, backgroundScope)
+        q.start()
+        runCurrent()
+        val held = q.hold(req("a"))
+        held.release()
+        runCurrent()
+        assertThat(api.calls.map { it.first }).containsExactly("a")
+        assertThat(files(dir)).isEmpty()
+    }
+
+    /** The process died during the first send: nobody holds it in the next one. */
+    @Test fun heldResultIsSentByTheNextProcess() = runTest {
+        val dir = tmp.newFolder()
+        ResultQueue(dir, fake { ApiResult.Success(okResp) }, backgroundScope).hold(req("a"))
+
+        val next = fake { ApiResult.Success(okResp) }
+        ResultQueue(dir, next, backgroundScope).start()
+        runCurrent()
+        assertThat(next.calls.map { it.first }).containsExactly("a")
+        assertThat(files(dir)).isEmpty()
+    }
+
+    @Test fun heldResultDoesNotHoldUpOthers() = runTest {
+        val dir = tmp.newFolder()
+        val api = fake { ApiResult.Success(okResp) }
+        val q = ResultQueue(dir, api, backgroundScope)
+        q.hold(req("held"))
+        q.enqueue(req("b"))
+        q.start()
+        runCurrent()
+        assertThat(api.calls.map { it.first }).containsExactly("b")
+    }
 }

@@ -129,4 +129,16 @@ class AssetCacheTest {
         assertThat(cache().get("")).isNull()
         assertThat(cache().get("   ")).isNull()
     }
+
+    /** The server's real reward images are percent-encoded SVG data URLs: the decode helper gets a real SVG file. */
+    @Test fun rewardSvgDataUrlFromTheServerFixtureBecomesAnSvgFile() = runBlocking {
+        val json = AssetCacheTest::class.java.classLoader!!.getResource("api/rewards.json")!!.readText()
+        val info = com.aayush.diwaliplay.model.DiwaliJson.decodeFromString(com.aayush.diwaliplay.model.RewardsInfo.serializer(), json)
+        val url = info.rewards.first().imageUrl
+        assertThat(url).startsWith("data:image/svg+xml")
+        val f = cache().get(url)!!
+        assertThat(f.name).endsWith(".svg")
+        assertThat(f.readText().trimStart()).startsWith("<svg")
+        assertThat(f.readText().trimEnd()).endsWith("</svg>")
+    }
 }

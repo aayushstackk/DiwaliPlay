@@ -16,6 +16,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import org.junit.After
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -28,6 +29,16 @@ class TrackingPipelineCameraTest {
     private class TestOwner : LifecycleOwner {
         val registry = LifecycleRegistry(this)
         override fun getLifecycle(): Lifecycle = registry
+    }
+
+    private val owners = ArrayList<TestOwner>()
+
+    private fun newOwner() = TestOwner().also { owners += it }
+
+    /** Each pipeline keeps its landmarker until its owner goes. */
+    @After
+    fun destroyOwners() {
+        instrumentation.runOnMainSync { owners.forEach { it.registry.currentState = Lifecycle.State.DESTROYED } }
     }
 
     private fun awaitStatus(pipeline: TrackingPipeline, match: (TrackingStatus) -> Boolean): TrackingStatus = runBlocking {
@@ -77,7 +88,7 @@ class TrackingPipelineCameraTest {
     fun startRunsCaptureStillAndStopIsIdempotent() {
         val context = instrumentation.targetContext
         instrumentation.uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.CAMERA)
-        val owner = TestOwner()
+        val owner = newOwner()
         lateinit var pipeline: TrackingPipeline
         instrumentation.runOnMainSync {
             owner.registry.currentState = Lifecycle.State.RESUMED
@@ -128,7 +139,7 @@ class TrackingPipelineCameraTest {
 
     @Test
     fun analysisFailureGivesFailedAndEmptyHandsButTheCameraCarriesOn() {
-        val owner = TestOwner()
+        val owner = newOwner()
         val pipeline = startedPipeline(owner)
         pipeline.beforeDetect = { throw IllegalStateException("boom") }
 
@@ -150,7 +161,7 @@ class TrackingPipelineCameraTest {
     fun withoutHandTrackingTheFirstCameraFrameIsReadyAndGivesAStill() {
         val context = instrumentation.targetContext
         instrumentation.uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.CAMERA)
-        val owner = TestOwner()
+        val owner = newOwner()
         lateinit var pipeline: TrackingPipeline
         instrumentation.runOnMainSync {
             owner.registry.currentState = Lifecycle.State.RESUMED
@@ -188,7 +199,7 @@ class TrackingPipelineCameraTest {
     fun missingPermissionGivesFailedAndALaterStartWorks() {
         val context = instrumentation.targetContext
         instrumentation.uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.CAMERA)
-        val owner = TestOwner()
+        val owner = newOwner()
         lateinit var pipeline: TrackingPipeline
         instrumentation.runOnMainSync {
             owner.registry.currentState = Lifecycle.State.RESUMED
@@ -208,20 +219,20 @@ class TrackingPipelineCameraTest {
 
     @Test
     fun ownerDestroyedWithoutStopStopsThePipeline() {
-        val owner = TestOwner()
+        val owner = newOwner()
         val pipeline = startedPipeline(owner)
         instrumentation.runOnMainSync { owner.registry.currentState = Lifecycle.State.DESTROYED }
         awaitNoHands(pipeline)
         awaitNoStill(pipeline)
         // No camera left behind: a new owner can open it straight away.
-        val next = TestOwner()
+        val next = newOwner()
         val nextPipeline = startedPipeline(next)
         instrumentation.runOnMainSync { nextPipeline.stop() }
     }
 
     @Test
     fun transientFrameFailuresAreDroppedAndOnlyAPersistentRunFails() {
-        val owner = TestOwner()
+        val owner = newOwner()
         val pipeline = startedPipeline(owner)
         val limit = MAX_CONSECUTIVE_FRAME_FAILURES
 
@@ -263,7 +274,7 @@ class TrackingPipelineCameraTest {
 
     @Test
     fun failedCpuRebuildIsFatalOnTheFirstFrame() {
-        val owner = TestOwner()
+        val owner = newOwner()
         val pipeline = startedPipeline(owner)
         val thrown = AtomicInteger(0)
         pipeline.beforeDetect = {
@@ -277,6 +288,97 @@ class TrackingPipelineCameraTest {
         assertThat(thrown.get()).isEqualTo(1)
 
         pipeline.beforeDetect = null
+        instrumentation.runOnMainSync { pipeline.stop() }
+    }
+
+    @Test
+    fun theLandmarkerIsKeptAcrossRoundsAndResultsKeepComing() {
+        val owner = newOwner()
+        val pipeline = startedPipeline(owner)
+        assertThat(pipeline.landmarkerBuilds.get()).isEqualTo(1)
+        val first = pipeline.status.value as TrackingStatus.Running
+
+        repeat(3) {
+            instrumentation.runOnMainSync { pipeline.stop() }
+            awaitNoHands(pipeline)
+            instrumentation.runOnMainSync { pipeline.start(null) }
+            // Fresh results on the kept landmarker. A timestamp that didn't increase would make MediaPipe throw.
+            val deadline = System.currentTimeMillis() + 10_000
+            while (System.currentTimeMillis() < deadline && pipeline.hands.get().hands.timestampMs == 0.0) Thread.sleep(20)
+            assertThat(pipeline.hands.get().hands.timestampMs).isGreaterThan(0.0)
+            val running = awaitStatus(pipeline) { it is TrackingStatus.Running }
+            assertThat(running).isInstanceOf(TrackingStatus.Running::class.java)
+            assertThat((running as TrackingStatus.Running).delegate).isEqualTo(first.delegate)
+        }
+        assertThat(pipeline.landmarkerBuilds.get()).isEqualTo(1)
+
+        // A touch round in between neither uses it nor loses it.
+        instrumentation.runOnMainSync { pipeline.stop(); pipeline.start(null, trackHands = false) }
+        assertThat(awaitStatus(pipeline) { it == TrackingStatus.Running(DELEGATE_NONE, 0.0, (it as? TrackingStatus.Running)?.cameraFps ?: 0.0) })
+            .isInstanceOf(TrackingStatus.Running::class.java)
+        instrumentation.runOnMainSync { pipeline.stop(); pipeline.start(null) }
+        assertThat(awaitStatus(pipeline) { it is TrackingStatus.Running && it.delegate != DELEGATE_NONE })
+            .isInstanceOf(TrackingStatus.Running::class.java)
+        assertThat(pipeline.landmarkerBuilds.get()).isEqualTo(1)
+        instrumentation.runOnMainSync { pipeline.stop() }
+    }
+
+    /** The first round's model load is seconds long: the backdrop and the photo mustn't wait for it. */
+    @Test
+    fun framesArriveWhileTheLandmarkerIsLoading() {
+        val context = instrumentation.targetContext
+        instrumentation.uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.CAMERA)
+        val owner = newOwner()
+        val release = CountDownLatch(1)
+        lateinit var pipeline: TrackingPipeline
+        instrumentation.runOnMainSync {
+            owner.registry.currentState = Lifecycle.State.RESUMED
+            pipeline = TrackingPipeline(context, owner, HandTracker())
+            pipeline.beforeLandmarkerBuild = { release.await(30, TimeUnit.SECONDS) }
+            pipeline.start(null)
+        }
+        try {
+            val deadline = System.currentTimeMillis() + 15_000
+            while (System.currentTimeMillis() < deadline && pipeline.latestFrame() == null) Thread.sleep(20)
+            assertThat(pipeline.latestFrame()).isNotNull()
+            assertThat(pipeline.captureStill()).isNotNull()
+            assertThat(pipeline.status.value).isEqualTo(TrackingStatus.Starting)
+            assertCameraStillDelivering(pipeline)
+        } finally {
+            release.countDown()
+        }
+        assertThat(awaitStatus(pipeline) { it is TrackingStatus.Running }).isInstanceOf(TrackingStatus.Running::class.java)
+        instrumentation.runOnMainSync { pipeline.stop() }
+    }
+
+    /** A landmarker that failed isn't kept: the retry gets a new one. */
+    @Test
+    fun aFailedRunRebuildsTheLandmarkerOnRetry() {
+        val owner = newOwner()
+        val pipeline = startedPipeline(owner)
+        pipeline.beforeDetect = { throw IllegalStateException("boom") }
+        assertThat(awaitStatus(pipeline) { false }).isInstanceOf(TrackingStatus.Failed::class.java)
+        pipeline.beforeDetect = null
+        instrumentation.runOnMainSync { pipeline.stop(); pipeline.start(null) }
+        assertThat(awaitStatus(pipeline) { it is TrackingStatus.Running }).isInstanceOf(TrackingStatus.Running::class.java)
+        assertThat(pipeline.landmarkerBuilds.get()).isEqualTo(2)
+        instrumentation.runOnMainSync { pipeline.stop() }
+    }
+
+    @Test
+    fun releaseGivesItBackAndTheNextRoundBuildsAnother() {
+        val owner = newOwner()
+        val pipeline = startedPipeline(owner)
+        instrumentation.runOnMainSync { pipeline.releaseLandmarker() } // mid-run: ignored
+        Thread.sleep(200)
+        assertThat(pipeline.status.value).isInstanceOf(TrackingStatus.Running::class.java)
+        instrumentation.runOnMainSync {
+            pipeline.stop()
+            pipeline.releaseLandmarker()
+            pipeline.start(null)
+        }
+        assertThat(awaitStatus(pipeline) { it is TrackingStatus.Running }).isInstanceOf(TrackingStatus.Running::class.java)
+        assertThat(pipeline.landmarkerBuilds.get()).isEqualTo(2)
         instrumentation.runOnMainSync { pipeline.stop() }
     }
 }

@@ -260,6 +260,27 @@ class RelayClientTest {
         assertThat(rig.sockets).hasSize(2)
     }
 
+    /** The server never answers an upgrade this way: it's a portal or proxy, which can go away by itself. */
+    @Test fun http401Or403OnTheUpgradeBacksOffRatherThanStopping() = runTest {
+        for (code in listOf(401, 403)) {
+            paired()
+            val rig = Rig(this)
+            rig.client.start(); runCurrent()
+            val response = okhttp3.Response.Builder()
+                .request(okhttp3.Request.Builder().url("https://portal.example/").build())
+                .protocol(okhttp3.Protocol.HTTP_1_1)
+                .code(code)
+                .message("no")
+                .build()
+            rig.listeners.last().onFailure(rig.sockets.last(), java.net.ProtocolException("expected 101"), response)
+            runCurrent()
+            assertThat(rig.client.problem.value).isNotEqualTo(RelayProblem.Rejected)
+            advanceTimeBy(2_001); runCurrent()
+            assertThat(rig.sockets).hasSize(2)
+            rig.client.stop(); runCurrent()
+        }
+    }
+
     @Test fun stalledHandshakeIsCancelledAndRetried() = runTest {
         paired()
         val rig = Rig(this)

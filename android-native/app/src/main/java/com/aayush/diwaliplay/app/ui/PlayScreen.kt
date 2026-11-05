@@ -1,7 +1,6 @@
 package com.aayush.diwaliplay.app.ui
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.view.SurfaceHolder
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -46,7 +45,12 @@ fun GameSurfaceLayer(vm: GameViewModel, active: Boolean, onSurface: (GameSurface
         factory = { context ->
             val sprites = BombSprites(imageFor = { config -> decodeBombImage(vm, config) })
             GameSurfaceView(context, renderer = CanvasRenderer(sprites)).also { surface ->
-                vm.frameStepper.attachSurface(surface, BombSpriteWarmer(sprites)) { surface.lowEnd.value }
+                val warmer = BombSpriteWarmer(
+                    clear = sprites::clear,
+                    prewarm = { config, radius -> sprites.prewarm(listOf(config), radius) },
+                    imageFile = { config -> bombImageFile(vm, config) },
+                )
+                vm.frameStepper.attachSurface(surface, warmer) { surface.lowEnd.value }
                 surface.holder.addCallback(object : SurfaceHolder.Callback {
                     override fun surfaceCreated(holder: SurfaceHolder) = Unit
                     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) = Unit
@@ -77,33 +81,35 @@ fun GameSurfaceLayer(vm: GameViewModel, active: Boolean, onSurface: (GameSurface
     }
 }
 
-private fun decodeBombImage(vm: GameViewModel, config: BombConfig): Bitmap? {
-    val url = config.imageUrl ?: return null
-    val file = vm.branding.value.localFiles[url] ?: return null
-    return decodeBounded(file, MAX_BOMB_IMAGE_PX)
-}
+private fun bombImageFile(vm: GameViewModel, config: BombConfig): File? =
+    config.imageUrl?.let { vm.branding.value.localFiles[it] }
 
-/** Decodes [file] scaled down by powers of two while its longer side stays at least [maxEdge]. Null when it won't decode. */
-internal fun decodeBounded(file: File, maxEdge: Int): Bitmap? {
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    BitmapFactory.decodeFile(file.path, bounds)
-    var sample = 1
-    while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= maxEdge) sample *= 2
-    return BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inSampleSize = sample })
-}
+private fun decodeBombImage(vm: GameViewModel, config: BombConfig): Bitmap? =
+    bombImageFile(vm, config)?.let { decodeBounded(it, MAX_BOMB_IMAGE_PX) }
 
-/** Rebuilds sprites when the round's bombs differ from the last round's, one per config at its own radius. */
-private class BombSpriteWarmer(private val sprites: BombSprites) : SpriteWarmer {
+/**
+ * Rebuilds sprites when the round's bombs differ from the last round's, one per config at its own radius. Which file
+ * each image resolves to counts as a difference: a sprite built before its image had downloaded is the fallback drawing.
+ */
+internal class BombSpriteWarmer(
+    private val clear: () -> Unit,
+    private val prewarm: (BombConfig, Double) -> Unit,
+    private val imageFile: (BombConfig) -> File?,
+) : SpriteWarmer {
     private var lastConfigs: List<BombConfig>? = null
     private var lastSettings: BombGameSettings? = null
+    private var lastImages: List<String?>? = null
 
     override fun warm(configs: List<BombConfig>, settings: BombGameSettings) {
-        if (configs != lastConfigs || settings != lastSettings) {
-            sprites.clear()
+        // lastModified: a revalidated image replaces the file under the same name.
+        val images = configs.map { c -> imageFile(c)?.let { "${it.path}@${it.lastModified()}" } }
+        if (configs != lastConfigs || settings != lastSettings || images != lastImages) {
+            clear()
             lastConfigs = configs
             lastSettings = settings
+            lastImages = images
         }
-        for (config in configs) sprites.prewarm(listOf(config), bombRadiusFor(config, settings))
+        for (config in configs) prewarm(config, bombRadiusFor(config, settings))
     }
 }
 

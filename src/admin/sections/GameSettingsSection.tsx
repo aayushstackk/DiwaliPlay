@@ -1102,7 +1102,7 @@ export const GameSettingsSection: React.FC<GameSettingsSectionProps> = ({
                   >
                     {remoteDevices.map((d) => (
                       <option key={d.id} value={d.id}>
-                        📺 {d.name} {d.isOnline ? '🟢 (Online)' : '🔴 (Offline)'}
+                        📺 {d.name}{d.status?.platform === 'android' ? ' [Android]' : ''} {d.isOnline ? '🟢 (Online)' : '🔴 (Offline)'}
                       </option>
                     ))}
                     <option value="__add_new__">+ Pair New TV PC...</option>
@@ -1324,8 +1324,17 @@ export const GameSettingsSection: React.FC<GameSettingsSectionProps> = ({
                 </div>
                 <ul className={`text-[11px] space-y-1 list-disc list-inside ${secondaryText}`}>
                   {!isAndroidRemote && <li>Watchdog monitors DiwaliPlay and auto-relaunches on exit or crash.</li>}
-                  <li>Blocks accidental exit keys (Alt+F4, Windows Key, Alt+Tab, Ctrl+Esc).</li>
-                  <li>Emergency admin unlock on TV PC: <span className="font-mono font-bold text-amber-400">Ctrl + Alt + Shift + D</span>.</li>
+                  {isAndroidRemote ? (
+                    <>
+                      <li>Locks the screen to DiwaliPlay: Home, Back and Recents do nothing.</li>
+                      <li>Emergency unlock on the display: its admin screen, with the Admin PIN.</li>
+                    </>
+                  ) : (
+                    <>
+                      <li>Blocks accidental exit keys (Alt+F4, Windows Key, Alt+Tab, Ctrl+Esc).</li>
+                      <li>Emergency admin unlock on TV PC: <span className="font-mono font-bold text-amber-400">Ctrl + Alt + Shift + D</span>.</li>
+                    </>
+                  )}
                 </ul>
               </div>
 
@@ -1339,7 +1348,9 @@ export const GameSettingsSection: React.FC<GameSettingsSectionProps> = ({
                   <span>When OFF (Normal Mode)</span>
                 </div>
                 <ul className={`text-[11px] space-y-1 list-disc list-inside ${secondaryText}`}>
-                  <li>Allows standard exit via Alt+F4, close button, or exit button.</li>
+                  {isAndroidRemote
+                    ? <li>Home and Back work as normal on the display.</li>
+                    : <li>Allows standard exit via Alt+F4, close button, or exit button.</li>}
                   {!isAndroidRemote && <li>Watchdog stands by without relaunching after app closure.</li>}
                   {isAndroidRemote
                     ? <li>Switching OFF accepts the display's Admin PIN, but doesn't require it.</li>

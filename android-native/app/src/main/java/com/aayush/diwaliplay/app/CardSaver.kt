@@ -55,12 +55,12 @@ class CardSaver internal constructor(context: Context, private val images: Image
         return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) saveToMediaStore(bitmap, name) else saveToFile(bitmap, name)
         } catch (e: IOException) {
-            Log.e(TAG, "could not save $name", e)
+            Log.e(TAG, "could not save the card: ${e.javaClass.simpleName}")
             null
         } catch (e: RuntimeException) {
             // MediaProvider also throws IllegalStateException and IllegalArgumentException, and SecurityException: this
             // runs in a screen's coroutine, where any of them would take the kiosk down.
-            Log.e(TAG, "could not save $name", e)
+            Log.e(TAG, "could not save the card: ${e.javaClass.simpleName}")
             null
         }
     }
@@ -92,7 +92,7 @@ class CardSaver internal constructor(context: Context, private val images: Image
         try {
             images.delete(uri)
         } catch (e: RuntimeException) {
-            Log.e(TAG, "could not remove the unfinished $uri", e)
+            Log.e(TAG, "could not remove the unfinished card: ${e.javaClass.simpleName}")
         }
     }
 

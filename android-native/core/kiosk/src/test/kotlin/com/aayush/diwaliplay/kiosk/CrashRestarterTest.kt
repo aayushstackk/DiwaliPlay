@@ -128,6 +128,21 @@ class CrashRestarterTest {
     }
 
     /** Android 14 denies exact alarms by default; without the fallback the crash handler itself would throw. */
+    @Config(sdk = [35])
+    @Test fun onAndroid15TheRelaunchOptsInToBackgroundStart() {
+        CrashRestarter.install(app, 2000) { nowMs }
+        Thread.getDefaultUncaughtExceptionHandler()!!.uncaughtException(Thread.currentThread(), RuntimeException("boom"))
+        val options = shadowOf(alarms.nextScheduledAlarm!!.operation!!).options!!
+        // The key is the framework's private name for it, in the real API 35 ActivityOptions Robolectric runs.
+        val key = options.keySet().single { it.contains("CreatorBackgroundActivityStartMode", ignoreCase = true) }
+        assertThat(options.getInt(key)).isEqualTo(android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED)
+    }
+
+    @Config(sdk = [34])
+    @Test fun beforeAndroid15ThereIsNoSuchOption() {
+        assertThat(CrashRestarter.relaunchOptions()).isNull()
+    }
+
     @Config(sdk = [34])
     @Test fun fallsBackToAnInexactAlarmWithoutThePermission() {
         ShadowAlarmManager.setCanScheduleExactAlarms(false)

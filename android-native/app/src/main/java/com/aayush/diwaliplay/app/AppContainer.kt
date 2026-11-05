@@ -67,6 +67,9 @@ class AppContainer(private val app: Application) {
         )
     }
 
+    /** Main thread. */
+    fun releaseLandmarker() = pipeline.releaseLandmarker()
+
     fun attachKiosk(controller: KioskController) = kiosk.attach(controller)
 
     fun detachKiosk(controller: KioskController) = kiosk.detach(controller)

@@ -7,9 +7,11 @@ import com.aayush.diwaliplay.model.ListBombsResponse
 import com.aayush.diwaliplay.model.RewardsInfo
 import com.aayush.diwaliplay.model.SettingsResponse
 import java.io.File
+import java.io.FileOutputStream
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -45,6 +47,8 @@ class SettingsRepository(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val pollIntervalMs: Long = POLL_INTERVAL_MS,
     private val maxParallelDownloads: Int = 3,
+    /** Monotonic milliseconds, for spacing out asset revalidation. */
+    private val nowMs: () -> Long = { System.nanoTime() / 1_000_000 },
 ) {
     @Serializable
     private data class Persisted(
@@ -64,6 +68,12 @@ class SettingsRepository(
     @Volatile private var settingsLoaded = false
     @Volatile private var bombsLoaded = false
     @Volatile private var rewardsLoaded = false
+
+    /** What [store] holds, to skip writing the same again. Touched by one refresh at a time. */
+    @Volatile private var persistedJson: String? = null
+
+    /** When each URL in use was last fetched or revalidated. Refreshes never overlap, but they do change threads. */
+    private val lastChecked = ConcurrentHashMap<String, Long>()
 
     init {
         loadFromDisk()
@@ -172,14 +182,28 @@ class SettingsRepository(
         prefetch()
     }
 
+    /**
+     * The settings poll every 8 s, and the server reads and hashes each asset on every request, even for a 304. So a
+     * URL is fetched the first time it's seen, then revalidated at most every [ASSET_REVALIDATE_MS]. A URL with no file
+     * yet (its fetch failed) doesn't wait: without it the screen would go without the image.
+     */
     private suspend fun prefetch() {
         val urls = collectAssetUrls(_state.value)
+        lastChecked.keys.retainAll(urls.toSet()) // a URL that comes back counts as new
         val gate = Semaphore(maxParallelDownloads)
         val files = coroutineScope {
-            urls.map { u -> async { gate.withPermit { u to cache.get(u) } } }.awaitAll()
+            urls.map { u -> async { gate.withPermit { u to fileFor(u) } } }.awaitAll()
         }
         val resolved = files.mapNotNull { (u, f) -> f?.let { u to it } }.toMap()
         _state.update { it.copy(localFiles = resolved) }
+    }
+
+    private suspend fun fileFor(url: String): File? {
+        val checked = lastChecked[url]
+        if (checked != null && nowMs() - checked < ASSET_REVALIDATE_MS) {
+            withContext(ioDispatcher) { cache.peek(url) }?.let { return it }
+        }
+        return cache.get(url).also { lastChecked[url] = nowMs() }
     }
 
     private fun persist() {
@@ -189,15 +213,23 @@ class SettingsRepository(
             bombs = s.bombs.takeIf { bombsLoaded },
             rewards = s.rewards.takeIf { rewardsLoaded },
         )
+        val json = DiwaliJson.encodeToString(Persisted.serializer(), snapshot)
+        if (json == persistedJson) return
         try {
             store.absoluteFile.parentFile?.mkdirs()
             val tmp = File(store.absolutePath + ".tmp")
-            tmp.writeText(DiwaliJson.encodeToString(Persisted.serializer(), snapshot))
+            // Synced before the rename, or a power cut can leave the new name pointing at nothing.
+            FileOutputStream(tmp).use { out ->
+                out.write(json.toByteArray(Charsets.UTF_8))
+                out.flush()
+                out.fd.sync()
+            }
             try {
                 Files.move(tmp.toPath(), store.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
             } catch (_: AtomicMoveNotSupportedException) {
                 Files.move(tmp.toPath(), store.toPath(), StandardCopyOption.REPLACE_EXISTING)
             }
+            persistedJson = json
         } catch (_: Exception) {
             // Persistence is best effort; the in-memory state is still correct.
         }
@@ -206,7 +238,8 @@ class SettingsRepository(
     private fun loadFromDisk() {
         val saved = try {
             if (!store.isFile) return
-            DiwaliJson.decodeFromString(Persisted.serializer(), store.readText())
+            val json = store.readText()
+            DiwaliJson.decodeFromString(Persisted.serializer(), json).also { persistedJson = json }
         } catch (_: Exception) {
             return
         }
@@ -225,5 +258,8 @@ class SettingsRepository(
 
     companion object {
         const val POLL_INTERVAL_MS = 8_000L
+
+        /** How often an asset already on disk is checked with the server. */
+        const val ASSET_REVALIDATE_MS = 30 * 60_000L
     }
 }

@@ -123,7 +123,7 @@ A direct port of `useHandTracking.ts` / `motionMath.ts` / `gestureRecognition.ts
   - bombs, exhaust, explosion particles and score popups
 - Bombs are pre-rendered once per bomb config to bitmaps (from the `CartoonBombSvg` design), then drawn with transforms. No per-frame vector drawing.
 - Caps: 700 sparks (260 in low-end mode), 120 bomb particles, 8 score popups, 40 rings.
-- **Low-end fallback:** if the render rate averages below 45 fps for 2 s, switch to low-end mode for the rest of the session (260 sparks, 6 embers, no full-screen flash). This mirrors the web `low-end` behaviour.
+- **Low-end fallback:** if the render rate averages below 45 fps for 2 s, switch to low-end mode for the rest of that round (see "Changes during implementation"; 260 sparks, 6 embers, no full-screen flash). This mirrors the web `low-end` behaviour.
 
 ### Overlays
 Compose draws the timer, score, combo banner and target-score bar on top of the `SurfaceView`, from `HudState` (≤10 Hz, emits only on change).
@@ -285,11 +285,19 @@ Where the build differed from the text above, and why. The text above has been c
 - The web panel change is slightly wider than section 9 said: an Android-specific passcode dialog, the test-exit tooltip (about 5 s) and showing the device's error message.
 
 **Rendering and tracking (section 5)**
+- The landmarker is **kept across rounds** (the web creates one per mount): it's built by the first round that tracks hands, off the camera's thread so the backdrop isn't blank while the model loads, and released only under memory pressure or at the owner's end. The GPU probe runs once per process. One that failed is replaced at the next start. Timestamps strictly increase for its whole life, and a round's generation goes with its frames.
+- **Low-end mode is judged per round**, on the frames of `Playing` alone: reset at the round's first frame of play, sticky to the next. It replaces "for the rest of the session".
 - Hand movement alone triggers **no crackers or points** (web parity). Bombs score.
 - The camera preview is a `BackdropSurfaceView`: the mirrored analysis frames drawn on a surface under the game surface, rather than `PreviewView`.
 - Sparks are drawn with `drawLines` per batch, not one path stroke per batch.
 - Landmarks reach `HandTracker` raw; its palm maths does the mirroring, as the web does. Touch-mode rounds run the camera without hand tracking.
 - The bomb hit radius is 46 px.
+
+**Assets and results (sections 7 and 10)**
+- A finished round's result is **durable before the first send**: it goes to the result queue's directory, then `activeSession` is cleared, then the first attempt goes out (that attempt can still bring back the card's reward). On success the file goes; otherwise the queue's worker takes over. No server change. The queue starts behind the crash report, because the server applies an abandon unconditionally.
+- The queue doesn't wait on a failing head: a file that fails is passed over for that pass, and the backoff is per pass.
+- Assets are fetched when a URL is first seen, then revalidated **at most every 30 minutes**, because the server reads and hashes each object per request. A changed URL fetches at once; one with no file yet is retried each poll. The same URL with new content therefore shows within 30 minutes.
+- **SVG images** are supported: the admin panel accepts them for logos, bombs, rewards and (being the same upload) wallpapers, and the server's default rewards are SVG data URLs. One decode helper recognises them by content and rasters them through `androidsvg` with a bounded size. SVG filters aren't drawn.
 
 **Screens (sections 6 and 10)**
 - The photo countdown waits for the camera, with an 8 s watchdog, in touch rounds.
@@ -301,3 +309,4 @@ Where the build differed from the text above, and why. The text above has been c
 **Delivery (section 12)**
 - Release builds run R8 with keep rules for MediaPipe and Flogger (`app/proguard-rules.pro`). Without the Flogger rule hand tracking fails at start.
 - Lint gate: no lint errors; warnings are allowed.
+- The release build carries `arm64-v8a` and `armeabi-v7a` native libraries only (both, so as not to assume the display's ABI). Debug is unfiltered.

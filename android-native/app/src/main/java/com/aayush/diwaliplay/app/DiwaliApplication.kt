@@ -8,11 +8,23 @@ class DiwaliApplication : Application() {
     /** Instrumented tests set this before launching the activity. */
     var dependenciesOverride: AppDependencies? = null
 
-    private val container by lazy { AppContainer(this) }
+    private val lazyContainer = lazy { AppContainer(this) }
+    private val container by lazyContainer
 
     override fun onCreate() {
         super.onCreate()
         if (!underTest()) CrashRestarter.install(this)
+    }
+
+    /** The landmarker is what's worth giving back: it's kept loaded across rounds, and the next round can reload it. */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level == TRIM_MEMORY_RUNNING_CRITICAL || level >= TRIM_MEMORY_COMPLETE) releaseMemory()
+    }
+
+    private fun releaseMemory() {
+        // Not a reason to build everything: nothing to release if the container doesn't exist yet.
+        if (dependenciesOverride == null && lazyContainer.isInitialized()) container.releaseLandmarker()
     }
 
     /** Only tests have this class. There, a crash must fail the test run, not relaunch the app in the middle of it. */
