@@ -32,12 +32,14 @@ private val STAR = 0xFFFDE68A.toInt()
 /**
  * DiwaliWallpaper, drawn on the 1920x1080 backdrop surface: the admin's image, or the built-in festive scene, at the
  * admin's opacity over the page background. The blurred glows are radial gradients.
+ *
+ * [scrim] is the in-game wallpaper's fixed gradient over an image. The start background has an admin's dim instead.
  */
-fun drawWallpaper(canvas: Canvas, image: Bitmap?, opacityPercent: Double) {
+fun drawWallpaper(canvas: Canvas, image: Bitmap?, opacityPercent: Double, scrim: Boolean = true) {
     canvas.drawColor(BACKGROUND)
     val opacity = (opacityPercent.coerceIn(0.0, 100.0) / 100.0).toFloat()
     val layer = canvas.saveLayerAlpha(0f, 0f, W, H, (opacity * 255).toInt())
-    if (image != null) drawCustom(canvas, image) else drawBuiltIn(canvas)
+    if (image != null) drawCustom(canvas, image, scrim) else drawBuiltIn(canvas)
     canvas.restoreToCount(layer)
 }
 
@@ -50,10 +52,10 @@ private fun coverMatrix(srcW: Float, srcH: Float): Matrix {
     }
 }
 
-private fun drawCustom(canvas: Canvas, image: Bitmap) {
+private fun drawCustom(canvas: Canvas, image: Bitmap, scrim: Boolean) {
     canvas.drawBitmap(image, coverMatrix(image.width.toFloat(), image.height.toFloat()), Paint(Paint.FILTER_BITMAP_FLAG))
     // from-neutral-950/60 via-transparent to-neutral-950/40, bottom to top
-    verticalGradient(canvas, alpha(NEUTRAL_950, 0.4f), 0, alpha(NEUTRAL_950, 0.6f))
+    if (scrim) verticalGradient(canvas, alpha(NEUTRAL_950, 0.4f), 0, alpha(NEUTRAL_950, 0.6f))
 }
 
 private fun verticalGradient(canvas: Canvas, top: Int, middle: Int, bottom: Int) {

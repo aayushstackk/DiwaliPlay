@@ -1,7 +1,6 @@
 package com.aayush.diwaliplay.app.ui
 
 import android.content.Context
-import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
@@ -11,6 +10,7 @@ import android.graphics.PixelFormat
 import android.graphics.Shader
 import android.os.Handler
 import android.os.HandlerThread
+import android.util.Log
 import android.view.Choreographer
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -52,8 +52,14 @@ class BackdropSurfaceView(context: Context, private val frames: () -> CameraFram
     // Backdrop thread only.
     private var drawnContent: BackdropContent? = null
     private var drawnFrame: CameraFrame? = null
-    private var image: Bitmap? = null
-    private var imageFile: File? = null
+    private val images = BackdropImages(
+        decodeStart = { file ->
+            decodeBounded(file, BACKDROP_WIDTH).also {
+                if (it == null) Log.w(TAG, "Start background image won't decode; showing the built-in")
+            }
+        },
+        decodeWallpaper = { file -> decodeBounded(file, BACKDROP_WIDTH) },
+    )
     private var frameCallbackPosted = false
 
     private val framePaint = Paint(Paint.FILTER_BITMAP_FLAG)
@@ -119,7 +125,7 @@ class BackdropSurfaceView(context: Context, private val frames: () -> CameraFram
 
     private fun draw(c: BackdropContent, frame: CameraFrame?) {
         // Decoded ahead of the lock: a wallpaper can take a while, and surfaceDestroyed waits on the lock.
-        if (c.kind == BackdropKind.Wallpaper || c.kind == BackdropKind.StartBackground) loadImage(c.wallpaperFile)
+        val image = images.imageFor(c.kind, c.wallpaperFile)
         synchronized(drawLock) {
             if (!hasSurface) return
             val canvas = try {
@@ -134,7 +140,7 @@ class BackdropSurfaceView(context: Context, private val frames: () -> CameraFram
                     BackdropKind.Dark -> canvas.drawColor(BACKGROUND_COLOR)
                     BackdropKind.Wallpaper -> drawWallpaper(canvas, image, c.wallpaperOpacity)
                     BackdropKind.StartBackground -> {
-                        drawWallpaper(canvas, image, 100.0)
+                        drawWallpaper(canvas, image, 100.0, scrim = false)
                         // An undecodable file shows the built-in, undimmed.
                         if (image != null && c.dimAlpha > 0) canvas.drawColor(Color.argb(c.dimAlpha, 0, 0, 0))
                     }
@@ -147,13 +153,6 @@ class BackdropSurfaceView(context: Context, private val frames: () -> CameraFram
         }
         drawnContent = c
         drawnFrame = frame
-    }
-
-    /** A file that won't decode leaves null, which draws the built-in scene (the web's onError). */
-    private fun loadImage(file: File?) {
-        if (file == imageFile) return
-        imageFile = file
-        image = file?.let { decodeBounded(it, BACKDROP_WIDTH) }
     }
 
     private fun drawCamera(canvas: Canvas, frame: CameraFrame?, vignette: Paint) {
@@ -175,6 +174,42 @@ class BackdropSurfaceView(context: Context, private val frames: () -> CameraFram
 
     private companion object {
         const val BACKGROUND_COLOR = 0xFF0A0713.toInt()
+        const val TAG = "BackdropSurfaceView"
+    }
+}
+
+/**
+ * The decoded images behind [BackdropSurfaceView], one slot for each use, so showing the start screen doesn't cost the
+ * round a second decode of its wallpaper alongside hand tracking. The start image is only kept while it's showing.
+ *
+ * A file that won't decode leaves null, which draws the built-in scene (the web's onError). Backdrop thread only.
+ */
+internal class BackdropImages<T : Any>(
+    private val decodeStart: (File) -> T?,
+    private val decodeWallpaper: (File) -> T?,
+) {
+    private var start: T? = null
+    private var startFile: File? = null
+    private var wallpaper: T? = null
+    private var wallpaperFile: File? = null
+
+    /** The image to draw for [kind], decoding [file] if it's new to that slot. */
+    fun imageFor(kind: BackdropKind, file: File?): T? {
+        if (kind == BackdropKind.StartBackground) {
+            if (file != startFile) {
+                startFile = file
+                start = file?.let(decodeStart)
+            }
+            return start
+        }
+        start = null
+        startFile = null
+        if (kind != BackdropKind.Wallpaper) return null
+        if (file != wallpaperFile) {
+            wallpaperFile = file
+            wallpaper = file?.let(decodeWallpaper)
+        }
+        return wallpaper
     }
 }
 
