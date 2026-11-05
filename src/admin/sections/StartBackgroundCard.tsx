@@ -292,10 +292,11 @@ export const StartBackgroundCard: React.FC<StartBackgroundCardProps> = ({
           disabled={controlsDisabled}
           aria-label="Background dim"
           onChange={(e) => setDim(Number(e.target.value))}
-          onMouseUp={() => saveDim(dim)}
-          onTouchEnd={() => saveDim(dim)}
-          onKeyUp={() => saveDim(dim)}
-          className={`w-full h-2 rounded-lg cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${accent}`}
+          onPointerDown={(e) => e.currentTarget.setPointerCapture(e.pointerId)}
+          onPointerUp={(e) => saveDim(Number(e.currentTarget.value))}
+          onPointerCancel={(e) => saveDim(Number(e.currentTarget.value))}
+          onKeyUp={(e) => saveDim(Number(e.currentTarget.value))}
+          className={`w-full h-2 rounded-lg touch-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${accent}`}
         />
       </div>
 
