@@ -4,6 +4,7 @@ A native (Kotlin) port of the DiwaliPlay kiosk game, built for the WAF display: 
 
 - Application id `com.aayush.diwaliplay.kiosk`. `minSdk 26`, `targetSdk 35`, landscape only. Game space is 1920x1080.
 - Modules: `app` (screens, wiring) and `core:{model,api,game,tracking,render,audio,branding,kiosk}`.
+- Media3 (ExoPlayer) is used in `core:audio` for sound and in `app` for the start screen's video background (`StartVideoSurface`, muted, looping, released when leaving the start screen).
 - Commands marked **not yet run on a real display** are for the WAF and have only been checked as far as the emulator allows. Everything else here was run while writing this file.
 
 ## Build

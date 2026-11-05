@@ -83,6 +83,20 @@ R8 can remove or rename what's only reached by reflection, and only this APK sho
 - [ ] **Card:** shows with the photo, and saves.
 - [ ] **Relay:** pairs, connects, and answers status, enable, disable from the panel.
 
+## 9. Start screen background (image or MP4)
+
+Needs the real display. In the web admin, Wallpapers tab, "Start screen background" card. Emulator checks (built-in, image, video, corrupt fallback, player released on leaving the start screen) are done; these are not.
+
+- [ ] **Video smoothness.** Set a 1080p H.264 MP4 and watch the start screen for 5 minutes. Pass: no visible stutter, dropped frames or tearing; the loop point is acceptable. Note: ____________.
+- [ ] **Tracking feel right after a video start screen.** Enter a code from the video start screen and play a round. Pass: hand tracking feels the same as after an image or built-in start screen (overlay inference <= 33 ms, camera fps >= 28). Measured: ____ ms, ____ fps.
+- [ ] **QR scans from a phone over a busy background.** With a bright, busy image and then a busy video at 0% dim and at the default 50%, scan the start screen's QR code from about 2 m. Pass: scans on the first or second try at the default dim. Note the dim needed: ____.
+- [ ] **40 MB upload and download through production.** After Ayush pushes (deploys only trigger on his push): upload a 40 MB MP4 through the admin panel on the Render server behind the Vercel rewrite, then confirm the display downloads and plays it. Pass: upload succeeds, no 413 or timeout, and the display shows it. The local run of the same transfer peaked at about 373 MB server RSS; watch the Render instance's memory during this check.
+- [ ] **No stale hand skeleton.** Use "Change Code" with real hands in view, so the app returns to the start screen. Pass: no hand skeleton or tracking overlay from the previous round shows over the start screen.
+- [ ] **First video frames.** When the video starts (after launch, and after returning to the start screen), the first frames can show undimmed for a moment, because the dim applies only once a frame is showing. Check this doesn't look wrong. Note: ____________.
+- [ ] **H.265 file.** Upload an H.265 (HEVC) MP4 (the admin's browser check may refuse it first; if so, set it through the API or another browser that decodes it). Pass: the display ends at the built-in scene, undimmed, with no black screen and no crash. Only MPEG-1 was tested on the emulator.
+- [ ] **Video restart doesn't stutter.** Leave the start screen (enter a code, or open the admin screen) and come back several times. Pass: the video restarts each time without a visible stutter or a black flash, and the round's camera opens normally after the video was released.
+- [ ] **Broken file and removal.** Set a background, then "Remove (use built-in)". Pass: the display returns to the built-in scene within the 8-second settings poll.
+
 ## Result
 
 - [ ] All boxes above ticked, or each failure written down with its measured value and a decision.
