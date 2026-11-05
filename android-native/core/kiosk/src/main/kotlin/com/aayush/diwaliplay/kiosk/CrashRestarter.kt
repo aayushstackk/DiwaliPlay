@@ -22,8 +22,10 @@ private const val STABLE_MS = 45_000L
 
 /**
  * On an uncaught exception: logs it, schedules a relaunch and kills the process, the native version of the Windows
- * watchdog's "relaunch within 2 s". A crash loop (see the constants) stops relaunching, unlike the watchdog, which
- * pauses 30 s and carries on; being the home app can still bring the app back.
+ * watchdog. The relaunch takes about 5 s, not `delayMs`, because AlarmManager has that minimum for ordinary apps. And
+ * the system only lets it start the activity for a device owner or the default home app. A crash loop (see the
+ * constants) stops relaunching, unlike the watchdog, which pauses 30 s and carries on; being the home app can still
+ * bring the app back.
  */
 object CrashRestarter {
     /** True while the crash handler really is the process's default handler. */

@@ -29,6 +29,9 @@ class KioskController(private val activity: Activity, private val dpm: DevicePol
     private val admin = ComponentName(activity, KioskDeviceAdminReceiver::class.java)
     private val pkg: String = activity.packageName
 
+    /** Whether [restoreLockIfNeeded] has nothing left to do for this launch. */
+    private var restoreSettled = false
+
     val isDeviceOwner: Boolean get() = dpm.isDeviceOwnerApp(pkg)
 
     /**
@@ -53,6 +56,16 @@ class KioskController(private val activity: Activity, private val dpm: DevicePol
     /** Puts back what the last launch had. Call once the activity is resumed: it has to be in the foreground. */
     fun restoreLock() {
         if (lockWanted && !isLockActive) applyLock()
+    }
+
+    /**
+     * [restoreLock], for onResume and regaining focus. A device owner keeps trying until the lock holds. Without one it
+     * tries once per launch, because each attempt puts the system's pinning prompt up.
+     */
+    fun restoreLockIfNeeded() {
+        if (restoreSettled) return
+        restoreLock()
+        restoreSettled = !isDeviceOwner || !lockWanted || isLockActive
     }
 
     private fun applyLock() {
@@ -81,9 +94,23 @@ class KioskController(private val activity: Activity, private val dpm: DevicePol
             dpm.setLockTaskPackages(admin, emptyArray())
             dpm.setKeyguardDisabled(admin, false)
             dpm.clearPackagePersistentPreferredActivities(admin, pkg)
+            // The system also made it the ordinary default home when the persistent one was added.
+            @Suppress("DEPRECATION") // no replacement for an app clearing its own
+            activity.packageManager.clearPackagePreferredActivities(pkg)
             // The grant stays, but the policy no longer pins it.
             dpm.setPermissionGrantState(admin, pkg, Manifest.permission.CAMERA, DevicePolicyManager.PERMISSION_GRANT_STATE_DEFAULT)
         }
+    }
+
+    /**
+     * Stops being device owner, which can't be undone from here: provisioning again needs adb, and a device with no
+     * accounts. Without this, a provisioned kiosk could only be released by a factory reset.
+     */
+    @Suppress("DEPRECATION") // no replacement for an owner giving itself up
+    fun removeDeviceOwner(reason: String = REASON_ADMIN_SCREEN) {
+        if (!isDeviceOwner) return
+        disableLock(reason)
+        dpm.clearDeviceOwnerApp(pkg)
     }
 
     /** So the runtime permission prompt never appears on a provisioned kiosk. Does nothing otherwise. */
@@ -104,15 +131,19 @@ class KioskController(private val activity: Activity, private val dpm: DevicePol
     }
 
     /**
-     * The relay's view of this device (spec §9's mapping). `connected` stays false: only the relay client knows that,
-     * and it fills it in.
+     * The relay's view of this device: spec §9's mapping, amended to say only what holds. `watchdogRunning` needs an owner
+     * or home because the system blocks the relaunch otherwise; `autoLaunch` needs the owner to want the lock because
+     * [KioskBootReceiver] and the preferred home depend on it. `connected` stays false: only the relay client knows
+     * that, and it fills it in.
      */
     fun status(): KioskDeviceStatus {
         val active = isLockActive
+        val owner = isDeviceOwner
+        val home = isDefaultHome()
         return KioskDeviceStatus(
             backProtection = active,
-            autoLaunch = isDeviceOwner || isDefaultHome(),
-            watchdogRunning = CrashRestarter.isInstalled,
+            autoLaunch = (owner && lockWanted) || home,
+            watchdogRunning = CrashRestarter.isInstalled && (owner || home),
             guardianRunning = active,
             appRunning = true,
             lastStateChange = prefs.getString(KEY_CHANGED_AT, null),
@@ -131,7 +162,7 @@ class KioskController(private val activity: Activity, private val dpm: DevicePol
             .putBoolean(KEY_WANTED, wanted)
             .putString(KEY_CHANGED_AT, Instant.now().toString())
             .putString(KEY_CHANGE_REASON, reason)
-            .apply()
+            .commit() // not apply(): a crash next mustn't undo the operator's choice
     }
 
     companion object {

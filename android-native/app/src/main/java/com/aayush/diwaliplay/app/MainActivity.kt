@@ -28,9 +28,6 @@ class MainActivity : ComponentActivity() {
 
     private val kiosk by lazy { KioskController(this, getSystemService(DevicePolicyManager::class.java)) }
 
-    /** Once per launch: without a device owner, each attempt puts the system's pinning prompt up. */
-    private var lockRestored = false
-
     private val requestCamera = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
         permissionDialogShowing = false
         viewModel.retryCamera()
@@ -49,15 +46,15 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (!lockRestored) {
-            lockRestored = true
-            kiosk.restoreLock()
-        }
+        kiosk.restoreLockIfNeeded()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) enterImmersive()
+        if (hasFocus) {
+            enterImmersive()
+            kiosk.restoreLockIfNeeded()
+        }
     }
 
     override fun onPause() {

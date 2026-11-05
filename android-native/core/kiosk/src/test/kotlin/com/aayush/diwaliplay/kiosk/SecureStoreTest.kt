@@ -3,6 +3,9 @@ package com.aayush.diwaliplay.kiosk
 import android.content.Context
 import android.content.SharedPreferences
 import com.google.common.truth.Truth.assertThat
+import java.io.IOException
+import java.security.KeyStoreException
+import java.security.ProviderException
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import org.junit.Test
@@ -54,6 +57,14 @@ class SecureStoreTest {
         assertThat(s.get("a")).isNull()
         prefs.edit().putString("a", "AAAA").commit()
         assertThat(s.get("a")).isNull()
+    }
+
+    /** A TEE fault at startup mustn't become a crash loop: every failure is just "can't read it". */
+    @Test fun keystoreFaultsAreNull() {
+        store().put("a", "1")
+        for (fault in listOf(ProviderException("tee"), IOException("load"), IllegalStateException("x"), KeyStoreException("ks"))) {
+            assertThat(SecureStore(prefs) { throw fault }.get("a")).isNull()
+        }
     }
 
     /** A wiped Keystore (restored backup, say): unreadable, so the device just pairs again. */

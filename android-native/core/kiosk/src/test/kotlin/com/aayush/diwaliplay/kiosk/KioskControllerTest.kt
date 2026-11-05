@@ -21,8 +21,9 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.Implementation
 import org.robolectric.annotation.Implements
 import org.robolectric.shadows.ShadowDevicePolicyManager
+import org.robolectric.util.ReflectionHelpers
 
-/** Robolectric's shadow doesn't cover setKeyguardDisabled. */
+/** Robolectric's shadow doesn't cover setKeyguardDisabled or clearDeviceOwnerApp. */
 @Implements(DevicePolicyManager::class)
 class KeyguardShadow : ShadowDevicePolicyManager() {
     @Implementation
@@ -31,8 +32,24 @@ class KeyguardShadow : ShadowDevicePolicyManager() {
         return true
     }
 
+    @Implementation
+    protected fun clearDeviceOwnerApp(packageName: String) {
+        clearedOwner = packageName
+        ReflectionHelpers.setStaticField(ShadowDevicePolicyManager::class.java, "deviceOwner", null)
+    }
+
     companion object {
         var keyguardDisabled: Boolean? = null
+        var clearedOwner: String? = null
+    }
+}
+
+/** startLockTask throws like this when the task isn't in the foreground yet. */
+class RefusingActivity : Activity() {
+    var refuse = false
+    override fun startLockTask() {
+        if (refuse) throw IllegalArgumentException("Invalid task, not in foreground")
+        super.startLockTask()
     }
 }
 
@@ -53,6 +70,19 @@ class KioskControllerTest {
         shadowDpm.setDeviceOwner(admin)
     }
 
+    private fun makeHome() {
+        val home = ResolveInfo().apply {
+            activityInfo = ActivityInfo().apply {
+                packageName = pkg
+                name = "Home"
+            }
+        }
+        shadowOf(activity.packageManager).addResolveInfoForIntent(
+            Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME),
+            home,
+        )
+    }
+
     private fun lockModeIs(state: Int) = shadowOf(activity.getSystemService(ActivityManager::class.java)).setLockTaskModeState(state)
 
     private fun preferredHome(): List<ComponentName> {
@@ -66,6 +96,7 @@ class KioskControllerTest {
     @Before fun setUp() {
         previous = Thread.getDefaultUncaughtExceptionHandler()
         KeyguardShadow.keyguardDisabled = null
+        KeyguardShadow.clearedOwner = null
         // The app's manifest declares this; the shadow's grant looks it up on the test package.
         shadowOf(activity.packageManager).getInternalMutablePackageInfo(pkg).requestedPermissions = arrayOf(Manifest.permission.CAMERA)
     }
@@ -114,12 +145,112 @@ class KioskControllerTest {
         assertThat(c.lockWanted).isFalse()
     }
 
+    /** Android 14 also makes a persistent preferred home the ordinary default, and clearing the first leaves that. */
+    @Test fun disableLockAlsoDropsTheOrdinaryDefaultHome() {
+        makeOwner()
+        val c = controller()
+        c.enableLock()
+        val home = IntentFilter(Intent.ACTION_MAIN).apply {
+            addCategory(Intent.CATEGORY_HOME)
+            addCategory(Intent.CATEGORY_DEFAULT)
+        }
+        @Suppress("DEPRECATION")
+        activity.packageManager.addPreferredActivity(home, 0, null, ComponentName(activity, activity.javaClass))
+
+        c.disableLock()
+
+        val names = ArrayList<ComponentName>()
+        activity.packageManager.getPreferredActivities(ArrayList(), names, pkg)
+        assertThat(names).isEmpty()
+    }
+
     @Test fun disableLockWithoutDeviceOwnerOnlyStopsPinning() {
         val c = controller()
         c.enableLock()
         c.disableLock()
         assertThat(shadowOf(activity).isLockTask).isFalse()
         assertThat(KeyguardShadow.keyguardDisabled).isNull()
+    }
+
+    @Test fun removeDeviceOwnerUndoesTheLockThenGivesUpOwnership() {
+        makeOwner()
+        val c = controller()
+        c.enableLock()
+
+        c.removeDeviceOwner()
+
+        assertThat(KeyguardShadow.clearedOwner).isEqualTo(pkg)
+        assertThat(c.isDeviceOwner).isFalse()
+        assertThat(c.lockWanted).isFalse()
+        assertThat(shadowOf(activity).isLockTask).isFalse()
+        assertThat(KeyguardShadow.keyguardDisabled).isFalse()
+        assertThat(preferredHome()).isEmpty()
+        // No looking at the lock task packages here: only an owner may, and the shadow enforces the same for setting
+        // them, so disableLock can't have run after ownership went.
+    }
+
+    @Test fun removeDeviceOwnerWithoutBeingOwnerDoesNothing() {
+        controller().removeDeviceOwner()
+        assertThat(KeyguardShadow.clearedOwner).isNull()
+    }
+
+    @Test fun statusIsOnlyAutoLaunchWhileTheOwnerWantsTheLock() {
+        makeOwner()
+        val c = controller()
+        c.enableLock()
+        assertThat(c.status().autoLaunch).isTrue()
+        c.disableLock()
+        assertThat(c.status().autoLaunch).isFalse()
+    }
+
+    /** Spec amendment: a crash handler whose relaunch the system will block isn't watching anything. */
+    @Test fun watchdogNeedsAnOwnerOrHomeForItsRelaunchToWork() {
+        Thread.setDefaultUncaughtExceptionHandler(null)
+        CrashRestarter.install(activity.applicationContext)
+        assertThat(controller().status().watchdogRunning).isFalse()
+
+        makeHome()
+        assertThat(controller().status().watchdogRunning).isTrue()
+    }
+
+    @Test fun watchdogAsOwnerEvenWithTheLockOff() {
+        makeOwner()
+        CrashRestarter.install(activity.applicationContext)
+        val c = controller()
+        c.disableLock()
+        assertThat(c.status().watchdogRunning).isTrue()
+    }
+
+    @Test fun restoreIfNeededPinsOnlyOnceWithoutAnOwner() {
+        val c = controller()
+        c.enableLock()
+        activity.stopLockTask()
+
+        val next = controller()
+        next.restoreLockIfNeeded()
+        assertThat(shadowOf(activity).isLockTask).isTrue()
+        activity.stopLockTask()
+
+        next.restoreLockIfNeeded() // would put the system's prompt up again
+        assertThat(shadowOf(activity).isLockTask).isFalse()
+    }
+
+    @Test fun restoreIfNeededKeepsTryingAsOwnerUntilTheLockHolds() {
+        makeOwner()
+        val refusing = Robolectric.buildActivity(RefusingActivity::class.java).setup().get()
+        val c = KioskController(refusing, dpm)
+
+        refusing.refuse = true
+        c.restoreLockIfNeeded()
+        assertThat(shadowOf(refusing).isLockTask).isFalse()
+
+        refusing.refuse = false
+        c.restoreLockIfNeeded() // the first attempt didn't take
+        assertThat(shadowOf(refusing).isLockTask).isTrue()
+
+        refusing.stopLockTask()
+        c.restoreLockIfNeeded() // it held, so that was the last
+        assertThat(shadowOf(refusing).isLockTask).isFalse()
     }
 
     @Test fun statusMapsFieldsAndPlatformAndroid() {
@@ -147,17 +278,7 @@ class KioskControllerTest {
 
     @Test fun autoLaunchNeedsDeviceOwnerOrDefaultHome() {
         assertThat(controller().status().autoLaunch).isFalse()
-
-        val home = ResolveInfo().apply {
-            activityInfo = ActivityInfo().apply {
-                packageName = pkg
-                name = "Home"
-            }
-        }
-        shadowOf(activity.packageManager).addResolveInfoForIntent(
-            Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME),
-            home,
-        )
+        makeHome()
         assertThat(controller().status().autoLaunch).isTrue()
     }
 

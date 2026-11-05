@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Log
+import java.io.IOException
 import java.security.GeneralSecurityException
 import java.security.KeyStore
 import java.util.Base64
@@ -31,6 +32,7 @@ class SecureStore internal constructor(private val prefs: SharedPreferences, pri
         ::keystoreKey,
     )
 
+    /** Throws if the Keystore can't do it: unlike [get], the caller has to know that nothing was stored. */
     fun put(key: String, value: String) {
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.ENCRYPT_MODE, key())
@@ -39,7 +41,7 @@ class SecureStore internal constructor(private val prefs: SharedPreferences, pri
         prefs.edit().putString(key, Base64.getEncoder().encodeToString(sealed)).commit()
     }
 
-    /** Null if there's no such value, or it can no longer be read (tampered with, or the Keystore key is gone). */
+    /** Null if there's no such value, or it can't be read (tampered with, the key gone, a Keystore fault). */
     fun get(key: String): String? {
         val stored = prefs.getString(key, null) ?: return null
         return try {
@@ -49,12 +51,17 @@ class SecureStore internal constructor(private val prefs: SharedPreferences, pri
             cipher.updateAAD(key.toByteArray())
             String(cipher.doFinal(sealed, IV_BYTES, sealed.size - IV_BYTES))
         } catch (e: GeneralSecurityException) {
-            Log.w(TAG, "can't read '$key': ${e.javaClass.simpleName}")
-            null
-        } catch (e: IllegalArgumentException) {
-            Log.w(TAG, "can't read '$key': ${e.javaClass.simpleName}")
-            null
+            unreadable(key, e)
+        } catch (e: IOException) {
+            unreadable(key, e) // the Keystore wouldn't load
+        } catch (e: RuntimeException) {
+            unreadable(key, e) // bad Base64, or a Keystore or TEE fault (ProviderException, for one)
         }
+    }
+
+    private fun unreadable(key: String, e: Exception): String? {
+        Log.w(TAG, "can't read '$key': ${e.javaClass.simpleName}")
+        return null
     }
 
     fun remove(key: String) {

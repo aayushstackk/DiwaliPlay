@@ -6,6 +6,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
@@ -35,6 +37,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
@@ -43,6 +46,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -66,11 +72,15 @@ import com.aayush.diwaliplay.app.ui.panel
 import com.aayush.diwaliplay.app.ui.theme.Fonts
 import com.aayush.diwaliplay.app.ui.theme.Palette
 import com.aayush.diwaliplay.branding.ServerConfig
+import com.aayush.diwaliplay.kiosk.AdminPin
 import com.aayush.diwaliplay.kiosk.KioskController
 import com.aayush.diwaliplay.tracking.camera.TrackingStatus
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collectLatest
 
 private const val LOCK_POLL_MS = 1_000L
+internal const val ADMIN_IDLE_TIMEOUT_MS = 2 * 60_000L
 
 /** MediaPipe's hand model: which of the 21 landmarks each bone joins. */
 private val HAND_BONES = listOf(
@@ -95,12 +105,42 @@ fun AdminScreen(
     onExit: () -> Unit,
     relaySection: @Composable ColumnScope.() -> Unit = { RelayPlaceholder() },
 ) {
-    BackHandler(onBack = onClose)
     var lockWanted by remember { mutableStateOf(kiosk?.lockWanted == true) }
+    var isOwner by remember { mutableStateOf(kiosk?.isDeviceOwner == true) }
+    var removingOwner by remember { mutableStateOf(false) }
+    val activity = remember { MutableStateFlow(0L) }
+    val latestOnClose by rememberUpdatedState(onClose)
+
+    BackHandler(onBack = onClose)
+    // Left open, this screen mustn't be open to the next visitor. A flow, so that touches recompose nothing.
+    LaunchedEffect(activity) {
+        activity.collectLatest {
+            delay(ADMIN_IDLE_TIMEOUT_MS)
+            latestOnClose()
+        }
+    }
     // However this screen goes away, the camera goes back to being the round's.
     DisposableEffect(Unit) { onDispose { vm.stopCameraTest() } }
 
-    Column(Modifier.fillMaxSize().testTag(Tags.ADMIN_SCREEN).background(Palette.Background).padding(32.dp)) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .testTag(Tags.ADMIN_SCREEN)
+            // Watches on the way down, and consumes nothing.
+            .pointerInput(activity) {
+                awaitPointerEventScope {
+                    while (true) {
+                        awaitPointerEvent(PointerEventPass.Initial)
+                        activity.value++
+                    }
+                }
+            }
+            .onPreviewKeyEvent {
+                activity.value++
+                false
+            },
+    ) {
+    Column(Modifier.fillMaxSize().background(Palette.Background).padding(32.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Label(
                 "KIOSK ADMIN", 32.sp, Palette.Amber100,
@@ -115,8 +155,8 @@ fun AdminScreen(
                 Modifier.weight(1f).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
-                KioskLockSection(kiosk, lockWanted) { lockWanted = it }
-                ServerSection(admin.serverConfig)
+                KioskLockSection(kiosk, lockWanted, isOwner, { lockWanted = it }, { removingOwner = true })
+                ServerSection(admin.serverConfig) { activity.value++ }
                 Section("Relay pairing", Modifier.testTag(Tags.ADMIN_RELAY), relaySection)
             }
             Column(
@@ -125,8 +165,57 @@ fun AdminScreen(
             ) {
                 CameraTestSection(vm, onRetryCamera)
                 PerfSection(vm)
-                DeviceInfoSection(kiosk)
+                DeviceInfoSection(kiosk, lockWanted, isOwner)
                 ExitSection(lockWanted, onExit)
+            }
+        }
+    }
+    if (removingOwner) {
+        RemoveOwnerOverlay(
+            pin = admin.pin,
+            onRemove = {
+                kiosk?.removeDeviceOwner()
+                isOwner = kiosk?.isDeviceOwner == true
+                lockWanted = kiosk?.lockWanted == true
+                removingOwner = false
+            },
+            onCancel = { removingOwner = false },
+        )
+    }
+    }
+}
+
+/** Device owner can't be got back without adb, so this asks twice: are you sure, then the PIN again. */
+@Composable
+internal fun RemoveOwnerOverlay(pin: AdminPin, onRemove: () -> Unit, onCancel: () -> Unit) {
+    var confirmed by remember { mutableStateOf(false) }
+    if (confirmed) {
+        AdminPinDialog(pin, creating = false, onDone = onRemove, onCancel = onCancel, title = "PIN TO REMOVE OWNER")
+        return
+    }
+    Box(
+        Modifier
+            .fillMaxSize()
+            .testTag(Tags.ADMIN_OWNER_CONFIRM)
+            .background(Palette.Background.copy(alpha = 0.92f))
+            .pointerInput(Unit) { detectTapGestures {} },
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            Modifier
+                .width(640.dp)
+                .panel(Palette.Neutral900, Palette.Rose500.copy(alpha = 0.5f), RoundedCornerShape(24.dp))
+                .padding(28.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Label("Remove device owner?", 24.sp, Palette.Rose200, family = Fonts.Display, weight = FontWeight.Bold, align = TextAlign.Start)
+            Hint(
+                "This turns the kiosk lock off and gives up full lock, start on boot and crash restart. " +
+                    "Getting them back means provisioning this device again over adb, with no accounts on it.",
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                AdminButton("Cancel", Tags.ADMIN_OWNER_CANCEL, Palette.Neutral800, Palette.Neutral300, onCancel)
+                AdminButton("Continue", Tags.ADMIN_OWNER_CONTINUE, Palette.Rose500, Palette.Neutral950) { confirmed = true }
             }
         }
     }
@@ -201,7 +290,13 @@ private fun SwitchRow(label: String, checked: Boolean, tag: String, enabled: Boo
 }
 
 @Composable
-private fun KioskLockSection(kiosk: KioskController?, wanted: Boolean, onWantedChange: (Boolean) -> Unit) {
+private fun KioskLockSection(
+    kiosk: KioskController?,
+    wanted: Boolean,
+    isOwner: Boolean,
+    onWantedChange: (Boolean) -> Unit,
+    onRemoveOwner: () -> Unit,
+) {
     Section("Kiosk lock") {
         if (kiosk == null) {
             Hint("Not available here.")
@@ -218,7 +313,8 @@ private fun KioskLockSection(kiosk: KioskController?, wanted: Boolean, onWantedC
             onWantedChange(on)
             if (on) kiosk.enableLock() else kiosk.disableLock()
         }
-        Hint(lockSummary(kiosk.isDeviceOwner, wanted, active), Modifier.testTag(Tags.ADMIN_LOCK_STATUS))
+        Hint(lockSummary(isOwner, wanted, active), Modifier.testTag(Tags.ADMIN_LOCK_STATUS))
+        if (isOwner) AdminButton("Remove device owner", Tags.ADMIN_REMOVE_OWNER, Palette.Rose500.copy(alpha = 0.25f), Palette.Rose200, onRemoveOwner)
     }
 }
 
@@ -233,7 +329,7 @@ internal fun lockSummary(deviceOwner: Boolean, wanted: Boolean, active: Boolean)
 }
 
 @Composable
-private fun ServerSection(config: ServerConfig) {
+private fun ServerSection(config: ServerConfig, onTyped: () -> Unit) {
     val context = LocalContext.current
     val debuggable = remember { context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0 }
     var api by remember { mutableStateOf(config.apiBaseUrl) }
@@ -244,11 +340,13 @@ private fun ServerSection(config: ServerConfig) {
 
     Section("Server addresses") {
         AddressField("API server", api, Tags.ADMIN_API_URL, apiError, Tags.ADMIN_API_ERROR) {
+            onTyped() // an on-screen keyboard's typing never reaches this window as key events
             api = it
             apiError = null
             saved = false
         }
         AddressField("Public web address (the QR code)", web, Tags.ADMIN_WEB_URL, webError, Tags.ADMIN_WEB_ERROR) {
+            onTyped()
             web = it
             webError = null
             saved = false
@@ -373,20 +471,20 @@ private fun PerfSection(vm: GameViewModel) {
 }
 
 @Composable
-private fun DeviceInfoSection(kiosk: KioskController?) {
+private fun DeviceInfoSection(kiosk: KioskController?, lockWanted: Boolean, isOwner: Boolean) {
     val context = LocalContext.current
     val metrics = context.resources.displayMetrics
     val version = remember {
         context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "?"
     }
-    val lines = remember(kiosk) {
+    val lines = remember(kiosk, lockWanted, isOwner) {
         val status = kiosk?.status()
         listOf(
             "Device" to "${Build.MANUFACTURER} ${Build.MODEL}",
             "Android" to "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
             "Screen" to "${metrics.widthPixels} x ${metrics.heightPixels}",
             "App" to "$version (${context.packageName})",
-            "Device owner" to yesNo(kiosk?.isDeviceOwner),
+            "Device owner" to yesNo(kiosk?.let { isOwner }),
             "Starts on boot" to yesNo(status?.autoLaunch),
             "Crash restart" to yesNo(status?.watchdogRunning),
         )
@@ -410,7 +508,7 @@ private fun yesNo(value: Boolean?) = when (value) {
 @Composable
 private fun ExitSection(lockWanted: Boolean, onExit: () -> Unit) {
     Section("Exit") {
-        if (lockWanted) Hint("The lock stays on: it returns the next time the app starts. Turn it off above to leave the kiosk for good.")
+        if (lockWanted) Hint("The lock is on, so the app comes back: straight away where it's the home app, otherwise at its next start. Turn the lock off above to leave the kiosk.")
         AdminButton("Exit app", Tags.ADMIN_EXIT, Palette.Rose500.copy(alpha = 0.25f), Palette.Rose200, onExit)
     }
 }

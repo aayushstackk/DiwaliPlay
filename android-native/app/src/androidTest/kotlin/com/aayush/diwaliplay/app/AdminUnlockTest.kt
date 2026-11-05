@@ -2,6 +2,7 @@ package com.aayush.diwaliplay.app
 
 import android.Manifest
 import android.content.Context
+import androidx.activity.compose.setContent
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.ComposeTestRule
@@ -21,10 +22,14 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.aayush.diwaliplay.app.ui.Tags
 import com.aayush.diwaliplay.app.ui.admin.DEBUG_HTTP_MESSAGE
 import com.aayush.diwaliplay.app.ui.admin.PIN_MISMATCH_MESSAGE
-import com.aayush.diwaliplay.app.ui.admin.PIN_WRONG_MESSAGE
+import com.aayush.diwaliplay.app.ui.admin.ADMIN_IDLE_TIMEOUT_MS
+import com.aayush.diwaliplay.app.ui.admin.RemoveOwnerOverlay
+import com.aayush.diwaliplay.app.ui.admin.wrongPinMessage
+import com.aayush.diwaliplay.app.ui.theme.DesignCanvas
 import com.aayush.diwaliplay.branding.BrandingState
 import com.aayush.diwaliplay.branding.ServerConfig
 import com.aayush.diwaliplay.kiosk.AdminPin
+import com.aayush.diwaliplay.kiosk.PinResult
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.After
@@ -149,9 +154,67 @@ class AdminUnlockTest {
         enterPin("9999")
 
         waitForTag(Tags.PIN_ERROR)
-        assertThat(textOf(Tags.PIN_ERROR)).isEqualTo(PIN_WRONG_MESSAGE)
+        assertThat(textOf(Tags.PIN_ERROR)).isEqualTo(wrongPinMessage(4))
         assertThat(hasTag(Tags.ADMIN_SCREEN)).isFalse()
         assertThat(hasTag(Tags.PIN_DIALOG)).isTrue()
+    }
+
+    @Test
+    fun fifthWrongPinLocksTheDialogOut() {
+        launch()
+        tapLogo(5)
+        waitForTag(Tags.PIN_DIALOG)
+
+        for (left in 4 downTo 1) {
+            enterPin("9999")
+            waitUntil("$left left") { hasTag(Tags.PIN_ERROR) && textOf(Tags.PIN_ERROR) == wrongPinMessage(left) }
+        }
+        enterPin("9999")
+        waitUntil("lockout") { hasTag(Tags.PIN_ERROR) && textOf(Tags.PIN_ERROR).startsWith("Too many wrong PINs") }
+        assertThat(textOf(Tags.PIN_ERROR)).endsWith("15 minutes")
+
+        // The right PIN gets the same answer.
+        enterPin(PIN)
+        repeat(20) { pump() }
+        assertThat(hasTag(Tags.ADMIN_SCREEN)).isFalse()
+        assertThat(textOf(Tags.PIN_ERROR)).startsWith("Too many wrong PINs")
+    }
+
+    @Test
+    fun removeOwnerControlIsHiddenWithoutAnOwner() {
+        launch()
+        openAdmin()
+        assertThat(hasTag(Tags.ADMIN_REMOVE_OWNER)).isFalse()
+    }
+
+    @Test
+    fun adminScreenClosesItselfAfterTwoIdleMinutes() {
+        launch()
+        openAdmin()
+        compose.mainClock.advanceTimeBy(ADMIN_IDLE_TIMEOUT_MS - 1_000)
+        pump()
+        assertThat(hasTag(Tags.ADMIN_SCREEN)).isTrue()
+
+        // A touch starts the wait over.
+        tap(Tags.ADMIN_PERF)
+        compose.mainClock.advanceTimeBy(ADMIN_IDLE_TIMEOUT_MS - 1_000)
+        pump()
+        assertThat(hasTag(Tags.ADMIN_SCREEN)).isTrue()
+
+        compose.mainClock.advanceTimeBy(2_000)
+        waitForTag(Tags.START_SCREEN)
+        assertThat(hasTag(Tags.ADMIN_SCREEN)).isFalse()
+    }
+
+    @Test
+    fun idleCloseAlsoStopsTheCameraTest() {
+        launch()
+        openAdmin()
+        tap(Tags.ADMIN_CAMERA_TEST)
+        waitForTag(Tags.ADMIN_CAMERA_VIEW)
+        compose.mainClock.advanceTimeBy(ADMIN_IDLE_TIMEOUT_MS + 1_000)
+        waitForTag(Tags.START_SCREEN)
+        waitUntil("camera stopped") { !tracking.running }
     }
 
     @Test
@@ -202,7 +265,7 @@ class AdminUnlockTest {
         waitUntil("confirm") { textOf(Tags.PIN_TITLE) == "CONFIRM ADMIN PIN" }
         enterPin("1234")
         waitUntil("dialog gone") { !hasTag(Tags.PIN_DIALOG) }
-        assertThat(pin.verify("1234")).isTrue()
+        assertThat(pin.verify("1234")).isEqualTo(PinResult.Ok)
         assertThat(hasTag(Tags.ADMIN_SCREEN)).isFalse() // it's the 5 taps that open it, from now on
         assertThat(hasTag(Tags.START_SCREEN)).isTrue()
     }
@@ -326,6 +389,52 @@ class AdminUnlockTest {
         val deadline = System.currentTimeMillis() + 10_000
         while (scenario!!.state != Lifecycle.State.DESTROYED && System.currentTimeMillis() < deadline) Thread.sleep(100)
         assertThat(scenario!!.state).isEqualTo(Lifecycle.State.DESTROYED)
+    }
+
+    @Test
+    fun removingOwnerAsksAreYouSureThenThePin() {
+        pin.set(PIN)
+        var removed = 0
+        var cancelled = 0
+        scenario = ActivityScenario.launch(MainActivity::class.java)
+        waitForTag(Tags.START_SCREEN)
+        scenario!!.onActivity {
+            it.setContent {
+                DesignCanvas { RemoveOwnerOverlay(pin, onRemove = { removed++ }, onCancel = { cancelled++ }) }
+            }
+        }
+        waitForTag(Tags.ADMIN_OWNER_CONFIRM)
+        assertThat(hasTag(Tags.PIN_DIALOG)).isFalse()
+
+        tap(Tags.ADMIN_OWNER_CONTINUE)
+        waitForTag(Tags.PIN_DIALOG)
+        assertThat(removed).isEqualTo(0)
+
+        enterPin("9999")
+        waitForTag(Tags.PIN_ERROR)
+        assertThat(removed).isEqualTo(0)
+
+        enterPin(PIN)
+        waitUntil("removed") { removed == 1 }
+        assertThat(cancelled).isEqualTo(0)
+    }
+
+    @Test
+    fun removingOwnerCanBeCancelledAtTheFirstQuestion() {
+        pin.set(PIN)
+        var removed = 0
+        var cancelled = 0
+        scenario = ActivityScenario.launch(MainActivity::class.java)
+        waitForTag(Tags.START_SCREEN)
+        scenario!!.onActivity {
+            it.setContent {
+                DesignCanvas { RemoveOwnerOverlay(pin, onRemove = { removed++ }, onCancel = { cancelled++ }) }
+            }
+        }
+        waitForTag(Tags.ADMIN_OWNER_CONFIRM)
+        tap(Tags.ADMIN_OWNER_CANCEL)
+        waitUntil("cancelled") { cancelled == 1 }
+        assertThat(removed).isEqualTo(0)
     }
 
     private companion object {

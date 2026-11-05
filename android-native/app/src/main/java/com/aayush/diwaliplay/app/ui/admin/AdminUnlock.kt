@@ -52,6 +52,7 @@ import com.aayush.diwaliplay.app.ui.panel
 import com.aayush.diwaliplay.app.ui.theme.Fonts
 import com.aayush.diwaliplay.app.ui.theme.Palette
 import com.aayush.diwaliplay.kiosk.AdminPin
+import com.aayush.diwaliplay.kiosk.PinResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -61,7 +62,13 @@ private const val UNLOCK_WINDOW_MS = 3_000L
 
 internal const val PIN_LENGTH_MESSAGE = "The PIN must be 4 to 8 digits"
 internal const val PIN_MISMATCH_MESSAGE = "Those PINs didn't match. Start again"
-internal const val PIN_WRONG_MESSAGE = "Wrong PIN"
+
+internal fun wrongPinMessage(attemptsLeft: Int) = "Wrong PIN. $attemptsLeft ${if (attemptsLeft == 1) "try" else "tries"} left"
+
+internal fun lockedOutMessage(remainingMs: Long): String {
+    val minutes = ((remainingMs + 59_999) / 60_000).coerceAtLeast(1)
+    return "Too many wrong PINs. Try again in $minutes ${if (minutes == 1L) "minute" else "minutes"}"
+}
 
 /** Where the start screen is on its way to the admin screen. */
 enum class AdminStage { Closed, CreatePin, EnterPin, Open }
@@ -85,7 +92,7 @@ class LogoTapCounter {
  * forced creation, which can't be cancelled.
  */
 @Composable
-fun AdminPinDialog(pin: AdminPin, creating: Boolean, onDone: () -> Unit, onCancel: () -> Unit) {
+fun AdminPinDialog(pin: AdminPin, creating: Boolean, onDone: () -> Unit, onCancel: () -> Unit, title: String = "ADMIN PIN") {
     var entered by remember { mutableStateOf("") }
     var firstEntry by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -105,8 +112,8 @@ fun AdminPinDialog(pin: AdminPin, creating: Boolean, onDone: () -> Unit, onCance
     fun submit() {
         if (busy) return
         val value = entered
-        if (!AdminPin.isValid(value)) {
-            error = if (creating) PIN_LENGTH_MESSAGE else PIN_WRONG_MESSAGE
+        if (creating && !AdminPin.isValid(value)) {
+            error = PIN_LENGTH_MESSAGE
             entered = ""
             return
         }
@@ -125,20 +132,20 @@ fun AdminPinDialog(pin: AdminPin, creating: Boolean, onDone: () -> Unit, onCance
                 busy = true
                 scope.launch {
                     // PBKDF2 is slow on purpose.
-                    val accepted = withContext(Dispatchers.Default) {
+                    val result = withContext(Dispatchers.Default) {
                         if (creating) {
                             pin.set(value)
-                            true
+                            PinResult.Ok
                         } else {
                             pin.verify(value)
                         }
                     }
                     busy = false
-                    if (accepted) {
-                        onDone()
-                    } else {
-                        entered = ""
-                        error = PIN_WRONG_MESSAGE
+                    entered = ""
+                    when (result) {
+                        PinResult.Ok -> onDone()
+                        is PinResult.Wrong -> error = wrongPinMessage(result.attemptsLeft)
+                        is PinResult.LockedOut -> error = lockedOutMessage(result.remainingMs)
                     }
                 }
             }
@@ -178,7 +185,7 @@ fun AdminPinDialog(pin: AdminPin, creating: Boolean, onDone: () -> Unit, onCance
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             val title = when {
-                !creating -> "ADMIN PIN"
+                !creating -> title
                 firstEntry == null -> "CREATE ADMIN PIN"
                 else -> "CONFIRM ADMIN PIN"
             }
