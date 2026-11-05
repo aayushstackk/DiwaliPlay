@@ -149,19 +149,20 @@ export class HandTrackingWorkerClient {
   }
 }
 
+export type TrackingPreference = 'auto' | 'worker' | 'main';
+
 /**
- * Worker tracking is on by default. Force the old main-thread path for A/B testing with
- * `?tracking=main` in the URL or localStorage `diwali_tracking_mode` = `main`.
+ * By default the tracker is picked by benchmark on each load. Force one for A/B testing with
+ * `?tracking=main|worker` in the URL, or localStorage `diwali_tracking_mode` = `main`.
  */
-export function isWorkerTrackingEnabled(): boolean {
-  if (!HandTrackingWorkerClient.isSupported()) return false;
+export function getTrackingPreference(): TrackingPreference {
+  if (!HandTrackingWorkerClient.isSupported()) return 'main';
   try {
     const param = new URLSearchParams(window.location.search).get('tracking');
-    if (param === 'main') return false;
-    if (param === 'worker') return true;
-    if (window.localStorage.getItem('diwali_tracking_mode') === 'main') return false;
+    if (param === 'main' || param === 'worker') return param;
+    if (window.localStorage.getItem('diwali_tracking_mode') === 'main') return 'main';
   } catch {
     // ignore storage/URL access errors
   }
-  return true;
+  return 'auto';
 }

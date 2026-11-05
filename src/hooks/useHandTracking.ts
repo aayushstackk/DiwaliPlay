@@ -30,7 +30,8 @@ import {
 } from '../utils/motionMath';
 import { recognizeHandGesture } from '../utils/gestureRecognition';
 import { CrackerEngine } from '../utils/crackerEngine';
-import { HandTrackingWorkerClient, isWorkerTrackingEnabled } from '../utils/handTrackingWorkerClient';
+import { HandTrackingWorkerClient, getTrackingPreference } from '../utils/handTrackingWorkerClient';
+import { WORKER_FAST_ENOUGH_MS, benchmarkDetector, chooseTracker } from '../utils/trackerSelection';
 import { getTrackingOverrides, getWebGlRendererName } from '../utils/trackingOverrides';
 import type { HandDetectionResult } from '../utils/handTrackingWorkerProtocol';
 import { SoundEngine, CrackerSoundType } from '../utils/soundEngine';
@@ -203,6 +204,8 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
   const workerClientRef = useRef<HandTrackingWorkerClient | null>(null);
   // Set if the worker fails at runtime, so the loop falls back to main-thread detection
   const fallbackToMainThreadRef = useRef<(() => void) | null>(null);
+  // Why this tracker was picked, for the ?timing=1 readout
+  const trackerChoiceNoteRef = useRef('');
   const animationFrameIdRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const isInferringRef = useRef(false);
@@ -404,11 +407,14 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
         // Self-hosted copy of hand_landmarker/float16/1 (public/models)
         const modelAssetPath = '/models/hand_landmarker.task';
 
-        // 1) Preferred: run detection in a Web Worker so a slow pass can't stall animation
-        if (isWorkerTrackingEnabled()) {
+        const preference = getTrackingPreference();
+
+        // 1) Worker: a slow detection pass can't stall animation
+        let client: HandTrackingWorkerClient | null = null;
+        if (preference !== 'main') {
           try {
             setModelLoadingProgress('Starting hand tracking worker...');
-            const client = await HandTrackingWorkerClient.create({
+            client = await HandTrackingWorkerClient.create({
               wasmBasePath,
               modelAssetPath,
               delegate: trackingOverrides.delegate,
@@ -418,18 +424,27 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
               client.close();
               return;
             }
-            console.info(`[HandTracking] Running in worker (${client.delegate} delegate)`);
-            workerClientRef.current = client;
-            setIsModelLoading(false);
+            if (preference === 'auto') {
+              await pickFasterTracker(client);
+              return;
+            }
+            startWorkerTracker(client);
             return;
           } catch (workerErr) {
+            client?.close();
             console.warn('[HandTracking] Worker unavailable, falling back to main thread:', workerErr);
           }
         }
 
-        // 2) Fallback: main-thread detection
+        // 2) Main thread: forced, or the worker can't run here
         if (!isMounted) return;
-        await initMainThreadLandmarker();
+        const landmarker = await createMainThreadLandmarker();
+        if (!isMounted) {
+          landmarker.close();
+          return;
+        }
+        handLandmarkerRef.current = landmarker;
+        setIsModelLoading(false);
       } catch (err: unknown) {
         console.error('Failed to initialize HandLandmarker:', err);
         if (isMounted) {
@@ -443,16 +458,71 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
       }
     }
 
-    async function initMainThreadLandmarker() {
-      if (handLandmarkerRef.current) return;
-      setIsModelLoading(true);
+    function startWorkerTracker(client: HandTrackingWorkerClient) {
+      console.info(`[HandTracking] Running in worker (${client.delegate} delegate)`);
+      workerClientRef.current = client;
+      setIsModelLoading(false);
+    }
+
+    // Some kiosks' browsers run the model far slower in a worker than on the main thread, which
+    // makes tracking lag. Time both on a test frame before anyone is playing, and only leave the
+    // worker when the main thread is clearly faster and fast enough not to stutter the game.
+    async function pickFasterTracker(client: HandTrackingWorkerClient) {
+      setModelLoadingProgress('Checking hand tracking speed...');
+      const workerMs = await benchmarkDetector(async (frame, timestamp) => {
+        await client.detect(await createImageBitmap(frame), timestamp);
+        return client.lastInferenceMs;
+      });
+      if (!isMounted) {
+        client.close();
+        return;
+      }
+
+      let landmarker: HandLandmarker | null = null;
+      let mainMs = Infinity;
+      if (workerMs > WORKER_FAST_ENOUGH_MS) {
+        try {
+          landmarker = await createMainThreadLandmarker();
+          const candidate = landmarker;
+          mainMs = await benchmarkDetector((frame, timestamp) => {
+            const start = performance.now();
+            candidate.detectForVideo(frame, timestamp);
+            return performance.now() - start;
+          });
+        } catch (mainErr) {
+          console.warn('[HandTracking] Main-thread benchmark failed, keeping the worker:', mainErr);
+        }
+      }
+      if (!isMounted) {
+        client.close();
+        landmarker?.close();
+        return;
+      }
+
+      const choice = chooseTracker(workerMs, mainMs);
+      const measured = Number.isFinite(mainMs)
+        ? `worker ${Math.round(workerMs)} ms, main ${Math.round(mainMs)} ms`
+        : `worker ${Math.round(workerMs)} ms`;
+      trackerChoiceNoteRef.current = measured;
+      console.info(`[HandTracking] Benchmark: ${measured}; using ${choice}`);
+
+      if (choice === 'main' && landmarker) {
+        client.close();
+        handLandmarkerRef.current = landmarker;
+        setIsModelLoading(false);
+        return;
+      }
+      landmarker?.close();
+      startWorkerTracker(client);
+    }
+
+    async function createMainThreadLandmarker(): Promise<HandLandmarker> {
       setModelLoadingProgress('Loading MediaPipe Vision WASM assets...');
       const vision = await FilesetResolver.forVisionTasks(`/mediapipe/${__MEDIAPIPE_VERSION__}/wasm`);
 
-      if (!isMounted) return;
       setModelLoadingProgress('Loading Hand Landmarker with WebGL GPU acceleration...');
 
-      const landmarker = await HandLandmarker.createFromOptions(vision, {
+      return HandLandmarker.createFromOptions(vision, {
         baseOptions: {
           modelAssetPath: '/models/hand_landmarker.task',
           delegate: trackingOverrides.delegate ?? 'GPU',
@@ -463,7 +533,12 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
         minHandPresenceConfidence: 0.35,
         minTrackingConfidence: 0.35,
       });
+    }
 
+    async function initMainThreadLandmarker() {
+      if (handLandmarkerRef.current) return;
+      setIsModelLoading(true);
+      const landmarker = await createMainThreadLandmarker();
       if (!isMounted) {
         landmarker.close();
         return;
@@ -1127,7 +1202,9 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
             workerClientRef.current
               ? `Worker ${workerClientRef.current.delegate}`
               : `Main ${trackingOverrides.delegate ?? 'GPU'}`
-          }, ${trackingOverrides.numHands} hand(s)`,
+          }, ${trackingOverrides.numHands} hand(s)${
+            trackerChoiceNoteRef.current ? ` (${trackerChoiceNoteRef.current})` : ''
+          }`,
           gpuName: workerClientRef.current?.rendererName || getWebGlRendererName(),
           lowEndMode: isLowEndHardware(),
           trackingConfidence: Math.round(avgConfidence * 100),
