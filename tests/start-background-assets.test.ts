@@ -60,6 +60,48 @@ function runValidationTests() {
     false,
     'audio rejected'
   );
+  // Cap bypass attempts: declared MIME must agree with the extension, cap follows the real type
+  const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0]);
+  assert.strictEqual(
+    validateUploadedFile(
+      { originalname: 'bg.png', mimetype: 'video/mp4', size: 20 * MB, buffer: PNG_HEADER },
+      'start_backgrounds'
+    ).valid,
+    false,
+    '.png declared video/mp4 over 15 MB'
+  );
+  assert.strictEqual(
+    validateUploadedFile(
+      { originalname: 'bg.png', mimetype: 'video/mp4', size: 1000, buffer: PNG_HEADER },
+      'start_backgrounds'
+    ).valid,
+    false,
+    '.png declared video/mp4 rejected even when small'
+  );
+  assert.strictEqual(
+    validateUploadedFile(
+      { originalname: 'bg.mp4', mimetype: 'image/jpeg', size: 1000, buffer: JPEG },
+      'start_backgrounds'
+    ).valid,
+    false,
+    '.mp4 declared image/jpeg with JPEG bytes'
+  );
+  assert.strictEqual(
+    validateUploadedFile(
+      { originalname: 'bg.png', mimetype: 'image/png; x=1', size: 15 * MB + 1, buffer: PNG_HEADER },
+      'start_backgrounds'
+    ).valid,
+    false,
+    'image/png with params over 15 MB'
+  );
+  assert.strictEqual(
+    validateUploadedFile(
+      { originalname: 'bg.png', mimetype: 'image/png; x=1', size: 1000, buffer: PNG_HEADER },
+      'start_backgrounds'
+    ).normalizedMime,
+    'image/png',
+    'params stripped from stored MIME'
+  );
   assert(generateSafeObjectKey('start_backgrounds', '.mp4').startsWith('start_backgrounds/bg_'));
   console.log('  ✅ validation PASSED\n');
 }

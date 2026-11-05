@@ -61,6 +61,14 @@ export const CATEGORY_RULES: Record<AssetCategory, CategoryValidationRules> = {
   }
 };
 
+const EXTENSION_MIME: Record<string, string> = {
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+  '.mp4': 'video/mp4'
+};
+
 /**
  * Sniffs binary magic bytes to verify file format authenticity.
  */
@@ -186,10 +194,8 @@ export function validateUploadedFile(
     return { valid: false, error: 'No file data provided in upload payload.' };
   }
 
-  // 1. File size check (per-MIME cap, when defined, tightens the category cap)
-  const sizeMime = (file.mimetype || '').toLowerCase();
-  const maxBytes = rules.maxSizeBytesByMime?.[sizeMime] ?? rules.maxSizeBytes;
-  if (file.size > maxBytes || file.buffer.length > maxBytes) {
+  // 1. File size check against the category-wide ceiling
+  if (file.size > rules.maxSizeBytes || file.buffer.length > rules.maxSizeBytes) {
     return {
       valid: false,
       error: `File size (${(file.size / (1024 * 1024)).toFixed(2)} MB) exceeds category limit of ${rules.readableLimit}.`
@@ -206,7 +212,7 @@ export function validateUploadedFile(
   }
 
   // 3. MIME type check
-  const rawMime = (file.mimetype || '').toLowerCase();
+  let rawMime = (file.mimetype || '').toLowerCase();
   const mimeMatch = rules.allowedMimeTypes.some(
     (allowed) => rawMime === allowed || rawMime.startsWith(allowed)
   );
@@ -216,6 +222,28 @@ export function validateUploadedFile(
       valid: false,
       error: `MIME type "${file.mimetype}" is not permitted for category "${category}". Allowed: ${rules.allowedMimeTypes.join(', ')}.`
     };
+  }
+
+  // 3b. Categories with per-type caps: the extension decides the type, the declared MIME must
+  // agree (parameters stripped), and the per-type cap is applied to that canonical type so a
+  // client cannot pick a looser cap by lying about Content-Type.
+  if (rules.maxSizeBytesByMime) {
+    const baseMime = rawMime.split(';')[0].trim();
+    const canonicalMime = EXTENSION_MIME[ext];
+    if (!canonicalMime || baseMime !== canonicalMime) {
+      return {
+        valid: false,
+        error: `File extension "${ext}" does not match declared MIME type "${file.mimetype}".`
+      };
+    }
+    rawMime = baseMime;
+    const typeCap = rules.maxSizeBytesByMime[canonicalMime] ?? rules.maxSizeBytes;
+    if (file.size > typeCap || file.buffer.length > typeCap) {
+      return {
+        valid: false,
+        error: `File size (${(file.size / (1024 * 1024)).toFixed(2)} MB) exceeds category limit of ${rules.readableLimit}.`
+      };
+    }
   }
 
   // 4. Deep magic byte sniffing
