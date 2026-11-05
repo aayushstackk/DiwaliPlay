@@ -176,6 +176,17 @@ async function runApiTests() {
   assert(typeof bigJson.message === 'string' && bigJson.message.length > 0);
   console.log('  ✅ oversize upload returns 413 FILE_TOO_LARGE');
 
+  // Multer lets 40 MB through now, so another category's own cap has to catch this.
+  const wallpaper = new FormData();
+  wallpaper.append('category', 'wallpapers');
+  wallpaper.append('file', new Blob([PNG_HEADER, Buffer.alloc(20 * MB)], { type: 'image/png' }), 'big.png');
+  const wallpaperRes = await fetch(`${baseUrl}/api/admin/assets/upload`, { method: 'POST', headers: auth, body: wallpaper });
+  assert.strictEqual(wallpaperRes.status, 400, `20 MB wallpaper status ${wallpaperRes.status}`);
+  assert.strictEqual(((await wallpaperRes.json()) as any).error, 'FILE_VALIDATION_FAILED');
+  const wallpapers = await adapter.listAssets({ category: 'wallpapers' });
+  assert.strictEqual(wallpapers.length, 0, 'rejected wallpaper stored nothing');
+  console.log('  ✅ 20 MB wallpaper rejected through the route');
+
   await new Promise<void>((resolve) => server.close(() => resolve()));
   await adapter.close?.();
   await mongod.stop();
