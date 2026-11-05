@@ -109,12 +109,11 @@ class GameViewModelTest {
     private val rewardsOn = SystemSettings(rewardsEnabled = true)
     private val prize = RewardItem(id = "r1", name = "20% OFF", couponCode = "DIWALI20")
 
-    private fun TestScope.toSpin(r: Rig): GamePhase.Spin {
+    private fun TestScope.toSpin(r: Rig): GamePhase.GameOver {
         r.acceptCode()
         r.playToCard()
-        r.vm.onCardDone()
         runCurrent()
-        return r.vm.phase.value as GamePhase.Spin
+        return r.vm.phase.value as GamePhase.GameOver
     }
 
     @Test
@@ -136,9 +135,8 @@ class GameViewModelTest {
         r.api.onSpin = { ApiResult.Success(SpinWheelResponse(success = true, reward = prize)) }
         r.acceptCode("8536")
         r.playToCard()
-        r.vm.onCardDone()
         runCurrent()
-        r.vm.requestSpin(r.vm.phase.value as GamePhase.Spin)
+        r.vm.requestSpin(r.vm.phase.value as GamePhase.GameOver)
         val req = r.api.spins.single()
         assertThat(req.userId).isEqualTo("trial_user_8536")
         assertThat(req.sessionId).isEqualTo("trial_session_8536")
@@ -471,32 +469,100 @@ class GameViewModelTest {
     }
 
     @Test
-    fun feedbackWithAWonCouponSendsAtOnceAndLeavesItUpForTheCountdown() = runTest {
+    fun feedbackSendsAtOnceAndLeavesTheScreenUpForTheCountdown() = runTest {
         val r = Rig(this, rewardsOn)
         toSpin(r)
         r.vm.onSpinSettled()
         runCurrent()
         advanceTimeBy(5_000)
-        r.vm.onSpinDone(prize)
-        runCurrent()
         r.vm.submitFeedback(GameFeedback.Good)
         runCurrent()
         assertThat(r.api.feedback.single().second).isEqualTo(GameFeedback.Good)
 
-        advanceTimeBy(FEEDBACK_THANKS_MS + 1_000)
+        advanceTimeBy(5_000)
         runCurrent()
-        assertThat(r.vm.phase.value).isInstanceOf(GamePhase.Feedback::class.java) // no 1.5 s exit
+        assertThat(r.vm.phase.value).isInstanceOf(GamePhase.GameOver::class.java)
         assertThat(r.vm.feedbackRecorded.value).isEqualTo(GameFeedback.Good)
-        assertThat(r.vm.autoReturnSeconds.value).isNotNull()
+        assertThat(r.vm.autoReturnSeconds.value).isEqualTo(10) // feedback neither stops nor resets it
 
-        advanceTimeBy(15_000)
+        advanceTimeBy(10_100)
         runCurrent()
         assertThat(r.vm.phase.value).isEqualTo(GamePhase.Startup)
         assertThat(r.api.feedback).hasSize(1)
     }
 
     @Test
-    fun feedbackWithAScorePrizeAlsoLeavesItUp() = runTest {
+    fun feedbackBeforeTheSpinDoesNotStartOrBlockTheCountdown() = runTest {
+        val r = Rig(this, rewardsOn)
+        toSpin(r)
+        r.vm.submitFeedback(GameFeedback.Excellent)
+        advanceTimeBy(60_000)
+        runCurrent()
+        assertThat(r.vm.autoReturnSeconds.value).isNull() // an unspun wheel still waits
+        assertThat(r.vm.phase.value).isInstanceOf(GamePhase.GameOver::class.java)
+
+        r.vm.onSpinSettled()
+        runCurrent()
+        assertThat(r.vm.autoReturnSeconds.value).isEqualTo(20)
+        advanceTimeBy(20_100)
+        runCurrent()
+        assertThat(r.vm.phase.value).isEqualTo(GamePhase.Startup)
+    }
+
+    @Test
+    fun feedbackWithRewardsOffLeavesTheCountdownRunning() = runTest {
+        val r = Rig(this)
+        r.acceptCode()
+        r.playToCard()
+        runCurrent()
+        advanceTimeBy(5_000)
+        r.vm.submitFeedback(GameFeedback.Good)
+        advanceTimeBy(5_000)
+        runCurrent()
+        assertThat(r.vm.phase.value).isInstanceOf(GamePhase.GameOver::class.java)
+        assertThat(r.vm.autoReturnSeconds.value).isEqualTo(10)
+    }
+
+    @Test
+    fun aSecondFeedbackTapChangesNothing() = runTest {
+        val r = Rig(this, rewardsOn)
+        toSpin(r)
+        r.vm.submitFeedback(GameFeedback.Good)
+        r.vm.submitFeedback(GameFeedback.NeedsImprovement)
+        runCurrent()
+        assertThat(r.api.feedback.single().second).isEqualTo(GameFeedback.Good)
+        assertThat(r.vm.feedbackRecorded.value).isEqualTo(GameFeedback.Good)
+    }
+
+    @Test
+    fun theThanksDoesNotCarryIntoTheNextRound() = runTest {
+        val r = Rig(this)
+        r.acceptCode()
+        r.playToCard()
+        r.vm.submitFeedback(GameFeedback.Good)
+        r.vm.exitToStart()
+        runCurrent()
+        assertThat(r.vm.feedbackRecorded.value).isNull()
+    }
+
+    @Test
+    fun aSettleAfterTheScreenHasGoneStartsNothing() = runTest {
+        val r = Rig(this, rewardsOn)
+        toSpin(r)
+        r.vm.onInterrupted()
+        runCurrent()
+        r.vm.onSpinSettled() // a stale wheel
+        runCurrent()
+        assertThat(r.vm.autoReturnSeconds.value).isNull()
+
+        r.acceptCode()
+        r.vm.onSpinSettled() // and with the next round under way
+        runCurrent()
+        assertThat(r.vm.autoReturnSeconds.value).isNull()
+    }
+
+    @Test
+    fun aScreenWithAScorePrizeArrivingLateKeepsItsId() = runTest {
         val r = Rig(this)
         val mug = EarnedReward(id = "r", name = "Mug", description = "", imageUrl = "", couponCode = "C")
         r.api.onComplete = { req ->
@@ -505,12 +571,9 @@ class GameViewModelTest {
         r.acceptCode()
         r.playToCard()
         runCurrent()
-        r.vm.onCardDone()
-        runCurrent()
-        r.vm.submitFeedback(GameFeedback.Good)
-        advanceTimeBy(FEEDBACK_THANKS_MS + 1_000)
-        runCurrent()
-        assertThat(r.vm.phase.value).isEqualTo(GamePhase.Feedback(null, mug))
+        val over = r.vm.phase.value as GamePhase.GameOver
+        assertThat(over.card.earnedReward).isEqualTo(mug)
+        assertThat(over.sessionId).isEqualTo("server_session")
     }
 
     @Test
@@ -561,26 +624,13 @@ class GameViewModelTest {
     }
 
     @Test
-    fun theTimerRunsOnAcrossCardAndFeedback() = runTest {
-        val r = Rig(this)
-        r.acceptCode()
-        r.playToCard()
-        runCurrent()
-        advanceTimeBy(5_000)
-        r.vm.onCardDone()
-        runCurrent()
-        assertThat(r.vm.phase.value).isInstanceOf(GamePhase.Feedback::class.java)
-        assertThat(r.vm.autoReturnSeconds.value).isEqualTo(15)
-    }
-
-    @Test
     fun rewardsOnWaitsForTheWheelBeforeCounting() = runTest {
         val r = Rig(this, rewardsOn)
         toSpin(r)
         advanceTimeBy(60_000)
         runCurrent()
         assertThat(r.vm.autoReturnSeconds.value).isNull()
-        assertThat(r.vm.phase.value).isInstanceOf(GamePhase.Spin::class.java)
+        assertThat(r.vm.phase.value).isInstanceOf(GamePhase.GameOver::class.java)
         r.vm.onSpinSettled()
         runCurrent()
         assertThat(r.vm.autoReturnSeconds.value).isEqualTo(20)
@@ -594,31 +644,11 @@ class GameViewModelTest {
         val r = Rig(this)
         r.acceptCode("8536")
         r.playToCard()
-        r.vm.onCardDone()
         r.vm.onSpinSettled()
         advanceTimeBy(60_000)
         runCurrent()
         assertThat(r.vm.autoReturnSeconds.value).isNull()
-        assertThat(r.vm.phase.value).isInstanceOf(GamePhase.Feedback::class.java)
-    }
-
-    @Test
-    fun submittedFeedbackThanksThenSendsAndGoesHome() = runTest {
-        val r = Rig(this)
-        r.acceptCode()
-        r.playToCard()
-        r.vm.onCardDone()
-        runCurrent()
-        r.vm.submitFeedback(GameFeedback.Excellent)
-        runCurrent()
-        assertThat(r.vm.feedbackRecorded.value).isEqualTo(GameFeedback.Excellent)
-        assertThat(r.vm.autoReturnSeconds.value).isNull()
-        assertThat(r.vm.phase.value).isInstanceOf(GamePhase.Feedback::class.java)
-        advanceTimeBy(FEEDBACK_THANKS_MS + 1)
-        runCurrent()
-        assertThat(r.vm.phase.value).isEqualTo(GamePhase.Startup)
-        assertThat(r.vm.feedbackRecorded.value).isNull()
-        assertThat(r.api.feedback.single()).isEqualTo("server_session" to GameFeedback.Excellent)
+        assertThat(r.vm.phase.value).isInstanceOf(GamePhase.GameOver::class.java)
     }
 
     @Test
@@ -626,7 +656,6 @@ class GameViewModelTest {
         val r = Rig(this)
         r.acceptCode()
         r.playToCard()
-        r.vm.onCardDone()
         runCurrent()
         r.vm.submitFeedback(GameFeedback.Good)
         r.vm.onInterrupted()
@@ -636,7 +665,7 @@ class GameViewModelTest {
     }
 
     @Test
-    fun exitSkipsTheRemainingStepsAndSendsNoFeedback() = runTest {
+    fun exitGoesHomeAndSendsNoFeedback() = runTest {
         val r = Rig(this, rewardsOn)
         r.acceptCode()
         r.playToCard()
@@ -674,13 +703,11 @@ class GameViewModelTest {
     }
 
     @Test
-    fun envelopeAndWheelSoundsReachTheAudio() = runTest {
+    fun wheelSoundsReachTheAudio() = runTest {
         val r = Rig(this)
-        r.vm.playEnvelopeChime()
         r.vm.playSpinTick(0.5f)
         r.vm.playVictoryChime()
         runCurrent()
-        assertThat(r.audio.crackers).contains("FLOWER_POT")
         assertThat(r.audio.ticks).containsExactly(0.5f)
         assertThat(r.audio.victories).isEqualTo(1)
     }
@@ -1047,14 +1074,13 @@ class GameViewModelTest {
     }
 
     @Test
-    fun feedbackIsSubmittedAndRoundResets() = runTest {
+    fun feedbackIsSubmittedThenPlayAgainResetsTheRound() = runTest {
         val r = Rig(this)
         r.acceptCode()
         r.playToCard()
-        r.vm.onCardDone()
         runCurrent()
-        assertThat(r.vm.phase.value).isEqualTo(GamePhase.Feedback(null))
-        r.vm.onFeedback(GameFeedback.entries.first())
+        r.vm.submitFeedback(GameFeedback.entries.first())
+        r.vm.onPlayAgain()
         settle()
         assertThat(r.api.feedback.single().first).isEqualTo("server_session")
         assertThat(r.vm.phase.value).isEqualTo(GamePhase.Startup)
@@ -1066,10 +1092,9 @@ class GameViewModelTest {
         val r = Rig(this, SystemSettings(rewardsEnabled = true))
         r.acceptCode()
         r.playToCard()
-        r.vm.onCardDone()
-        val spin = r.vm.phase.value as GamePhase.Spin
-        assertThat(spin.mobileNumber).isEqualTo("9990001111")
-        assertThat(spin.playerName).isEqualTo("Asha")
+        val over = r.vm.phase.value as GamePhase.GameOver
+        assertThat(over.mobileNumber).isEqualTo("9990001111")
+        assertThat(over.card.playerName).isEqualTo("Asha")
     }
 
     @Test

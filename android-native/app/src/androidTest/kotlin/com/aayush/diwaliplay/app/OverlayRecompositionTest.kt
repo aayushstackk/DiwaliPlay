@@ -13,9 +13,9 @@ import com.aayush.diwaliplay.app.ui.CalibrationScreen
 import com.aayush.diwaliplay.app.ui.CountdownOverlay
 import com.aayush.diwaliplay.app.ui.HudOverlay
 import com.aayush.diwaliplay.app.ui.RoundHeader
-import com.aayush.diwaliplay.app.ui.GreetingCardScreen
+import com.aayush.diwaliplay.app.ui.GameOverScreen
 import com.aayush.diwaliplay.app.ui.PhotoCountdownScreen
-import com.aayush.diwaliplay.app.ui.SpinWheelScreen
+import com.aayush.diwaliplay.app.ui.SpinWheelPanel
 import com.aayush.diwaliplay.app.ui.StartScreen
 import com.aayush.diwaliplay.app.ui.Tags
 import com.aayush.diwaliplay.app.ui.admin.PerfOverlay
@@ -136,24 +136,21 @@ class OverlayRecompositionTest {
 
     @Test
     fun scoreCountUp() = assertAnimatesWithoutRecomposing {
-        GreetingCardScreen(roundCard(), "ItsSpotlight", true, false, null, emptyMap(), {}, { true }, {}, {})
+        GameOverScreen(roundCard(), "ItsSpotlight", false, null, null, emptyMap(), null, { true }, {}, {}, {})
     }
 
     @Test
     fun wheelSpinning() {
         compose.mainClock.autoAdvance = false
         compose.setContent {
-            SpinWheelScreen(
+            SpinWheelPanel(
                 rewards = listOf(RewardItem(id = "a", name = "20% OFF"), RewardItem(id = "b", name = "Free Mug")),
                 isTrial = false,
-                autoReturnSeconds = null,
                 localFiles = emptyMap(),
                 requestSpin = { awaitCancellation() },
                 onTick = {},
                 onVictory = {},
                 onSettled = {},
-                onContinue = {},
-                onClose = {},
             )
         }
         compose.mainClock.advanceTimeBy(100)

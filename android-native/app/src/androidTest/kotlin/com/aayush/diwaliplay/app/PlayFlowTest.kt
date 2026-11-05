@@ -143,15 +143,13 @@ class PlayFlowTest {
             hasTag(Tags.HUD_SCORE) && textOf(Tags.HUD_SCORE) != "0"
         }
 
-        // Round end: the camera keeps running through the photo, then the end-of-round steps lead back to the start.
+        // Round end: the camera keeps running through the photo, then the game-over screen leads back to the start.
         waitForTag(Tags.PHOTO_SCREEN)
         assertThat(tracking.running).isTrue()
-        waitForTag(Tags.CARD_CONTINUE, 15_000)
+        waitForTag(Tags.PLAY_AGAIN, 15_000)
         assertThat(api.completed.single().sessionId).isEqualTo("server_session")
         assertThat(api.completed.single().score).isGreaterThan(0)
 
-        tap(Tags.CARD_CONTINUE)
-        waitForTag(Tags.PLAY_AGAIN)
         tap(Tags.PLAY_AGAIN)
         waitForTag(Tags.START_SCREEN)
         assertThat(tracking.running).isFalse()

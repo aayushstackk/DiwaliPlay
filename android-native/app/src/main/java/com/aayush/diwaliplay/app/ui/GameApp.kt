@@ -146,53 +146,32 @@ private fun PhaseContent(
         is GamePhase.GameOver -> {
             val round by vm.round.collectAsState()
             val seconds by vm.autoReturnSeconds.collectAsState()
+            val recorded by vm.feedbackRecorded.collectAsState()
             val brand = round?.settings?.brandName ?: branding.settings.brandName
             val saver = rememberCardSaver()
-            GreetingCardScreen(
+            GameOverScreen(
                 card = phase.card,
                 brandName = brand,
-                rewardsEnabled = round?.settings?.rewardsEnabled == true,
                 isTrial = round?.isTrial == true,
                 autoReturnSeconds = seconds,
+                recordedFeedback = recorded,
                 localFiles = branding.localFiles,
-                onChime = vm::playEnvelopeChime,
+                wheel = if (round?.settings?.rewardsEnabled == true) {
+                    WheelInputs(
+                        rewards = branding.rewards.rewards,
+                        requestSpin = { vm.requestSpin(phase) },
+                        onTick = vm::playSpinTick,
+                        onVictory = vm::playVictoryChime,
+                        onSettled = vm::onSpinSettled,
+                        loadRewards = vm::loadWheelRewards,
+                    )
+                } else {
+                    null
+                },
                 onSave = { saveCard(saver, phase.card, brand) },
-                onContinue = vm::onCardDone,
-                onClose = vm::exitToStart,
-            )
-        }
-        is GamePhase.Spin -> {
-            val round by vm.round.collectAsState()
-            val seconds by vm.autoReturnSeconds.collectAsState()
-            SpinWheelScreen(
-                rewards = branding.rewards.rewards,
-                isTrial = round?.isTrial == true,
-                autoReturnSeconds = seconds,
-                localFiles = branding.localFiles,
-                requestSpin = { vm.requestSpin(phase) },
-                onTick = vm::playSpinTick,
-                onVictory = vm::playVictoryChime,
-                onSettled = vm::onSpinSettled,
-                onContinue = vm::onSpinDone,
-                onClose = vm::exitToStart,
-                earnedReward = phase.earnedReward,
-                loadRewards = vm::loadWheelRewards,
-            )
-        }
-        is GamePhase.Feedback -> {
-            val round by vm.round.collectAsState()
-            val seconds by vm.autoReturnSeconds.collectAsState()
-            val recorded by vm.feedbackRecorded.collectAsState()
-            FeedbackScreen(
-                reward = phase.reward,
-                isTrial = round?.isTrial == true,
-                autoReturnSeconds = seconds,
-                recorded = recorded,
-                localFiles = branding.localFiles,
-                onSubmit = vm::submitFeedback,
+                onFeedback = vm::submitFeedback,
                 onPlayAgain = vm::onPlayAgain,
                 onClose = vm::exitToStart,
-                earnedReward = phase.earnedReward,
             )
         }
     }

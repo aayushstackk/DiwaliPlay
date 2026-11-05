@@ -1,11 +1,7 @@
 package com.aayush.diwaliplay.game.flow
 
-import com.aayush.diwaliplay.model.EarnedReward
-import com.aayush.diwaliplay.model.RewardItem
-
 /**
- * Round phases, mirroring the web `GameState` (src/App.tsx) plus the GameOverModal / SpinWheelModal steps
- * the web shows inside GAME_OVER:
+ * Round phases, mirroring the web `GameState` (src/App.tsx):
  *
  * | Native            | Web                                          |
  * |-------------------|----------------------------------------------|
@@ -14,9 +10,7 @@ import com.aayush.diwaliplay.model.RewardItem
  * | [Countdown]       | COUNTDOWN                                    |
  * | [Playing]         | PLAYING                                      |
  * | [PhotoCountdown]  | PHOTO_COUNTDOWN (PhotoCaptureModal)          |
- * | [GameOver]        | GAME_OVER card                               |
- * | [Spin]            | the card's Spin & Win wheel                  |
- * | [Feedback]        | the card's feedback buttons                  |
+ * | [GameOver]        | GAME_OVER (card, wheel and feedback together) |
  */
 sealed interface GamePhase {
     data object Startup : GamePhase
@@ -44,25 +38,11 @@ sealed interface GamePhase {
         val captured: Boolean = false,
     ) : GamePhase
 
-    /** Greeting card. Leave with [GameController.onCardDone]. */
-    data class GameOver(val card: RoundCard) : GamePhase
-
     /**
-     * Spin wheel (rewards enabled; trial sessions included, as the web's test-mode wheel). Carries what
-     * SpinWheelRequest needs: the current (server-updated) [sessionId], [playerName] and [mobileNumber].
-     * [earnedReward] is the score prize, which on the web's single screen stays in view, and may arrive late.
-     * Leave with [GameController.onSpinDone].
+     * The one end-of-round screen: card, wish, wheel (rewards enabled; trial sessions included, as the web's test-mode
+     * wheel) and feedback together. [sessionId] and [mobileNumber] are what SpinWheelRequest needs; the id follows the
+     * server's (a slow `startSession` can answer with this screen up), and the score prize joins [card] when it arrives.
+     * Leave with [GameController.onPlayAgain] or [GameController.onExit].
      */
-    data class Spin(
-        val sessionId: String,
-        val playerName: String,
-        val mobileNumber: String?,
-        val earnedReward: EarnedReward? = null,
-    ) : GamePhase
-
-    /**
-     * Feedback step; [reward] is what the wheel gave, if anything, and [earnedReward] the score prize.
-     * Leave with [GameController.onFeedback].
-     */
-    data class Feedback(val reward: RewardItem?, val earnedReward: EarnedReward? = null) : GamePhase
+    data class GameOver(val card: RoundCard, val sessionId: String, val mobileNumber: String?) : GamePhase
 }

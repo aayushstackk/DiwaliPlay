@@ -54,12 +54,6 @@ object Icons {
 
     val Close = LineIcon(listOf("M18 6 6 18", "m6 6 12 12"))
     val Download = LineIcon(listOf("M12 15V3", "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "m7 10 5 5 5-5"))
-    val Mail = LineIcon(
-        listOf(
-            "m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7",
-            "M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z",
-        ),
-    )
     val Gift = LineIcon(
         listOf(
             "M3 8h18a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z",

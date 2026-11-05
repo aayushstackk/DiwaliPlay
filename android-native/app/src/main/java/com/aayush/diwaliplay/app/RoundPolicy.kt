@@ -7,18 +7,16 @@ enum class BackdropKind { Dark, Wallpaper, CameraStrongVignette, CameraSoftVigne
 
 private fun GamePhase.isCalibratingOrCountdown() = this is GamePhase.Calibrating || this is GamePhase.Countdown
 
-private fun GamePhase.isAfterPhoto() = this is GamePhase.GameOver || this is GamePhase.Spin || this is GamePhase.Feedback
-
-/** App.tsx `isCameraPreviewVisible` / `isWallpaperVisible`; the wheel and feedback count as its GAME_OVER. */
+/** App.tsx `isCameraPreviewVisible` / `isWallpaperVisible`. */
 fun backdropFor(phase: GamePhase, touch: Boolean, wallpaperEnabled: Boolean): BackdropKind {
     if (phase == GamePhase.Startup) return BackdropKind.Dark
-    val camera = (!wallpaperEnabled && (phase == GamePhase.Playing || phase is GamePhase.Countdown || phase.isAfterPhoto())) ||
+    val camera = (!wallpaperEnabled && (phase == GamePhase.Playing || phase is GamePhase.Countdown || phase is GamePhase.GameOver)) ||
         (!touch && phase.isCalibratingOrCountdown())
     if (camera) {
         return if (phase.isCalibratingOrCountdown()) BackdropKind.CameraStrongVignette else BackdropKind.CameraSoftVignette
     }
     val wallpaper = wallpaperEnabled &&
-        (phase == GamePhase.Playing || phase.isAfterPhoto() || phase is GamePhase.PhotoCountdown || (touch && phase is GamePhase.Countdown))
+        (phase == GamePhase.Playing || phase is GamePhase.GameOver || phase is GamePhase.PhotoCountdown || (touch && phase is GamePhase.Countdown))
     return if (wallpaper) BackdropKind.Wallpaper else BackdropKind.Dark
 }
 
@@ -30,7 +28,7 @@ fun backdropFor(phase: GamePhase, touch: Boolean, wallpaperEnabled: Boolean): Ba
 fun cameraWanted(phase: GamePhase, touch: Boolean, wallpaperEnabled: Boolean): Boolean {
     if (phase == GamePhase.Startup) return false
     if (!wallpaperEnabled && !phase.isCalibratingOrCountdown()) return true
-    if (phase.isAfterPhoto()) return false
+    if (phase is GamePhase.GameOver) return false
     return if (touch) !wallpaperEnabled || phase is GamePhase.PhotoCountdown else true
 }
 

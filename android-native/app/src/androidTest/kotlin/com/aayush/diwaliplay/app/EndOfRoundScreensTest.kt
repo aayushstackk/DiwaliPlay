@@ -6,7 +6,16 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.provider.MediaStore
+import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.height
+import androidx.compose.ui.unit.width
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -17,11 +26,11 @@ import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.aayush.diwaliplay.app.ui.CardData
-import com.aayush.diwaliplay.app.ui.FeedbackScreen
-import com.aayush.diwaliplay.app.ui.GreetingCardScreen
+import com.aayush.diwaliplay.app.ui.GameOverScreen
 import com.aayush.diwaliplay.app.ui.PhotoCountdownScreen
-import com.aayush.diwaliplay.app.ui.SpinWheelScreen
+import com.aayush.diwaliplay.app.ui.SpinWheelPanel
 import com.aayush.diwaliplay.app.ui.Tags
+import com.aayush.diwaliplay.app.ui.WheelInputs
 import com.aayush.diwaliplay.app.ui.renderCard
 import com.aayush.diwaliplay.app.ui.theme.DesignCanvas
 import com.aayush.diwaliplay.game.FormattedPersonalizedWish
@@ -29,6 +38,7 @@ import com.aayush.diwaliplay.game.PlayerAchievement
 import com.aayush.diwaliplay.game.flow.GamePhase
 import com.aayush.diwaliplay.game.flow.RoundCard
 import com.aayush.diwaliplay.model.EarnedReward
+import com.aayush.diwaliplay.model.GameFeedback
 import com.aayush.diwaliplay.model.GameScoreState
 import com.aayush.diwaliplay.model.RewardItem
 import com.aayush.diwaliplay.tracking.camera.CameraFrame
@@ -100,7 +110,7 @@ class EndOfRoundScreensTest {
         compose.mainClock.autoAdvance = false
         compose.setContent {
             DesignCanvas {
-                SpinWheelScreen(rewards, false, null, emptyMap(), { awaitCancellation() }, {}, {}, {}, {}, {})
+                SpinWheelPanel(rewards, false, emptyMap(), { awaitCancellation() }, {}, {}, {}, Modifier.size(860.dp, 640.dp))
             }
         }
         compose.mainClock.advanceTimeBy(100)
@@ -121,29 +131,147 @@ class EndOfRoundScreensTest {
         photo(), 1000, true, reward,
     )
 
-    @Test
-    fun greetingCardImages() {
+    private val longWish = FormattedPersonalizedWish(
+        "HAPPY DIWALI, Asha, from all of us at the festival! \uD83D\uDE80\uD83D\uDCA5",
+        List(12) { "Fast hands and soaring spirits! You scored a stellar 1,234 points today, and may the lights of this Diwali carry you to incredible heights all through the coming year." },
+        "With the warmest of festive wishes from the whole team,\nItsSpotlight",
+    )
+
+    private fun gameOver(
+        card: RoundCard = roundCard(),
+        wheel: WheelInputs? = WheelInputs(prizes, { awaitCancellation() }),
+        isTrial: Boolean = false,
+        seconds: Int? = null,
+    ) {
         compose.mainClock.autoAdvance = false
         compose.setContent {
             DesignCanvas {
-                GreetingCardScreen(
-                    roundCard(EarnedReward("r", "Free Mug", "", "", "MUG50")),
-                    "ItsSpotlight", true, false, null, emptyMap(), {}, { true }, {}, {},
-                )
+                GameOverScreen(card, "ItsSpotlight", isTrial, seconds, null, emptyMap(), wheel, { true }, {}, {}, {})
             }
         }
         compose.mainClock.advanceTimeBy(1_500)
         Thread.sleep(300) // the photo decodes on a background thread
         compose.mainClock.advanceTimeBy(100)
-        dump(compose.onRoot().captureToImage().asAndroidBitmap(), "task19_card_screen_closed.png")
-        compose.onNodeWithTag(Tags.ENVELOPE).performClick()
-        compose.mainClock.advanceTimeBy(900)
-        dump(compose.onRoot().captureToImage().asAndroidBitmap(), "task19_card_screen_open.png")
+    }
+
+    private val prizes = listOf("₹1000/- OFF", "20% OFF", "Free Mug", "₹500", "Flat ₹200 OFF", "Mystery Gift Hamper").mapIndexed { i, n ->
+        RewardItem(id = "r$i", name = n, couponCode = "DIWALI$i", termsAndConditions = "Show this code at the counter. Valid until the end of the festival.")
+    }
+
+    private fun bounds(tag: String) = compose.onNodeWithTag(tag).getBoundsInRoot()
+
+    private fun screenshot(name: String) = dump(compose.onRoot().captureToImage().asAndroidBitmap(), name)
+
+    /** The left column in order, the right column in order, and nothing off the canvas. */
+    private fun assertColumnsInOrder(left: List<String>, right: List<String>) {
+        for (column in listOf(left, right)) {
+            column.zipWithNext { a, b -> assertThat(bounds(a).bottom).isAtMost(bounds(b).top) }
+            assertThat(bounds(column.last()).bottom).isAtMost(1080.dp) // the emulator's pixels are the design canvas
+        }
+        assertThat(bounds(left.first()).right).isAtMost(bounds(right.first()).left)
+    }
+
+    @Test
+    fun gameOverWithTheWheelImage() {
+        gameOver()
+        assertThat(shows(Tags.WISH)).isTrue()
+        assertColumnsInOrder(listOf(Tags.WISH, Tags.SAVE_CARD), listOf(Tags.CARD_SCORE, Tags.POINTER, Tags.feedback("Good"), Tags.PLAY_AGAIN))
+        assertThat(bounds(Tags.WHEEL).bottom).isAtMost(bounds(Tags.feedback("Good")).top)
+        screenshot("native_gameover_wheel.png")
+    }
+
+    @Test
+    fun theWheelFitsEvenWithAScorePrizeAndAFailure() {
+        val wheel = WheelInputs(prizes, { SpinOutcome.Failed })
+        gameOver(roundCard(EarnedReward("r", "Free Mug", "", "", "MUG50")), wheel)
+        compose.onNodeWithTag(Tags.SPIN_BUTTON).performClick()
+        compose.mainClock.advanceTimeBy(6_000)
+        val wheelBounds = bounds(Tags.WHEEL)
+        val pointer = bounds(Tags.POINTER)
+        val banner = bounds(Tags.SPIN_ERROR)
+        val prize = bounds(Tags.CARD_REWARD)
+        assertThat(prize.bottom).isAtMost(pointer.top)
+        assertThat(wheelBounds.bottom).isAtMost(banner.top)
+        assertThat(banner.bottom).isAtMost(bounds(Tags.feedback("Good")).top)
+        assertThat(wheelBounds.width).isEqualTo(wheelBounds.height)
+        screenshot("native_gameover_wheel_prize_failed.png")
+    }
+
+    @Test
+    fun gameOverAfterTheSpinImage() {
+        val won = prizes[1]
+        val wheel = WheelInputs(prizes, { SpinOutcome.Won(won, 1) })
+        gameOver(roundCard(EarnedReward("r", "Free Mug", "", "", "MUG50")), wheel, seconds = 17)
+        compose.onNodeWithTag(Tags.SPIN_BUTTON).performClick()
+        compose.mainClock.advanceTimeBy(9_000)
+        assertThat(shows(Tags.SPIN_VOUCHER)).isTrue()
+        assertThat(shows(Tags.WHEEL)).isFalse()
+        assertThat(shows(Tags.CARD_REWARD)).isTrue()
+        assertThat(bounds(Tags.CARD_REWARD).bottom).isAtMost(bounds(Tags.SPIN_VOUCHER).top)
+        assertThat(bounds(Tags.SPIN_VOUCHER).bottom).isAtMost(bounds(Tags.feedback("Good")).top)
+        screenshot("native_gameover_prize.png")
+    }
+
+    @Test
+    fun gameOverWithRewardsOffImage() {
+        gameOver(wheel = null, seconds = 20)
+        assertThat(shows(Tags.WHEEL)).isFalse()
+        assertThat(bounds(Tags.SCORE_LARGE).bottom).isAtMost(bounds(Tags.feedback("Good")).top)
+        screenshot("native_gameover_norewards.png")
+    }
+
+    @Test
+    fun aLongWishStaysInItsCard() {
+        val card = roundCard()
+        val long = RoundCard(card.playerName, card.score, card.achievement, longWish, card.photoJpeg, card.targetScore, card.targetAchieved, null)
+        gameOver(long)
+        assertColumnsInOrder(listOf(Tags.WISH, Tags.SAVE_CARD), listOf(Tags.CARD_SCORE, Tags.PLAY_AGAIN))
+        screenshot("native_gameover_longwish.png")
+    }
+
+    @Test
+    fun aTrialHasNoFeedbackRow() {
+        gameOver(isTrial = true)
+        assertThat(shows(Tags.feedback("Good"))).isFalse()
+        assertThat(shows(Tags.PLAY_AGAIN)).isTrue()
+    }
+
+    @Test
+    fun theFeedbackRowTakesOneTap() {
+        val sent = ArrayList<GameFeedback>()
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            DesignCanvas {
+                var recorded by remember { mutableStateOf<GameFeedback?>(null) }
+                GameOverScreen(roundCard(), "ItsSpotlight", false, null, recorded, emptyMap(), null, { true }, { sent += it; recorded = it }, {}, {})
+            }
+        }
+        compose.mainClock.advanceTimeBy(100)
+        compose.onNodeWithTag(Tags.feedback("Excellent")).performClick()
+        compose.mainClock.advanceTimeBy(100)
+        assertThat(shows(Tags.FEEDBACK_THANKS)).isTrue()
+        compose.onNodeWithTag(Tags.feedback("Good")).performClick()
+        compose.mainClock.advanceTimeBy(100)
+        assertThat(sent).containsExactly(GameFeedback.Excellent)
     }
 
     @Test
     fun photoScreenImage() {
-        val frame = Bitmap.createBitmap(640, 360, Bitmap.Config.ARGB_8888).also { Canvas(it).drawColor(Color.rgb(70, 110, 150)) }
+        // Bright, with detail: the hard case for text over video. Its edge bands show whether it really fills the frame.
+        val frame = Bitmap.createBitmap(640, 360, Bitmap.Config.ARGB_8888).also { b ->
+            val c = Canvas(b)
+            c.drawColor(Color.rgb(245, 240, 225))
+            val paint = android.graphics.Paint()
+            for (i in 0 until 16) {
+                paint.color = if (i % 2 == 0) Color.rgb(250, 250, 250) else Color.rgb(190, 215, 240)
+                c.drawRect(i * 40f, 0f, (i + 1) * 40f, 360f, paint)
+            }
+            paint.color = Color.RED
+            c.drawRect(0f, 0f, 640f, 6f, paint)
+            c.drawRect(0f, 354f, 640f, 360f, paint)
+            c.drawRect(0f, 0f, 6f, 360f, paint)
+            c.drawRect(634f, 0f, 640f, 360f, paint)
+        }
         compose.mainClock.autoAdvance = false
         compose.setContent {
             DesignCanvas {
@@ -151,7 +279,11 @@ class EndOfRoundScreensTest {
             }
         }
         compose.mainClock.advanceTimeBy(200)
-        dump(compose.onRoot().captureToImage().asAndroidBitmap(), "task19_photo.png")
+        val photoFrame = bounds(Tags.PHOTO_FRAME)
+        assertThat(photoFrame.width.value).isWithin(1f).of(1800f)
+        assertThat(photoFrame.height.value).isWithin(1f).of(1010f)
+        assertThat(bounds(Tags.PHOTO_COUNT).right).isAtMost(photoFrame.right)
+        screenshot("native_photo.png")
     }
 
     @Test
@@ -161,10 +293,9 @@ class EndOfRoundScreensTest {
         compose.mainClock.autoAdvance = false
         compose.setContent {
             DesignCanvas {
-                SpinWheelScreen(
+                SpinWheelPanel(
                     rewards = listOf(RewardItem(id = "old", name = "Old Prize")),
                     isTrial = false,
-                    autoReturnSeconds = null,
                     localFiles = emptyMap(),
                     requestSpin = {
                         spins.incrementAndGet()
@@ -173,8 +304,7 @@ class EndOfRoundScreensTest {
                     onTick = {},
                     onVictory = {},
                     onSettled = {},
-                    onContinue = {},
-                    onClose = {},
+                    modifier = Modifier.size(860.dp, 640.dp),
                     loadRewards = { gate.await() },
                 )
             }
@@ -223,48 +353,6 @@ class EndOfRoundScreensTest {
         photoScreen(GamePhase.PhotoCountdown(0, cameraError = true), TrackingStatus.Starting)
         assertThat(shows(Tags.PHOTO_ERROR)).isTrue()
         assertThat(shows(Tags.PHOTO_CAPTURED)).isFalse()
-        dump(compose.onRoot().captureToImage().asAndroidBitmap(), "task19_photo_error.png")
-    }
-
-    @Test
-    fun wheelWithAScorePrizeImage() {
-        val rewards = listOf("₹1000/- OFF", "20% OFF", "Free Mug", "₹500").mapIndexed { i, n -> RewardItem(id = "r$i", name = n) }
-        compose.mainClock.autoAdvance = false
-        compose.setContent {
-            DesignCanvas {
-                SpinWheelScreen(
-                    rewards, false, null, emptyMap(), { SpinOutcome.Failed }, {}, {}, {}, {}, {},
-                    earnedReward = EarnedReward("m", "Free Mug", "", "", "MUG50"),
-                )
-            }
-        }
-        compose.mainClock.advanceTimeBy(100)
-        compose.onNodeWithTag(Tags.SPIN_BUTTON).performClick()
-        compose.mainClock.advanceTimeBy(6_000) // settled: the Continue button is up, the tightest layout
-        dump(compose.onRoot().captureToImage().asAndroidBitmap(), "task19_wheel_prize.png")
-
-        // The message has to be readable, and everything has to fit, in this tightest layout.
-        fun bounds(tag: String) = compose.onNodeWithTag(tag).getBoundsInRoot()
-        val banner = bounds(Tags.SPIN_ERROR)
-        val wheel = bounds(Tags.WHEEL)
-        val pointer = bounds(Tags.POINTER)
-        assertThat(banner.top).isAtLeast(wheel.bottom)
-        assertThat(banner.top).isAtLeast(pointer.bottom)
-        assertThat(banner.bottom).isAtMost(bounds(Tags.CARD_REWARD).top)
-        assertThat(bounds(Tags.CARD_REWARD).bottom).isAtMost(bounds(Tags.SPIN_CONTINUE).top)
-    }
-
-    @Test
-    fun feedbackImage() {
-        compose.mainClock.autoAdvance = false
-        compose.setContent {
-            DesignCanvas {
-                FeedbackScreen(RewardItem(id = "r", name = "20% OFF", couponCode = "DIWALI20"), false, 17, null, emptyMap(), {}, {}, {})
-            }
-        }
-        compose.mainClock.advanceTimeBy(100)
-        compose.onNodeWithTag(Tags.feedback("Excellent")).performClick()
-        compose.mainClock.advanceTimeBy(100)
-        dump(compose.onRoot().captureToImage().asAndroidBitmap(), "task19_feedback.png")
+        screenshot("native_photo_error.png")
     }
 }

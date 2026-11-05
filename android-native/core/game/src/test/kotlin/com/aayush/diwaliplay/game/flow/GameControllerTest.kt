@@ -187,40 +187,31 @@ class GameControllerTest {
 
     private val mug = EarnedReward(id = "r", name = "Mug", description = "", imageUrl = "", couponCode = "C")
 
+    private val over get() = c.phase.value as GamePhase.GameOver
+
     @Test
-    fun aLateEarnedRewardFollowsThePlayerThroughSpinAndFeedback() {
+    fun theGameOverScreenCarriesWhatTheSpinNeeds() {
         toCard(session)
-        c.onCardDone()
-        assertThat((c.phase.value as GamePhase.Spin).earnedReward).isNull()
-        c.onRoundCompleted("sess_1", mug)
-        assertThat((c.phase.value as GamePhase.Spin).earnedReward).isEqualTo(mug)
-        c.onSpinDone(null)
-        assertThat(c.phase.value).isEqualTo(GamePhase.Feedback(null, mug))
+        assertThat(over.sessionId).isEqualTo("sess_1")
+        assertThat(over.mobileNumber).isEqualTo("9876543210")
+        assertThat(over.card.playerName).isEqualTo("Asha")
     }
 
     @Test
-    fun anEarnedRewardOnTheCardCarriesOn() {
-        toCard(session, camera.copy(rewardsEnabled = false))
+    fun aLateEarnedRewardIsMergedIntoTheScreen() {
+        toCard(session)
+        assertThat(over.card.earnedReward).isNull()
+        val card = over.card
         c.onRoundCompleted("sess_1", mug)
-        assertThat((c.phase.value as GamePhase.GameOver).card.earnedReward).isEqualTo(mug)
-        c.onCardDone()
-        assertThat(c.phase.value).isEqualTo(GamePhase.Feedback(null, mug))
-    }
-
-    @Test
-    fun anEarnedRewardArrivingOnFeedbackIsShown() {
-        toCard(session, camera.copy(rewardsEnabled = false))
-        c.onCardDone()
-        c.onRoundCompleted("sess_1", mug)
-        assertThat(c.phase.value).isEqualTo(GamePhase.Feedback(null, mug))
+        assertThat(over.card.earnedReward).isEqualTo(mug)
+        assertThat(over.card.wish).isSameInstanceAs(card.wish) // the same card, with the prize added
     }
 
     @Test
     fun anEarnedRewardForAnotherSessionIsIgnored() {
         toCard(session)
-        c.onCardDone()
         c.onRoundCompleted("other", mug)
-        assertThat((c.phase.value as GamePhase.Spin).earnedReward).isNull()
+        assertThat(over.card.earnedReward).isNull()
     }
 
     @Test
@@ -232,29 +223,104 @@ class GameControllerTest {
         run(3_400.0)
         run(35_100.0)
         run(5_100.0)
+        c.onRoundCompleted("trial_session_8536", mug) // nothing was sent for a trial, so no answer is awaited
         c.onPhotoCaptured(null)
-        c.onCardDone()
-        assertThat((c.phase.value as GamePhase.Spin).earnedReward).isNull()
+        assertThat(over.card.earnedReward).isNull()
     }
 
     @Test
-    fun submittedFeedbackGoesOnceAndTheStepStaysUp() {
-        toCard(session, camera.copy(rewardsEnabled = false))
-        c.onCardDone()
+    fun aRewardFromAnEarlierRoundCantLandOnTheNextOne() {
+        toCard(session)
+        c.onExit()
+        c.onRoundCompleted("sess_1", mug) // the answer outlives the screen
+        toCard(session)
+        assertThat(over.card.earnedReward).isNull()
+    }
+
+    @Test
+    fun feedbackGoesOnceAndTheScreenStaysUp() {
+        toCard(session)
         c.onFeedbackSubmitted(GameFeedback.Good)
         assertThat(fx.calls.filter { it.startsWith("feedback") }).containsExactly("feedback:sess_1:Good")
-        assertThat(c.phase.value).isInstanceOf(GamePhase.Feedback::class.java)
+        assertThat(c.phase.value).isInstanceOf(GamePhase.GameOver::class.java)
         c.onFeedbackSubmitted(GameFeedback.Excellent)
-        c.onFeedback(GameFeedback.Excellent)
         assertThat(fx.calls.filter { it.startsWith("feedback") }).hasSize(1)
+    }
+
+    @Test
+    fun feedbackFollowsCompletionInTheEffectsOrder() {
+        toCard(session)
+        c.onFeedbackSubmitted(GameFeedback.Good)
+        assertThat(fx.serverCalls()).containsExactly("start:1234", "complete:sess_1", "feedback:sess_1:Good").inOrder()
+    }
+
+    @Test
+    fun feedbackIsIgnoredOffTheScreenAndForATrial() {
+        toPlaying()
+        c.onFeedbackSubmitted(GameFeedback.Good)
+        c.onInterrupted()
+        toCard(trial)
+        c.onFeedbackSubmitted(GameFeedback.Good)
+        assertThat(fx.calls.filter { it.startsWith("feedback") }).isEmpty()
+    }
+
+    @Test
+    fun feedbackIsOncePerRoundNotOncePerController() {
+        toCard(session)
+        c.onFeedbackSubmitted(GameFeedback.Good)
+        c.onExit()
+        toCard(session)
+        c.onFeedbackSubmitted(GameFeedback.Excellent)
+        assertThat(fx.calls.filter { it.startsWith("feedback") }).hasSize(2)
+    }
+
+    @Test
+    fun aLateStartSessionReachesTheScreen() {
+        // Render cold start: the id arrives with the game-over screen already up, and the wheel must use it.
+        toCard(session)
+        c.onSessionStarted("1234", "sess_late")
+        assertThat(over.sessionId).isEqualTo("sess_late")
+        val reward = mug
+        c.onRoundCompleted("sess_1", reward) // keyed by the id the completion went out with
+        assertThat(over.card.earnedReward).isEqualTo(reward)
+        assertThat(over.sessionId).isEqualTo("sess_late")
+    }
+
+    @Test
+    fun exitGoesHomeFromTheScreenWithoutAbandoning() {
+        toCard(session)
+        c.onExit()
         assertThat(c.phase.value).isEqualTo(GamePhase.Startup)
+        assertThat(fx.calls.filter { it.startsWith("abandon") }).isEmpty()
+    }
+
+    @Test
+    fun exitAlsoTakesATrialHome() {
+        toCard(trial)
+        c.onExit()
+        assertThat(c.phase.value).isEqualTo(GamePhase.Startup)
+    }
+
+    @Test
+    fun exitIsIgnoredMidRound() {
+        toPlaying()
+        c.onExit()
+        assertThat(c.phase.value).isEqualTo(GamePhase.Playing)
+    }
+
+    @Test
+    fun completeSessionGoesOnceWhateverHappensOnTheScreen() {
+        toCard(session)
+        c.onFeedbackSubmitted(GameFeedback.Good)
+        c.onPhotoCaptured(null) // a late still
+        c.onInterrupted()
+        assertThat(fx.completes).hasSize(1)
+        assertThat(fx.calls.filter { it.startsWith("abandon") }).isEmpty()
     }
 
     @Test
     fun playAgainRestartsATrialRoundAtCalibrationWithNoCodeOrServerCalls() {
         toCard(trial)
-        c.onCardDone()
-        c.onSpinDone(null)
         c.onPlayAgain()
         assertThat(c.phase.value).isEqualTo(GamePhase.Calibrating(ready = false))
         assertThat(fx.serverCalls()).isEmpty()
@@ -348,11 +414,8 @@ class GameControllerTest {
         // "AQID" = base64(01 02 03)
         assertThat(fx.completes[0].photoData).isEqualTo("data:image/jpeg;base64,AQID")
 
-        c.onCardDone()
-        assertThat(c.phase.value).isEqualTo(GamePhase.Spin(sessionId = "sess_1", playerName = "Asha", mobileNumber = "9876543210"))
-        c.onSpinDone(null)
-        assertThat(c.phase.value).isEqualTo(GamePhase.Feedback(null))
-        c.onFeedback(GameFeedback.Excellent)
+        c.onFeedbackSubmitted(GameFeedback.Excellent)
+        c.onPlayAgain()
         assertThat(c.phase.value).isEqualTo(GamePhase.Startup)
 
         assertThat(fx.serverCalls()).containsExactly(
@@ -381,13 +444,12 @@ class GameControllerTest {
         run(5000.0)
         c.onPhotoCaptured(null)
         assertThat(c.phase.value).isInstanceOf(GamePhase.GameOver::class.java)
-        c.onCardDone()
         // Trial/master sessions still get the (test-mode) wheel: GameOverModal isMasterSession, App.tsx isTestMode.
         // The spin request is the screen's job and is not one of the forbidden GameEffects calls.
-        assertThat(c.phase.value).isEqualTo(GamePhase.Spin("trial_session_8536", "Trial Player", null))
-        c.onSpinDone(null)
-        assertThat(c.phase.value).isEqualTo(GamePhase.Feedback(null))
-        c.onFeedback(GameFeedback.Good)
+        assertThat((c.phase.value as GamePhase.GameOver).sessionId).isEqualTo("trial_session_8536")
+        assertThat((c.phase.value as GamePhase.GameOver).mobileNumber).isNull()
+        c.onFeedbackSubmitted(GameFeedback.Good)
+        c.onExit()
         assertThat(c.phase.value).isEqualTo(GamePhase.Startup)
 
         // An interrupted trial round doesn't abandon either.
@@ -431,16 +493,13 @@ class GameControllerTest {
     }
 
     @Test
-    fun rewardsDisabledSkipsSpin() {
+    fun rewardsDisabledLeavesWithNoFeedbackSent() {
         toPlaying(settings = camera.copy(rewardsEnabled = false))
         run(35_000.0)
         run(5000.0)
         c.onPhotoCaptured(null)
-        c.onCardDone()
-        assertThat(c.phase.value).isEqualTo(GamePhase.Feedback(null))
-        c.onSpinDone(null) // stray call is ignored
-        assertThat(c.phase.value).isEqualTo(GamePhase.Feedback(null))
-        c.onFeedback(null) // skipped feedback: nothing submitted
+        assertThat(c.phase.value).isInstanceOf(GamePhase.GameOver::class.java)
+        c.onExit()
         assertThat(c.phase.value).isEqualTo(GamePhase.Startup)
         assertThat(fx.serverCalls()).containsExactly("start:1234", "complete:sess_1").inOrder()
     }
@@ -512,9 +571,8 @@ class GameControllerTest {
         run(40_000.0)
         c.onPhotoCaptured(null)
         assertThat(fx.completes.single().sessionId).isEqualTo("sess_new")
-        c.onCardDone()
         // The wheel gets the server-updated id.
-        assertThat((c.phase.value as GamePhase.Spin).sessionId).isEqualTo("sess_new")
+        assertThat((c.phase.value as GamePhase.GameOver).sessionId).isEqualTo("sess_new")
     }
 
     @Test
@@ -543,9 +601,9 @@ class GameControllerTest {
         assertThat((c.phase.value as GamePhase.GameOver).card.earnedReward).isNull()
         c.onRoundCompleted("sess_1", reward)
         assertThat((c.phase.value as GamePhase.GameOver).card.earnedReward).isEqualTo(reward)
-        c.onCardDone()
-        c.onRoundCompleted("sess_1", reward) // card no longer shown: ignored, no crash
-        assertThat(c.phase.value).isInstanceOf(GamePhase.Spin::class.java)
+        c.onExit()
+        c.onRoundCompleted("sess_1", reward) // screen gone: ignored, no crash
+        assertThat(c.phase.value).isEqualTo(GamePhase.Startup)
     }
 
     @Test

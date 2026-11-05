@@ -84,27 +84,23 @@ fun BoxScope.CornerAccents(inset: Dp, length: Dp, color: Color, width: Dp = 2.dp
     }
 }
 
-/**
- * GameOverModal's shell: the 1360-wide panel with its "GAME OVER" header, status pill and × button. On the web the
- * card, wheel and feedback bar share this one screen; here each is a step of its own in the same shell.
- */
+/** GameOverModal's shell: the panel with its "GAME OVER" header, status pill and × button, nearly the whole canvas. */
 @Composable
 fun EndOfRoundFrame(
-    screenTag: String,
     isTrial: Boolean,
     autoReturnSeconds: Int?,
     onClose: () -> Unit,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Box(
-        Modifier.fillMaxSize().testTag(screenTag).background(Palette.Neutral950.copy(alpha = 0.95f)),
+        Modifier.fillMaxSize().testTag(Tags.CARD_SCREEN).background(Palette.Neutral950.copy(alpha = 0.95f)),
         contentAlignment = Alignment.Center,
     ) {
         val shape = RoundedCornerShape(24.dp)
-        Box(Modifier.width(1360.dp).height(1036.dp).panel(Palette.CardPanel, Palette.Amber500.copy(alpha = 0.5f), shape)) {
+        Box(Modifier.width(1860.dp).height(1050.dp).panel(Palette.CardPanel, Palette.Amber500.copy(alpha = 0.5f), shape)) {
             CornerAccents(12.dp, 20.dp, Palette.Amber400.copy(alpha = 0.8f))
-            Column(Modifier.fillMaxSize().padding(20.dp)) {
-                Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 14.dp)) {
+                Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Sparkles, 20.dp, Palette.Amber400)
                     Spacer(Modifier.width(8.dp))
                     Label("GAME OVER", 30.sp, Palette.Amber100, family = Fonts.Display, weight = FontWeight.Black, tracking = TrackingWider)
@@ -127,7 +123,7 @@ fun EndOfRoundFrame(
                     }
                 }
                 Box(Modifier.fillMaxWidth().height(1.dp).background(Palette.Amber500.copy(alpha = 0.2f)))
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(8.dp))
                 content()
             }
         }
@@ -275,7 +271,7 @@ fun Modifier.pinging(): Modifier {
     }
 }
 
-/** The score prize, on whichever end-of-round step is showing. */
+/** The score prize, which stays in view however the wheel goes. */
 @Composable
 fun EarnedRewardStrip(reward: EarnedReward, localFiles: Map<String, File>) {
     var copied by remember { mutableStateOf(false) }

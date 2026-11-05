@@ -6,6 +6,7 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ActivityScenario
@@ -114,53 +115,65 @@ class EndOfRoundFlowTest {
     }
 
     @Test
-    fun fullFlowToFeedbackAndBackToStart() {
+    fun everythingIsOnOneScreenAndTheSpinHappensInPlace() {
         launch(rewardsEnabled = true)
         api.onSpin = { ApiResult.Success(SpinWheelResponse(success = true, reward = prizes[1], rewardIndex = 1)) }
         playToCard()
         waitUntil("completeSession") { api.completed.isNotEmpty() }
         assertThat(api.completed.single().sessionId).isEqualTo("server_session")
 
-        tap(Tags.ENVELOPE)
-        waitForTag(Tags.WISH)
-        assertThat(audio.crackers).contains("FLOWER_POT")
+        // No taps needed to see any of it.
+        for (tag in listOf(Tags.WISH, Tags.SAVE_CARD, Tags.CARD_SCORE, Tags.WHEEL, Tags.feedback(GameFeedback.Good.name), Tags.PLAY_AGAIN)) {
+            assertThat(hasTag(tag)).isTrue()
+        }
+        assertThat(hasTag(Tags.RETURNING)).isFalse() // an unspun wheel waits
 
-        tap(Tags.CARD_CONTINUE)
-        waitForTag(Tags.SPIN_SCREEN)
         tap(Tags.SPIN_BUTTON)
         waitForTag(Tags.SPIN_VOUCHER)
+        assertThat(hasTag(Tags.WHEEL)).isFalse() // the voucher takes its place
         assertThat(api.spins.single().sessionId).isEqualTo("server_session")
         assertThat(api.spins.single().userId).isNull()
         assertThat(audio.ticks).isNotEmpty()
         assertThat(audio.victories).isEqualTo(1)
         waitForTag(Tags.RETURNING)
 
-        tap(Tags.SPIN_CONTINUE)
-        waitForTag(Tags.FEEDBACK_SCREEN)
-        assertThat(hasTag(Tags.FEEDBACK_REWARD)).isTrue()
-
         tap(Tags.feedback(GameFeedback.Excellent.name))
-        tap(Tags.FEEDBACK_SUBMIT)
         waitForTag(Tags.FEEDBACK_THANKS)
-        waitForTag(Tags.START_SCREEN)
         waitUntil("the feedback") { api.feedback.isNotEmpty() }
         assertThat(api.feedback.single()).isEqualTo("server_session" to GameFeedback.Excellent)
+        assertThat(hasTag(Tags.SPIN_VOUCHER)).isTrue() // the screen stays up
+
+        tap(Tags.PLAY_AGAIN)
+        waitForTag(Tags.START_SCREEN)
         assertThat(tracking.running).isFalse()
     }
 
     @Test
-    fun spinFailureShowsTheMessageAndContinues() {
+    fun tappingTheWheelItselfSpinsItOnce() {
         launch(rewardsEnabled = true)
         api.onSpin = { ApiResult.NetworkError(IOException("down")) }
         playToCard()
-        tap(Tags.CARD_CONTINUE)
-        waitForTag(Tags.SPIN_SCREEN)
+        waitUntil("the wheel to load") { compose.onAllNodesWithText("Tap the wheel to spin and win").fetchSemanticsNodes().isNotEmpty() }
+        tap(Tags.WHEEL)
+        tap(Tags.WHEEL)
+        tap(Tags.SPIN_BUTTON)
+        waitForTag(Tags.SPIN_ERROR)
+        tap(Tags.WHEEL)
+        tap(Tags.SPIN_BUTTON)
+        pump()
+        assertThat(api.spins).hasSize(1)
+    }
+
+    @Test
+    fun spinFailureShowsTheMessageAndStartsTheCountdown() {
+        launch(rewardsEnabled = true)
+        api.onSpin = { ApiResult.NetworkError(IOException("down")) }
+        playToCard()
         tap(Tags.SPIN_BUTTON)
         waitForTag(Tags.SPIN_ERROR)
         waitForTag(Tags.RETURNING)
-        tap(Tags.SPIN_CONTINUE)
-        waitForTag(Tags.FEEDBACK_SCREEN)
-        assertThat(hasTag(Tags.FEEDBACK_REWARD)).isFalse()
+        assertThat(hasTag(Tags.SPIN_VOUCHER)).isFalse()
+        assertThat(hasTag(Tags.PLAY_AGAIN)).isTrue()
     }
 
     @Test
@@ -168,21 +181,29 @@ class EndOfRoundFlowTest {
         launch(rewardsEnabled = true)
         api.onStart = { ApiResult.NetworkError(IOException("down")) }
         playToCard()
-        tap(Tags.CARD_CONTINUE)
-        waitForTag(Tags.SPIN_SCREEN)
         tap(Tags.SPIN_BUTTON)
         waitForTag(Tags.SPIN_ERROR)
         assertThat(api.spins).isEmpty()
     }
 
     @Test
-    fun rewardsDisabledSkipsTheWheel() {
+    fun playAgainWorksBeforeSpinningAndSendsNothingExtra() {
+        launch(rewardsEnabled = true)
+        playToCard()
+        tap(Tags.PLAY_AGAIN)
+        waitForTag(Tags.START_SCREEN)
+        assertThat(api.spins).isEmpty()
+        assertThat(api.feedback).isEmpty()
+        assertThat(api.abandoned).isEmpty()
+    }
+
+    @Test
+    fun rewardsDisabledShowsTheLargeScoreAndCountsDownAtOnce() {
         launch(rewardsEnabled = false)
         playToCard()
         waitForTag(Tags.RETURNING) // the 20 s starts with the card
-        tap(Tags.CARD_CONTINUE)
-        waitForTag(Tags.FEEDBACK_SCREEN)
-        assertThat(hasTag(Tags.SPIN_SCREEN)).isFalse()
+        assertThat(hasTag(Tags.SCORE_LARGE)).isTrue()
+        assertThat(hasTag(Tags.WHEEL)).isFalse()
         tap(Tags.PLAY_AGAIN)
         waitForTag(Tags.START_SCREEN)
     }
@@ -202,9 +223,7 @@ class EndOfRoundFlowTest {
         launch(rewardsEnabled = false)
         playToCard("8536")
         assertThat(hasTag(Tags.RETURNING)).isFalse() // the master session never auto-returns
-        tap(Tags.CARD_CONTINUE)
-        waitForTag(Tags.FEEDBACK_SCREEN)
-        assertThat(hasTag(Tags.FEEDBACK_SUBMIT)).isFalse() // no feedback for trials
+        assertThat(hasTag(Tags.feedback(GameFeedback.Good.name))).isFalse() // no feedback for trials
         tap(Tags.PLAY_AGAIN)
         waitForTag(Tags.HUD_TIMER)
         waitForTag(Tags.CARD_SCREEN)
@@ -242,7 +261,7 @@ class EndOfRoundFlowTest {
     }
 
     @Test
-    fun aLateScorePrizeShowsOnTheWheelAndOnFeedback() {
+    fun aLateScorePrizeJoinsTheScreenAndStaysThroughTheSpinAndFeedback() {
         launch(rewardsEnabled = true)
         val answer = CompletableDeferred<Unit>()
         val mug = EarnedReward("m", "Free Mug", "", "", "MUG50")
@@ -251,8 +270,6 @@ class EndOfRoundFlowTest {
             ApiResult.Success(CompleteSessionResponse(success = true, session = GameSession(id = req.sessionId, userId = "u1", earnedReward = mug), user = TEST_USER))
         }
         playToCard()
-        tap(Tags.CARD_CONTINUE)
-        waitForTag(Tags.SPIN_SCREEN)
         assertThat(hasTag(Tags.CARD_REWARD)).isFalse()
         answer.complete(Unit)
         waitForTag(Tags.CARD_REWARD)
@@ -260,17 +277,11 @@ class EndOfRoundFlowTest {
         api.onSpin = { ApiResult.NetworkError(IOException("down")) }
         tap(Tags.SPIN_BUTTON)
         waitForTag(Tags.SPIN_ERROR)
-        tap(Tags.SPIN_CONTINUE)
-        waitForTag(Tags.FEEDBACK_SCREEN)
         assertThat(hasTag(Tags.CARD_REWARD)).isTrue()
 
-        // A coupon on show: submitting doesn't take it away.
         tap(Tags.feedback(GameFeedback.Good.name))
-        tap(Tags.FEEDBACK_SUBMIT)
         waitForTag(Tags.FEEDBACK_THANKS)
         waitUntil("the feedback") { api.feedback.isNotEmpty() }
-        val until = System.currentTimeMillis() + FEEDBACK_THANKS_MS + 1_000
-        while (System.currentTimeMillis() < until) pump()
         assertThat(hasTag(Tags.CARD_REWARD)).isTrue()
         assertThat(hasTag(Tags.START_SCREEN)).isFalse()
     }
@@ -282,8 +293,6 @@ class EndOfRoundFlowTest {
         api.onGetRewards = { ApiResult.Success(RewardsInfo(success = true, enabled = true, rewards = listOf(fresh))) }
         api.onSpin = { ApiResult.Success(SpinWheelResponse(success = true, reward = fresh)) }
         playToCard()
-        tap(Tags.CARD_CONTINUE)
-        waitForTag(Tags.SPIN_SCREEN)
         waitUntil("today's slices") {
             compose.onAllNodes(hasTestTag(Tags.WHEEL) and hasContentDescription("Brand New")).fetchSemanticsNodes().isNotEmpty()
         }

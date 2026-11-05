@@ -10,7 +10,6 @@ import com.aayush.diwaliplay.game.play.PlayEvent
 import com.aayush.diwaliplay.model.EarnedReward
 import com.aayush.diwaliplay.model.GameFeedback
 import com.aayush.diwaliplay.model.Point2D
-import com.aayush.diwaliplay.model.RewardItem
 import com.aayush.diwaliplay.model.TrackedHand
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -21,7 +20,7 @@ import kotlin.math.max
 
 /**
  * Round state machine ported from src/App.tsx (phase flow, countdown, round timer, completeSession, reset)
- * plus the PhotoCaptureModal countdown and the GameOverModal / SpinWheelModal step order. See [GamePhase].
+ * plus the PhotoCaptureModal countdown. See [GamePhase].
  *
  * Time: [clock] returns milliseconds (like `performance.now()`); timed transitions (READY flash, countdown,
  * round timer, photo countdown, camera-error and watchdog delays) advance only in [onFrame], so the render loop
@@ -71,7 +70,6 @@ class GameController(
     private var completedSessionId = ""
     private var cameraLost = false
     private var photoCameraReady = false
-    private var earnedReward: EarnedReward? = null
     private var feedbackSent = false
     private var simResetPending = false
 
@@ -101,13 +99,12 @@ class GameController(
     }
 
     /**
-     * "PLAY AGAIN" on the end-of-round screens (App.tsx handlePlayAgain). A trial round starts over with the same
+     * "PLAY AGAIN" on the game-over screen, at any time (App.tsx handlePlayAgain). A trial round starts over with the same
      * session and settings, without re-entering the code; any other round goes back to [GamePhase.Startup]. Its result
-     * is already in, so there's nothing to abandon. Ignored outside those screens.
+     * is already in, so there's nothing to abandon. Ignored off that screen.
      */
     fun onPlayAgain() = locked {
-        val p = _phase.value
-        if (p !is GamePhase.GameOver && p !is GamePhase.Spin && p !is GamePhase.Feedback) return@locked
+        if (_phase.value !is GamePhase.GameOver) return@locked
         val s = session
         val round = settings
         if (s != null && s.isTrial) {
@@ -125,23 +122,19 @@ class GameController(
      */
     fun onSessionStarted(code: String, sessionId: String) = locked {
         val s = session ?: return@locked
-        if (!s.isTrial && sessionStarted && code == s.code && sessionId.isNotBlank()) this.sessionId = sessionId
+        if (s.isTrial || !sessionStarted || code != s.code || sessionId.isBlank()) return@locked
+        this.sessionId = sessionId
+        (_phase.value as? GamePhase.GameOver)?.let { _phase.value = it.copy(sessionId = sessionId) }
     }
 
     /**
      * The completeSession response's `session.earnedReward` (App.tsx setEarnedReward). Keyed by [sessionId] (the
-     * id the request was sent with). A slow server can answer after the player has left the card, so it applies to
-     * whichever of that round's end-of-round steps is showing, and those after it.
+     * id the request was sent with). A slow server can answer after the player has gone: then it's dropped.
      */
     fun onRoundCompleted(sessionId: String, earnedReward: EarnedReward?) = locked {
         if (!completed || sessionId != completedSessionId || earnedReward == null) return@locked
-        this.earnedReward = earnedReward
-        when (val p = _phase.value) {
-            is GamePhase.GameOver -> _phase.value = GamePhase.GameOver(p.card.withEarnedReward(earnedReward))
-            is GamePhase.Spin -> _phase.value = p.copy(earnedReward = earnedReward)
-            is GamePhase.Feedback -> _phase.value = p.copy(earnedReward = earnedReward)
-            else -> Unit
-        }
+        val p = _phase.value as? GamePhase.GameOver ?: return@locked
+        _phase.value = p.copy(card = p.card.withEarnedReward(earnedReward))
     }
 
     /** Touch-mode tap in 1920x1080 space; applied to the bombs on the next [onFrame]. */
@@ -190,46 +183,19 @@ class GameController(
         if (_phase.value is GamePhase.PhotoCountdown) finishRound(jpeg)
     }
 
-    /**
-     * The greeting card was dismissed: on to the wheel when rewards are on (trial sessions spin too, as the web's
-     * master/test-mode wheel), else straight to feedback.
-     */
-    fun onCardDone() = locked {
-        if (_phase.value !is GamePhase.GameOver) return@locked
-        val s = session ?: return@locked
-        _phase.value = if (settings.rewardsEnabled) {
-            GamePhase.Spin(sessionId = sessionId, playerName = s.userName, mobileNumber = s.mobileNumber, earnedReward = earnedReward)
-        } else {
-            GamePhase.Feedback(null, earnedReward)
-        }
-    }
-
-    /** The wheel finished ([reward] null when none/failed). */
-    fun onSpinDone(reward: RewardItem?) = locked {
-        if (_phase.value is GamePhase.Spin) _phase.value = GamePhase.Feedback(reward, earnedReward)
-    }
-
-    /**
-     * The player submitted feedback, and the feedback step stays up (the web's bar doesn't close its screen). Sends it
-     * now, once; leave later with `onFeedback(null)`. Trial rounds send nothing.
-     */
+    /** The player tapped a feedback option: sent now, once per round, and the screen stays up. Trial rounds send nothing. */
     fun onFeedbackSubmitted(feedback: GameFeedback) = locked {
-        if (_phase.value is GamePhase.Feedback) sendFeedback(feedback)
-    }
-
-    private fun sendFeedback(feedback: GameFeedback) {
+        if (_phase.value !is GamePhase.GameOver) return@locked
         val s = session
-        if (feedbackSent || s == null || s.isTrial || sessionId.isBlank()) return
+        if (feedbackSent || s == null || s.isTrial || sessionId.isBlank()) return@locked
         feedbackSent = true
         val id = sessionId
         outbox += { effects.submitFeedback(id, feedback) }
     }
 
-    /** Feedback chosen (null = skipped / auto-return); submits it unless trial, then resets to [GamePhase.Startup]. */
-    fun onFeedback(feedback: GameFeedback?) = locked {
-        if (_phase.value !is GamePhase.Feedback) return@locked
-        if (feedback != null) sendFeedback(feedback)
-        resetToStartup()
+    /** The × button or the auto-return: home from the game-over screen, a trial round included. Ignored off that screen. */
+    fun onExit() = locked {
+        if (_phase.value is GamePhase.GameOver) resetToStartup()
     }
 
     /**
@@ -437,7 +403,7 @@ class GameController(
             val req = buildCompleteSessionRequest(sessionId, score, jpeg, settings.targetScore)
             outbox += { effects.completeSession(req) }
         }
-        _phase.value = GamePhase.GameOver(buildRoundCard(s.userName, score, jpeg, settings, random))
+        _phase.value = GamePhase.GameOver(buildRoundCard(s.userName, score, jpeg, settings, random), sessionId, s.mobileNumber)
     }
 
     private fun resetToStartup() {
@@ -458,7 +424,6 @@ class GameController(
         completedSessionId = ""
         cameraLost = false
         photoCameraReady = false
-        earnedReward = null
         feedbackSent = false
         photoRequested = false
         simResetPending = true
