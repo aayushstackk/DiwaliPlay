@@ -62,11 +62,18 @@ fun GameApp(vm: GameViewModel, onRetryCamera: () -> Unit, kiosk: KioskController
     // Stays failed across settings polls, until the background is a different file.
     var failedVideo by remember { mutableStateOf<File?>(null) }
     val startBackground = chooseStartBackground(branding.settings, branding.localFiles, failedVideo)
+    val admin = vm.admin
+    var adminStage by remember { mutableStateOf(if (admin != null && !admin.pin.isSet) AdminStage.CreatePin else AdminStage.Closed) }
     // Gone from the moment a code is accepted, not when the phase changes: the phase change starts the camera before
-    // Compose gets a frame to release the player, and a second round's camera opens within that frame.
+    // Compose gets a frame to release the player, and a second round's camera opens within that frame. The admin screen
+    // is opaque and has a camera test of its own, so it goes as soon as that opens.
     val startUi = vm.startUi.collectAsState()
     val roundStarting by remember { derivedStateOf { startUi.value.welcomeName != null } }
-    val startVideo = (startBackground as? StartBackgroundChoice.Video)?.takeIf { phase == GamePhase.Startup && !roundStarting }
+    val startVideo = (startBackground as? StartBackgroundChoice.Video)?.takeIf {
+        phase == GamePhase.Startup && !roundStarting && adminStage != AdminStage.Open
+    }
+    // The dim is for the video: it waits for a frame, so it never falls on the built-in beneath.
+    var videoShowing by remember { mutableStateOf(false) }
 
     // Spec §9: Back is consumed, so a visitor can't back out of the kiosk.
     BackHandler {}
@@ -75,11 +82,17 @@ fun GameApp(vm: GameViewModel, onRetryCamera: () -> Unit, kiosk: KioskController
         Box(Modifier.fillMaxSize()) {
             BackdropLayer(vm, branding, startBackground)
             if (startVideo != null) {
-                StartVideoSurface(startVideo.file, onFailed = { failedVideo = it }, Modifier.fillMaxSize())
+                StartVideoSurface(
+                    startVideo.file,
+                    onFailed = { failedVideo = it },
+                    Modifier.fillMaxSize(),
+                    onFirstFrame = { videoShowing = true },
+                    onReleased = { videoShowing = false },
+                )
             }
             GameSurfaceLayer(vm, active = phase != GamePhase.Startup, onSurface = { surface = it })
-            val videoDimAlpha = if (startVideo != null) startDimAlpha(startVideo.dimPercent) else 0
-            PhaseContent(vm, phase, branding, videoDimAlpha, onRetryCamera, kiosk, onExit)
+            val videoDimAlpha = if (startVideo != null && videoShowing) startDimAlpha(startVideo.dimPercent) else 0
+            PhaseContent(vm, phase, branding, videoDimAlpha, adminStage, { adminStage = it }, onRetryCamera, kiosk, onExit)
             if (perfOverlay) {
                 PerfOverlay(
                     status = { vm.cameraStatus.value },
@@ -104,7 +117,7 @@ private fun BackdropLayer(vm: GameViewModel, branding: BrandingState, startBackg
     val round by vm.round.collectAsState()
     val active = round
     val content = if (kind == BackdropKind.StartBackground) {
-        // A Video draws the built-in beneath it, undimmed: that's what shows until its first frame, or if it fails.
+        // A Video draws the built-in beneath it, never dimmed here: StartScreen dims only once the video has a frame up.
         if (startBackground is StartBackgroundChoice.Image) {
             BackdropContent(kind, startBackground.file, 100.0, startDimAlpha(startBackground.dimPercent))
         } else {
@@ -127,12 +140,14 @@ private fun PhaseContent(
     phase: GamePhase,
     branding: BrandingState,
     videoDimAlpha: Int,
+    adminStage: AdminStage,
+    onAdminStage: (AdminStage) -> Unit,
     onRetryCamera: () -> Unit,
     kiosk: KioskController?,
     onExit: () -> Unit,
 ) {
     when (phase) {
-        GamePhase.Startup -> StartupContent(vm, branding, videoDimAlpha, onRetryCamera, kiosk, onExit)
+        GamePhase.Startup -> StartupContent(vm, branding, videoDimAlpha, adminStage, onAdminStage, onRetryCamera, kiosk, onExit)
         is GamePhase.Calibrating -> Box(Modifier.fillMaxSize()) {
             val status by vm.cameraStatus.collectAsState()
             val ui by produceState(CalibrationUi(), phase.ready) {
@@ -212,23 +227,24 @@ private fun StartupContent(
     vm: GameViewModel,
     branding: BrandingState,
     videoDimAlpha: Int,
+    stage: AdminStage,
+    onStage: (AdminStage) -> Unit,
     onRetryCamera: () -> Unit,
     kiosk: KioskController?,
     onExit: () -> Unit,
 ) {
     val ui by vm.startUi.collectAsState()
     val admin = vm.admin
-    var stage by remember { mutableStateOf(if (admin != null && !admin.pin.isSet) AdminStage.CreatePin else AdminStage.Closed) }
     val taps = remember { LogoTapCounter() }
 
     if (admin != null && stage == AdminStage.Open) {
-        AdminScreen(vm, admin, kiosk, onRetryCamera, onClose = { stage = AdminStage.Closed }, onExit = onExit)
+        AdminScreen(vm, admin, kiosk, onRetryCamera, onClose = { onStage(AdminStage.Closed) }, onExit = onExit)
         return
     }
     val canTap = admin != null && stage == AdminStage.Closed && !ui.busy
     StartScreen(
         ui, branding, vm.registrationUrl, vm::onKeypad, vm::onClear, vm::onBackspace, vm::onPlay,
-        onLogoTap = if (canTap) ({ if (taps.onTap(SystemClock.uptimeMillis())) stage = AdminStage.EnterPin }) else null,
+        onLogoTap = if (canTap) ({ if (taps.onTap(SystemClock.uptimeMillis())) onStage(AdminStage.EnterPin) }) else null,
         refocusKey = stage,
         videoDimAlpha = videoDimAlpha,
     )
@@ -236,8 +252,8 @@ private fun StartupContent(
         AdminPinDialog(
             pin = admin.pin,
             creating = stage == AdminStage.CreatePin,
-            onDone = { stage = if (stage == AdminStage.CreatePin) AdminStage.Closed else AdminStage.Open },
-            onCancel = { stage = AdminStage.Closed },
+            onDone = { onStage(if (stage == AdminStage.CreatePin) AdminStage.Closed else AdminStage.Open) },
+            onCancel = { onStage(AdminStage.Closed) },
         )
     }
 }

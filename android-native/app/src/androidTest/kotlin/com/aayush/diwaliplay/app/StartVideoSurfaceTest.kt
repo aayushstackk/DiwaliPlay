@@ -64,6 +64,32 @@ class StartVideoSurfaceTest {
         assertThat(releases).isEqualTo(1)
     }
 
+    /** Nothing to show: with audio disabled the player raises no error of its own, so this must still count as failed. */
+    @Test
+    fun aFileWithNoVideoTrackReportsFailureOnce() {
+        val file = fixture("bg_audio_only.mp4")
+        val failures = mutableListOf<File>()
+        var firstFrames = 0
+        var releases = 0
+
+        compose.setContent {
+            StartVideoSurface(
+                file,
+                onFailed = { failures += it },
+                Modifier.fillMaxSize(),
+                onFirstFrame = { firstFrames++ },
+                onReleased = { releases++ },
+            )
+        }
+
+        compose.waitUntil(TIMEOUT_MS) { failures.isNotEmpty() }
+        Thread.sleep(SETTLE_MS)
+        compose.waitForIdle()
+        assertThat(failures).containsExactly(file)
+        assertThat(firstFrames).isEqualTo(0)
+        assertThat(releases).isEqualTo(1)
+    }
+
     @Test
     fun leavingCompositionReleasesThePlayer() {
         val file = fixture("bg_test.mp4")

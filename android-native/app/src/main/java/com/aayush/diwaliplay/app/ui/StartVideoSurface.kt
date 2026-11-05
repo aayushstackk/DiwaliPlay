@@ -17,6 +17,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import java.io.File
@@ -29,6 +30,7 @@ import java.io.File
  *
  * The player lives only while this is composed and the activity is resumed: hand tracking is sensitive to load, so no
  * decoder may outlast the start screen. [onFailed] reports a file that won't play, once, after releasing its player.
+ * That includes a file with no video the device can decode, which the player itself doesn't treat as an error.
  */
 @OptIn(UnstableApi::class)
 @Composable
@@ -59,6 +61,13 @@ fun StartVideoSurface(
             released()
         }
 
+        fun fail() {
+            if (broken) return
+            broken = true
+            release()
+            failed(file)
+        }
+
         fun build() {
             if (player != null || broken) return
             player = ExoPlayer.Builder(context).build().apply {
@@ -71,11 +80,13 @@ fun StartVideoSurface(
                 addListener(object : Player.Listener {
                     override fun onRenderedFirstFrame() = firstFrame()
 
-                    override fun onPlayerError(error: PlaybackException) {
-                        broken = true
-                        release()
-                        failed(file)
+                    override fun onTracksChanged(tracks: Tracks) {
+                        // Empty until the file has been read. False with no video track, or no decoder for it. A video
+                        // over the decoder's stated limits still gets a try: onPlayerError catches it if that fails.
+                        if (!tracks.isEmpty && !tracks.isTypeSupported(C.TRACK_TYPE_VIDEO, true)) fail()
                     }
+
+                    override fun onPlayerError(error: PlaybackException) = fail()
                 })
                 setVideoSurfaceView(surface)
                 setMediaItem(MediaItem.fromUri(file.toURI().toString()))
