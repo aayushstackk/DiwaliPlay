@@ -17,6 +17,7 @@ object Tags {
     const val TOUCH_LAYER = "touch_layer"
     const val PHOTO_SCREEN = "photo_screen"
     const val PHOTO_FRAME = "photo_frame"
+    const val PHOTO_HEADER = "photo_header"
     const val PHOTO_COUNT = "photo_count"
     const val PHOTO_CAPTURED = "photo_captured"
     const val PHOTO_ERROR = "photo_error"

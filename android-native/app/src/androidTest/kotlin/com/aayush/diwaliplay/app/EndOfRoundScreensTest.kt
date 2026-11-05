@@ -329,6 +329,8 @@ class EndOfRoundScreensTest {
         assertThat(((photoFrame.left + photoFrame.right) / 2).value).isWithin(1f).of(960f)
         assertThat(((photoFrame.top + photoFrame.bottom) / 2).value).isWithin(1f).of(540f)
         assertThat(bounds(Tags.PHOTO_COUNT).right).isAtMost(photoFrame.right)
+        assertThat(bounds(Tags.PHOTO_HEADER).bottom).isAtMost(photoFrame.top)
+        assertThat(bounds(Tags.PHOTO_HEADER).top).isAtLeast(0.dp)
         screenshot("native_photo.png")
     }
 

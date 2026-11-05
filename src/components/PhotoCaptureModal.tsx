@@ -394,14 +394,31 @@ export const PhotoCaptureModal: React.FC<PhotoCaptureModalProps> = ({
   }, [stopDedicatedCamera]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-3 lg:p-4 kiosk:p-0 bg-neutral-950/92 backdrop-blur-md select-none overflow-hidden animate-in fade-in duration-300">
+    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center p-2 sm:p-3 lg:p-4 kiosk:p-0 bg-neutral-950/92 backdrop-blur-md select-none overflow-hidden animate-in fade-in duration-300">
       {/* Fullscreen Camera Shutter Flash */}
       {isFlashing && (
         <div className="fixed inset-0 z-[60] bg-white pointer-events-none transition-opacity duration-300 opacity-95 animate-in fade-in" />
       )}
 
+      {/* Title, above the frame: at large sizes it fills the space over the centred frame */}
+      <div className="shrink-0 w-full px-4 pb-2 text-center pointer-events-none lg:pb-0 lg:absolute lg:top-0 lg:inset-x-0 lg:h-[calc((100dvh-min(57.7dvh,584px))/2)] lg:flex lg:flex-col lg:items-center lg:justify-center">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-black/40 border border-amber-500/50 text-amber-300 text-[10px] sm:text-xs kiosk:text-base font-semibold uppercase tracking-wider mb-1 sm:mb-1.5 kiosk:mb-2.5">
+            <Sparkles className="w-3.5 h-3.5 kiosk:w-4 kiosk:h-4 text-amber-400 animate-pulse" />
+            <span>Victory Celebration Souvenir</span>
+            <Sparkles className="w-3.5 h-3.5 kiosk:w-4 kiosk:h-4 text-amber-400 animate-pulse" />
+          </div>
+
+          <h2 className="text-2xl sm:text-3xl lg:text-3xl kiosk:text-6xl font-black font-['Cinzel',serif] tracking-wider text-amber-100 drop-shadow-[0_2px_12px_rgba(0,0,0,0.9)]">
+            Ready for a Shot? 📸
+          </h2>
+
+          <p className="text-xs sm:text-sm kiosk:text-2xl font-medium text-amber-50 mt-1 kiosk:mt-2 font-['Plus_Jakarta_Sans',sans-serif] drop-shadow-[0_1px_4px_rgba(0,0,0,0.95)]">
+            Strike your best festive pose, <span className="font-bold text-amber-300 uppercase">{playerName}</span>! Souvenir photo auto-capturing in a moment 🎆
+          </p>
+      </div>
+
       {/* Centred frame, a third of the screen's area on large screens: the camera image fills it edge to edge, everything else sits on top */}
-      <div className="w-full h-full lg:w-[57.7%] lg:h-[57.7%] max-w-[1040px] max-h-[584px] rounded-2xl sm:rounded-3xl overflow-hidden bg-neutral-900 border-2 border-amber-400/70 relative shadow-[0_0_80px_rgba(245,158,11,0.35)] box-border">
+      <div className="w-full flex-1 min-h-0 lg:flex-none lg:w-[57.7%] lg:h-[57.7%] max-w-[1040px] max-h-[584px] rounded-2xl sm:rounded-3xl overflow-hidden bg-neutral-900 border-2 border-amber-400/70 relative shadow-[0_0_80px_rgba(245,158,11,0.35)] box-border">
         {/* Live Mirrored Camera Feed */}
         <video
           ref={videoRef}
@@ -417,8 +434,7 @@ export const PhotoCaptureModal: React.FC<PhotoCaptureModalProps> = ({
           }`}
         />
 
-        {/* Scrims keeping the overlaid text legible over any video */}
-        <div className="absolute inset-x-0 top-0 h-[34%] bg-gradient-to-b from-black/85 via-black/55 to-transparent pointer-events-none z-10" />
+        {/* Scrim keeping the status legible over any video */}
         <div className="absolute inset-x-0 bottom-0 h-[18%] bg-gradient-to-t from-black/80 via-black/45 to-transparent pointer-events-none z-10" />
 
         {/* Festive Golden Corner Accents */}
@@ -458,23 +474,6 @@ export const PhotoCaptureModal: React.FC<PhotoCaptureModalProps> = ({
             </div>
           </div>
         )}
-
-        {/* Title, over the top scrim */}
-        <div className="absolute top-0 inset-x-0 px-16 sm:px-24 kiosk:px-24 pt-3 sm:pt-4 kiosk:pt-4 text-center pointer-events-none z-[21]">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-black/40 border border-amber-500/50 text-amber-300 text-[10px] sm:text-xs kiosk:text-sm font-semibold uppercase tracking-wider mb-1 sm:mb-1.5 kiosk:mb-1.5">
-            <Sparkles className="w-3.5 h-3.5 kiosk:w-4 kiosk:h-4 text-amber-400 animate-pulse" />
-            <span>Victory Celebration Souvenir</span>
-            <Sparkles className="w-3.5 h-3.5 kiosk:w-4 kiosk:h-4 text-amber-400 animate-pulse" />
-          </div>
-
-          <h2 className="text-2xl sm:text-3xl lg:text-3xl kiosk:text-4xl font-black font-['Cinzel',serif] tracking-wider text-amber-100 drop-shadow-[0_2px_12px_rgba(0,0,0,0.9)]">
-            Ready for a Shot? 📸
-          </h2>
-
-          <p className="text-xs sm:text-sm kiosk:text-base font-medium text-amber-50 mt-1 kiosk:mt-1 font-['Plus_Jakarta_Sans',sans-serif] drop-shadow-[0_1px_4px_rgba(0,0,0,0.95)]">
-            Strike your best festive pose, <span className="font-bold text-amber-300 uppercase">{playerName}</span>! Souvenir photo auto-capturing in a moment 🎆
-          </p>
-        </div>
 
         {/* Compact Top-Right Countdown Timer (Unobtrusive & Face-Safe) */}
         {isCameraReady && !cameraError && !isCaptured && countdown > 0 && !isClickPhase && (

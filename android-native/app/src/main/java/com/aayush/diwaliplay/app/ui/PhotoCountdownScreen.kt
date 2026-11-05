@@ -46,8 +46,8 @@ import com.aayush.diwaliplay.tracking.camera.TrackingStatus
 import java.util.Locale
 
 /**
- * PhotoCaptureModal, centred at a third of the screen's area: the camera fills the frame edge to edge, and the title, the count and the status
- * sit on it over a scrim. The controller runs the countdown and the capture; this only shows them. The flash and "PHOTO
+ * PhotoCaptureModal, centred at a third of the screen's area: the title sits above the frame, the camera fills the frame edge
+ * to edge, and the count and the status sit on it. The controller runs the countdown and the capture; this only shows them. The flash and "PHOTO
  * CAPTURED!" wait for a still to exist, so a failed capture announces nothing.
  */
 @Composable
@@ -74,42 +74,42 @@ fun PhotoCountdownScreen(phase: GamePhase.PhotoCountdown, playerName: String, st
                 !ready -> StartingState()
                 phase.step == 0 && !captured -> ClickBadge(Modifier.align(Alignment.Center))
             }
-            Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(220.dp).background(TopScrim))
             Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(100.dp).background(BottomScrim))
             CornerAccents(10.dp, 28.dp, Palette.Amber300.copy(alpha = 0.8f), 3.dp)
-            Header(playerName, Modifier.align(Alignment.TopCenter).padding(top = 16.dp))
             if (ready && phase.step > 0) CountdownRing(phase.step, Modifier.align(Alignment.TopEnd).padding(18.dp))
             // The error state says what's happening. The web's bar reads "Starting selfie camera..." beneath it.
             if (!phase.cameraError) StatusBar(phase, ready, captured, Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp))
             if (captured) CapturedStamp()
         }
+        // The space above the centred 584-tall frame on the 1080-tall canvas.
+        Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(248.dp), contentAlignment = Alignment.Center) {
+            Header(playerName, Modifier.testTag(Tags.PHOTO_HEADER))
+        }
         if (captured) Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.95f)))
     }
 }
 
-private val TopScrim = Brush.verticalGradient(0f to Color.Black.copy(alpha = 0.82f), 0.6f to Color.Black.copy(alpha = 0.6f), 1f to Color.Transparent)
 private val BottomScrim = Brush.verticalGradient(0f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.75f))
 
-/** Stays clear of the count in the top corner, however long the player's name is. */
 @Composable
 private fun Header(playerName: String, modifier: Modifier) {
-    Column(modifier.width(780.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(modifier.width(1500.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         val pill = RoundedCornerShape(999.dp)
         Row(
             Modifier.panel(Palette.Neutral950.copy(alpha = 0.6f), Palette.Amber500.copy(alpha = 0.5f), pill).padding(horizontal = 18.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Icon(Icons.Sparkles, 16.dp, Palette.Amber400, Modifier.pulsing())
-            Label("VICTORY CELEBRATION SOUVENIR", 14.sp, Palette.Amber300, weight = FontWeight.SemiBold, tracking = TrackingWider)
-            Icon(Icons.Sparkles, 16.dp, Palette.Amber400, Modifier.pulsing())
+            Icon(Icons.Sparkles, 18.dp, Palette.Amber400, Modifier.pulsing())
+            Label("VICTORY CELEBRATION SOUVENIR", 16.sp, Palette.Amber300, weight = FontWeight.SemiBold, tracking = TrackingWider)
+            Icon(Icons.Sparkles, 18.dp, Palette.Amber400, Modifier.pulsing())
         }
         Spacer(Modifier.height(8.dp))
-        Label("Ready for a Shot? 📸", 40.sp, Palette.Amber300, family = Fonts.Display, weight = FontWeight.Black, tracking = TrackingWider, brush = GoldText)
+        Label("Ready for a Shot? 📸", 56.sp, Palette.Amber300, family = Fonts.Display, weight = FontWeight.Black, tracking = TrackingWider, brush = GoldText)
         Spacer(Modifier.height(4.dp))
         Label(
             "Strike your best festive pose, ${playerName.uppercase(Locale.ROOT)}! Souvenir photo auto-capturing in a moment 🎆",
-            18.sp, Palette.Amber100, weight = FontWeight.Medium,
+            24.sp, Palette.Amber100, weight = FontWeight.Medium,
         )
     }
 }
