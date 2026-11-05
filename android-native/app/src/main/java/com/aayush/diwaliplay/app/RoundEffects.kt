@@ -29,6 +29,9 @@ internal const val KIOSK_ID = "kiosk_main_65"
 /** Stands in for the server's id until `startSession` returns (App.tsx `guest_…`). */
 internal const val GUEST_SESSION_PREFIX = "guest_"
 
+/** The reason sent for a round found unfinished on the next start. */
+internal const val ABANDON_CRASH = "crash"
+
 /**
  * [GameEffects] on one single-threaded [scope], whichever thread the controller called from.
  *
@@ -44,6 +47,7 @@ internal class RoundEffects(
     private val scope: CoroutineScope,
     private val background: CoroutineDispatcher,
     private val controller: () -> GameController,
+    private val activeSession: ActiveSessionStore = NoActiveSessionStore,
 ) : GameEffects {
     private val network = Channel<suspend () -> Unit>(Channel.UNLIMITED)
 
@@ -71,6 +75,20 @@ internal class RoundEffects(
         }
     }
 
+    /** Reports a round the previous process didn't live to finish. First in the FIFO, ahead of any new round's effects. */
+    fun reportLeftoverSession() {
+        network.trySend {
+            val id = activeSession.takeLeftover()
+            if (id != null && isServerSession(id)) {
+                val r = api.abandonSession(AbandonSessionRequest(id, ABANDON_CRASH))
+                if (r !is ApiResult.Success) Log.w(TAG, "crash abandon failed: $r")
+            }
+        }
+    }
+
+    /** The server has never heard of the others. */
+    private fun isServerSession(id: String) = !id.startsWith(GUEST_SESSION_PREFIX) && id != TRIAL_SESSION_ID
+
     /** Network effects already issued still run; the worker then ends. */
     fun close() {
         network.close()
@@ -96,6 +114,7 @@ internal class RoundEffects(
             val r = api.startSession(code, KIOSK_ID)
             if (r is ApiResult.Success && r.value.success) {
                 startedSessionId = r.value.session.id
+                if (isServerSession(r.value.session.id)) activeSession.set(r.value.session.id)
                 if (generation == startGeneration.get()) currentRoundSessionId = r.value.session.id
                 controller().onSessionStarted(code, r.value.session.id)
             } else {
@@ -108,20 +127,25 @@ internal class RoundEffects(
         network.trySend {
             val sent = req.copy(sessionId = serverId(req.sessionId))
             when (val r = api.completeSession(sent)) {
-                is ApiResult.Success -> controller().onRoundCompleted(req.sessionId, r.value.session.earnedReward)
+                is ApiResult.Success -> {
+                    activeSession.clear()
+                    controller().onRoundCompleted(req.sessionId, r.value.session.earnedReward)
+                }
                 // The queue applies the retry policy: it drops what can never succeed.
                 is ApiResult.HttpError -> enqueue(sent)
                 is ApiResult.NetworkError ->
                     // A 2xx with an undecodable body: the idempotent endpoint took it.
-                    if (r.cause !is UndecodableResponseException) enqueue(sent)
+                    if (r.cause is UndecodableResponseException) activeSession.clear() else enqueue(sent)
             }
         }
     }
 
+    /** Once queued the result will get there, so the round is no longer unfinished. If it can't be, it still is. */
     private suspend fun enqueue(req: CompleteSessionRequest) {
         withContext(background) {
             try {
                 results.enqueue(req)
+                activeSession.clear()
             } catch (e: Exception) {
                 Log.e(TAG, "could not queue result for ${req.sessionId}", e)
             }
@@ -131,6 +155,7 @@ internal class RoundEffects(
     override fun abandonSession(sessionId: String, reason: String) {
         network.trySend {
             val r = api.abandonSession(AbandonSessionRequest(serverId(sessionId), reason))
+            activeSession.clear()
             if (r !is ApiResult.Success) Log.w(TAG, "abandonSession failed: $r")
         }
     }

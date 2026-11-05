@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Lock task, keyguard, preferred home and permission grants come with being device owner: no policy to list. -->
+<device-admin>
+    <uses-policies />
+</device-admin>

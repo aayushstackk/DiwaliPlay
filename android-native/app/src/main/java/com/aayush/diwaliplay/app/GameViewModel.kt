@@ -134,7 +134,7 @@ class GameViewModel(
     private val background: CoroutineDispatcher = effectsDispatcher ?: Dispatchers.Default
 
     private val effects: RoundEffects =
-        RoundEffects(deps.api, deps.results, deps.audio, deps.tracking, effectsScope, background) { controller }
+        RoundEffects(deps.api, deps.results, deps.audio, deps.tracking, effectsScope, background, { controller }, deps.activeSession)
     private val controller: GameController = GameController(clock::now, random, effects)
 
     /** Render thread's entry point. */
@@ -145,6 +145,19 @@ class GameViewModel(
     val branding: StateFlow<BrandingState> get() = deps.branding.state
     val cameraStatus: StateFlow<TrackingStatus> get() = deps.tracking.status
     val tracking: TrackingSource get() = deps.tracking
+
+    /** Null when this build of the dependencies has no admin access (most tests). */
+    val admin: AdminDependencies? get() = deps.admin
+
+    private val _cameraTestOn = MutableStateFlow(false)
+
+    /** The admin screen's camera test is running. The round owns the camera the rest of the time. */
+    val cameraTestOn: StateFlow<Boolean> = _cameraTestOn.asStateFlow()
+
+    private val _perfOverlay = MutableStateFlow(false)
+
+    /** Diagnostics, so deliberately not kept across restarts. */
+    val perfOverlay: StateFlow<Boolean> = _perfOverlay.asStateFlow()
 
     /** The round's bombs, for tests to aim at. Written on the render thread. */
     internal val bombs: BombSim? get() = controller.bombs
@@ -191,6 +204,7 @@ class GameViewModel(
     }
 
     init {
+        effects.reportLeftoverSession()
         deps.branding.start()
         effectsScope.launch { withContext(background) { deps.results.start() } } // lists its directory
         scope.launch { controller.phase.collect(::syncToPhase) }
@@ -225,6 +239,7 @@ class GameViewModel(
     fun onPlay() {
         val ui = _startUi.value
         if (ui.busy || ui.code.length != CODE_LENGTH || controller.phase.value != GamePhase.Startup) return
+        stopCameraTest()
         _startUi.value = ui.copy(busy = true, error = null)
         val code = ui.code
         startJob = scope.launch {
@@ -446,6 +461,7 @@ class GameViewModel(
      * sims a jump when frames resumed. Main thread.
      */
     fun onInterrupted() {
+        stopCameraTest()
         startJob?.cancel()
         startJob = null
         controller.onInterrupted()
@@ -461,8 +477,35 @@ class GameViewModel(
     /** "Grant & Start Camera". After a failure only stop-then-start restarts the pipeline. Main thread. */
     fun retryCamera() {
         deps.tracking.stop()
+        if (_cameraTestOn.value) {
+            deps.tracking.start(trackHands = true)
+            return
+        }
         cameraOn = false
         syncToPhase(controller.phase.value)
+    }
+
+    // ---- admin -------------------------------------------------------------------------------------------
+
+    /**
+     * Admin camera test, only from the start screen with no round starting, so it can't take the camera from one. It
+     * never sets [cameraOn], which keeps its failures away from the controller. Main thread.
+     */
+    fun startCameraTest() {
+        if (_cameraTestOn.value || cameraOn || _startUi.value.busy || controller.phase.value != GamePhase.Startup) return
+        _cameraTestOn.value = true
+        deps.tracking.start(trackHands = true)
+    }
+
+    /** Stops only the test's own camera. Main thread. */
+    fun stopCameraTest() {
+        if (!_cameraTestOn.value) return
+        _cameraTestOn.value = false
+        deps.tracking.stop()
+    }
+
+    fun setPerfOverlay(on: Boolean) {
+        _perfOverlay.value = on
     }
 
     /**
@@ -541,6 +584,7 @@ class GameViewModel(
 
     /** Main thread. */
     internal fun release() {
+        stopCameraTest()
         startJob?.cancel()
         deps.tracking.stop()
         cameraOn = false

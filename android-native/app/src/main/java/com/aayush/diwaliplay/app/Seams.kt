@@ -1,5 +1,6 @@
 package com.aayush.diwaliplay.app
 
+import android.content.SharedPreferences
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
@@ -7,7 +8,9 @@ import androidx.annotation.MainThread
 import com.aayush.diwaliplay.api.ResultQueue
 import com.aayush.diwaliplay.audio.AudioEngine
 import com.aayush.diwaliplay.branding.BrandingState
+import com.aayush.diwaliplay.branding.ServerConfig
 import com.aayush.diwaliplay.branding.SettingsRepository
+import com.aayush.diwaliplay.kiosk.AdminPin
 import com.aayush.diwaliplay.model.BombConfig
 import com.aayush.diwaliplay.model.CompleteSessionRequest
 import com.aayush.diwaliplay.model.GameAudioSettings
@@ -16,6 +19,7 @@ import com.aayush.diwaliplay.tracking.camera.TrackingPipeline
 import com.aayush.diwaliplay.tracking.camera.TrackingSnapshot
 import com.aayush.diwaliplay.tracking.camera.TrackingStatus
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,7 +36,53 @@ class AppDependencies(
     /** Whether the backend answered its last request. False until it first does. */
     val serverReachable: StateFlow<Boolean>,
     val publicWebUrl: () -> String,
+    val activeSession: ActiveSessionStore = NoActiveSessionStore,
+    /** Null: no admin access at all, and no PIN is asked for. */
+    val admin: AdminDependencies? = null,
 )
+
+/** What the admin screen needs beyond the view model. */
+class AdminDependencies(val pin: AdminPin, val serverConfig: ServerConfig)
+
+/**
+ * The server session of the round in progress, on disk so it outlives the process: a round that dies with the process
+ * gets reported as abandoned by the next one (spec §10). Called on the effects thread.
+ */
+interface ActiveSessionStore {
+    fun set(sessionId: String)
+    fun clear()
+
+    /** What an earlier process left behind, removing it. In any one process only the first call can find anything. */
+    fun takeLeftover(): String?
+}
+
+object NoActiveSessionStore : ActiveSessionStore {
+    override fun set(sessionId: String) = Unit
+    override fun clear() = Unit
+    override fun takeLeftover(): String? = null
+}
+
+class PrefsActiveSessionStore(private val prefs: SharedPreferences) : ActiveSessionStore {
+    private val taken = AtomicBoolean(false)
+
+    // commit, not apply: the next thing to happen may be the crash this exists for.
+    override fun set(sessionId: String) {
+        prefs.edit().putString(KEY, sessionId).commit()
+    }
+
+    override fun clear() {
+        prefs.edit().remove(KEY).commit()
+    }
+
+    override fun takeLeftover(): String? {
+        if (taken.getAndSet(true)) return null
+        return prefs.getString(KEY, null)?.also { clear() }
+    }
+
+    private companion object {
+        const val KEY = "active_session_id"
+    }
+}
 
 /** The hand-tracking pipeline, as the game sees it. [start] / [stop] are main-thread only. */
 interface TrackingSource {

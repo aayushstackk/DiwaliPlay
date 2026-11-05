@@ -42,6 +42,7 @@ class GameViewModelTest {
     private inner class Rig(
         private val test: TestScope,
         settings: SystemSettings = SystemSettings(rewardsEnabled = false),
+        val activeSession: FakeActiveSessionStore = FakeActiveSessionStore(),
     ) {
         val api = FakeGameApi()
         val results = FakeResultSink()
@@ -51,7 +52,10 @@ class GameViewModelTest {
         val reachable = MutableStateFlow(false)
         var nowMs = 1_000.0
         val vm = GameViewModel(
-            AppDependencies(api, results, audio, tracking, branding, reachable, publicWebUrl = { "https://kiosk.example" }),
+            AppDependencies(
+                api, results, audio, tracking, branding, reachable, publicWebUrl = { "https://kiosk.example" },
+                activeSession = activeSession,
+            ),
             scopeOverride = test.backgroundScope,
             effectsDispatcher = StandardTestDispatcher(test.testScheduler),
             clock = RoundClock { nowMs },
@@ -1257,5 +1261,183 @@ class GameViewModelTest {
     @Test
     fun httpClientWontFollowHttpsRedirectsToHttp() {
         assertThat(kioskHttpClient().followSslRedirects).isFalse()
+    }
+
+    // ---- crash recovery ---------------------------------------------------------------------------------------
+
+    @Test
+    fun startedRoundIsRememberedOnDisk() = runTest {
+        val r = Rig(this)
+        r.acceptCode()
+        r.playThroughCountdown()
+        runCurrent()
+        assertThat(r.activeSession.current).isEqualTo("server_session")
+    }
+
+    @Test
+    fun completedRoundIsForgotten() = runTest {
+        val r = Rig(this)
+        r.acceptCode()
+        r.playToCard()
+        settle()
+        assertThat(r.api.completed).hasSize(1)
+        assertThat(r.activeSession.current).isNull()
+    }
+
+    /** The result queue owns it now, and will deliver it: abandoning it as well would be wrong. */
+    @Test
+    fun roundQueuedForRetryIsForgotten() = runTest {
+        val r = Rig(this)
+        r.api.onComplete = { ApiResult.NetworkError(java.io.IOException("offline")) }
+        r.acceptCode()
+        r.playToCard()
+        settle()
+        assertThat(r.results.queued).hasSize(1)
+        assertThat(r.activeSession.current).isNull()
+    }
+
+    /** It never reached the queue, so for the server it's still open: the next start should close it. */
+    @Test
+    fun roundThatCouldNotBeQueuedIsStillOpen() = runTest {
+        val r = Rig(this)
+        r.api.onComplete = { ApiResult.NetworkError(java.io.IOException("offline")) }
+        r.results.failEnqueue = true
+        r.acceptCode()
+        r.playToCard()
+        settle()
+        assertThat(r.activeSession.current).isEqualTo("server_session")
+    }
+
+    @Test
+    fun abandonedRoundIsForgotten() = runTest {
+        val r = Rig(this)
+        r.acceptCode()
+        r.playThroughCountdown()
+        runCurrent()
+        r.vm.onInterrupted()
+        settle()
+        assertThat(r.api.abandoned).hasSize(1)
+        assertThat(r.activeSession.current).isNull()
+    }
+
+    @Test
+    fun aRoundThatDiedWithTheProcessIsAbandonedOnNextStart() = runTest {
+        val r = Rig(this, activeSession = FakeActiveSessionStore(leftover = "dead_session"))
+        settle()
+        assertThat(r.api.abandoned.map { it.sessionId to it.reason }).containsExactly("dead_session" to "crash")
+        assertThat(r.activeSession.leftover).isNull()
+    }
+
+    @Test
+    fun nothingToReportOnANormalStart() = runTest {
+        val r = Rig(this)
+        settle()
+        assertThat(r.api.abandoned).isEmpty()
+    }
+
+    @Test
+    fun leftoverThatIsNoServerSessionIsNeverSent() = runTest {
+        for (id in listOf("guest_1_2", TRIAL_SESSION_ID)) {
+            val r = Rig(this, activeSession = FakeActiveSessionStore(leftover = id))
+            settle()
+            assertThat(r.api.abandoned).isEmpty()
+        }
+    }
+
+    @Test
+    fun trialRoundLeavesNoTrace() = runTest {
+        val r = Rig(this)
+        r.acceptCode("8536")
+        r.playThroughCountdown()
+        runCurrent()
+        assertThat(r.activeSession.everSet).isEmpty()
+    }
+
+    /** startSession failed: only the stand-in id exists, which the server has never heard of. */
+    @Test
+    fun failedStartLeavesNoTrace() = runTest {
+        val r = Rig(this)
+        r.api.onStart = { ApiResult.NetworkError(java.io.IOException("offline")) }
+        r.acceptCode()
+        r.playThroughCountdown()
+        runCurrent()
+        assertThat(r.activeSession.everSet).isEmpty()
+    }
+
+    // ---- admin camera test ------------------------------------------------------------------------------------
+
+    @Test
+    fun cameraTestRunsFromTheStartScreen() = runTest {
+        val r = Rig(this)
+        settle()
+        r.vm.startCameraTest()
+        assertThat(r.tracking.running).isTrue()
+        assertThat(r.tracking.lastTrackHands).isTrue()
+        assertThat(r.vm.cameraTestOn.value).isTrue()
+        r.vm.stopCameraTest()
+        assertThat(r.tracking.running).isFalse()
+        assertThat(r.vm.cameraTestOn.value).isFalse()
+    }
+
+    @Test
+    fun cameraTestRefusedOnceARoundOwnsTheCamera() = runTest {
+        val r = Rig(this)
+        r.acceptCode()
+        val starts = r.tracking.starts
+        r.vm.startCameraTest()
+        assertThat(r.vm.cameraTestOn.value).isFalse()
+        assertThat(r.tracking.starts).isEqualTo(starts)
+        r.vm.stopCameraTest() // nothing of the test's to stop: the round's camera stays on
+        assertThat(r.tracking.running).isTrue()
+    }
+
+    @Test
+    fun pausingStopsTheCameraTest() = runTest {
+        val r = Rig(this)
+        settle()
+        r.vm.startCameraTest()
+        r.vm.onInterrupted()
+        assertThat(r.tracking.running).isFalse()
+        assertThat(r.vm.cameraTestOn.value).isFalse()
+    }
+
+    @Test
+    fun cameraTestFailureDoesNotReachTheRound() = runTest {
+        val r = Rig(this)
+        settle()
+        r.vm.startCameraTest()
+        r.tracking.emit(TrackingStatus.CameraLost("busy"))
+        settle()
+        assertThat(r.vm.phase.value).isEqualTo(GamePhase.Startup)
+    }
+
+    @Test
+    fun aRoundStartingEndsTheCameraTestAndGetsItsOwnCamera() = runTest {
+        val r = Rig(this)
+        settle()
+        r.vm.startCameraTest()
+        r.acceptCode()
+        assertThat(r.vm.cameraTestOn.value).isFalse()
+        assertThat(r.tracking.running).isTrue()
+        assertThat(r.tracking.stops).isEqualTo(1)
+    }
+
+    @Test
+    fun retryDuringCameraTestRestartsTheTest() = runTest {
+        val r = Rig(this)
+        settle()
+        r.vm.startCameraTest()
+        r.vm.retryCamera()
+        assertThat(r.tracking.running).isTrue()
+        assertThat(r.tracking.starts).isEqualTo(2)
+        assertThat(r.vm.cameraTestOn.value).isTrue()
+    }
+
+    @Test
+    fun perfOverlayIsOffUntilToggled() = runTest {
+        val r = Rig(this)
+        assertThat(r.vm.perfOverlay.value).isFalse()
+        r.vm.setPerfOverlay(true)
+        assertThat(r.vm.perfOverlay.value).isTrue()
     }
 }

@@ -1,6 +1,7 @@
 package com.aayush.diwaliplay.app
 
 import android.Manifest
+import android.app.admin.DevicePolicyManager
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.WindowManager
@@ -15,6 +16,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.aayush.diwaliplay.app.ui.GameApp
+import com.aayush.diwaliplay.kiosk.KioskController
 
 class MainActivity : ComponentActivity() {
     private val viewModel: GameViewModel by viewModels {
@@ -23,6 +25,11 @@ class MainActivity : ComponentActivity() {
 
     /** The system's permission dialog pauses this activity; that pause mustn't end the round. */
     private var permissionDialogShowing = false
+
+    private val kiosk by lazy { KioskController(this, getSystemService(DevicePolicyManager::class.java)) }
+
+    /** Once per launch: without a device owner, each attempt puts the system's pinning prompt up. */
+    private var lockRestored = false
 
     private val requestCamera = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
         permissionDialogShowing = false
@@ -34,9 +41,18 @@ class MainActivity : ComponentActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         enterImmersive()
-        setContent { GameApp(viewModel, onRetryCamera = ::retryCamera) }
+        kiosk.grantCameraIfOwner()
+        setContent { GameApp(viewModel, onRetryCamera = ::retryCamera, kiosk = kiosk, onExit = ::exitApp) }
         // Asked for up front: a dialog on the start screen interrupts nobody, unlike one mid-calibration.
         if (savedInstanceState == null && !hasCameraPermission()) askForCamera()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (!lockRestored) {
+            lockRestored = true
+            kiosk.restoreLock()
+        }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -47,6 +63,11 @@ class MainActivity : ComponentActivity() {
     override fun onPause() {
         super.onPause()
         if (!permissionDialogShowing) viewModel.onInterrupted()
+    }
+
+    private fun exitApp() {
+        kiosk.releaseForExit()
+        finishAndRemoveTask()
     }
 
     private fun retryCamera() {

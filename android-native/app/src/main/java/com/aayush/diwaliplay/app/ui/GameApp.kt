@@ -1,5 +1,7 @@
 package com.aayush.diwaliplay.app.ui
 
+import android.os.SystemClock
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -26,11 +28,18 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.aayush.diwaliplay.app.CalibrationUi
 import com.aayush.diwaliplay.app.GameViewModel
+import com.aayush.diwaliplay.app.ui.admin.AdminPinDialog
+import com.aayush.diwaliplay.app.ui.admin.AdminScreen
+import com.aayush.diwaliplay.app.ui.admin.AdminStage
+import com.aayush.diwaliplay.app.ui.admin.LogoTapCounter
+import com.aayush.diwaliplay.app.ui.admin.PerfOverlay
 import com.aayush.diwaliplay.app.ui.theme.DesignCanvas
 import com.aayush.diwaliplay.app.ui.theme.Fonts
 import com.aayush.diwaliplay.app.ui.theme.Palette
 import com.aayush.diwaliplay.branding.BrandingState
 import com.aayush.diwaliplay.game.flow.GamePhase
+import com.aayush.diwaliplay.kiosk.KioskController
+import com.aayush.diwaliplay.render.GameSurfaceView
 import com.aayush.diwaliplay.tracking.camera.TrackingStatus
 import kotlinx.coroutines.delay
 
@@ -39,15 +48,28 @@ import kotlinx.coroutines.delay
  * below the window and show through it (see [BackdropSurfaceView]).
  */
 @Composable
-fun GameApp(vm: GameViewModel, onRetryCamera: () -> Unit) {
+fun GameApp(vm: GameViewModel, onRetryCamera: () -> Unit, kiosk: KioskController? = null, onExit: () -> Unit = {}) {
     val phase by vm.phase.collectAsState()
     val branding by vm.branding.collectAsState()
+    val perfOverlay by vm.perfOverlay.collectAsState()
+    var surface by remember { mutableStateOf<GameSurfaceView?>(null) }
+
+    // Spec §9: Back is consumed, so a visitor can't back out of the kiosk.
+    BackHandler {}
 
     DesignCanvas {
         Box(Modifier.fillMaxSize()) {
             BackdropLayer(vm, branding)
-            GameSurfaceLayer(vm, active = phase != GamePhase.Startup)
-            PhaseContent(vm, phase, branding, onRetryCamera)
+            GameSurfaceLayer(vm, active = phase != GamePhase.Startup, onSurface = { surface = it })
+            PhaseContent(vm, phase, branding, onRetryCamera, kiosk, onExit)
+            if (perfOverlay) {
+                PerfOverlay(
+                    status = { vm.cameraStatus.value },
+                    renderFps = { surface?.fps?.value ?: 0f },
+                    lowEnd = { surface?.lowEnd?.value ?: false },
+                    modifier = Modifier.align(Alignment.BottomStart),
+                )
+            }
         }
     }
 }
@@ -73,12 +95,16 @@ private fun BackdropLayer(vm: GameViewModel, branding: BrandingState) {
 }
 
 @Composable
-private fun PhaseContent(vm: GameViewModel, phase: GamePhase, branding: BrandingState, onRetryCamera: () -> Unit) {
+private fun PhaseContent(
+    vm: GameViewModel,
+    phase: GamePhase,
+    branding: BrandingState,
+    onRetryCamera: () -> Unit,
+    kiosk: KioskController?,
+    onExit: () -> Unit,
+) {
     when (phase) {
-        GamePhase.Startup -> {
-            val ui by vm.startUi.collectAsState()
-            StartScreen(ui, branding, vm.registrationUrl, vm::onKeypad, vm::onClear, vm::onBackspace, vm::onPlay)
-        }
+        GamePhase.Startup -> StartupContent(vm, branding, onRetryCamera, kiosk, onExit)
         is GamePhase.Calibrating -> Box(Modifier.fillMaxSize()) {
             val status by vm.cameraStatus.collectAsState()
             val ui by produceState(CalibrationUi(), phase.ready) {
@@ -169,6 +195,40 @@ private fun PhaseContent(vm: GameViewModel, phase: GamePhase, branding: Branding
                 earnedReward = phase.earnedReward,
             )
         }
+    }
+}
+
+/** The start screen, and the only way in to the admin screen: it isn't reachable from anywhere else. */
+@Composable
+private fun StartupContent(
+    vm: GameViewModel,
+    branding: BrandingState,
+    onRetryCamera: () -> Unit,
+    kiosk: KioskController?,
+    onExit: () -> Unit,
+) {
+    val ui by vm.startUi.collectAsState()
+    val admin = vm.admin
+    var stage by remember { mutableStateOf(if (admin != null && !admin.pin.isSet) AdminStage.CreatePin else AdminStage.Closed) }
+    val taps = remember { LogoTapCounter() }
+
+    if (admin != null && stage == AdminStage.Open) {
+        AdminScreen(vm, admin, kiosk, onRetryCamera, onClose = { stage = AdminStage.Closed }, onExit = onExit)
+        return
+    }
+    val canTap = admin != null && stage == AdminStage.Closed && !ui.busy
+    StartScreen(
+        ui, branding, vm.registrationUrl, vm::onKeypad, vm::onClear, vm::onBackspace, vm::onPlay,
+        onLogoTap = if (canTap) ({ if (taps.onTap(SystemClock.uptimeMillis())) stage = AdminStage.EnterPin }) else null,
+        refocusKey = stage,
+    )
+    if (admin != null && stage != AdminStage.Closed) {
+        AdminPinDialog(
+            pin = admin.pin,
+            creating = stage == AdminStage.CreatePin,
+            onDone = { stage = if (stage == AdminStage.CreatePin) AdminStage.Closed else AdminStage.Open },
+            onCancel = { stage = AdminStage.Closed },
+        )
     }
 }
 

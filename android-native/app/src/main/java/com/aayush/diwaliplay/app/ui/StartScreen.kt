@@ -60,9 +60,12 @@ fun StartScreen(
     onClear: () -> Unit,
     onBackspace: () -> Unit,
     onPlay: () -> Unit,
+    onLogoTap: (() -> Unit)? = null,
+    /** When this changes, the hardware keyboard comes back to the keypad. */
+    refocusKey: Any? = Unit,
 ) {
     val focus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { focus.requestFocus() }
+    LaunchedEffect(refocusKey) { focus.requestFocus() }
 
     Box(
         Modifier
@@ -87,7 +90,7 @@ fun StartScreen(
             .focusable()
             .padding(20.dp),
     ) {
-        BrandingBlock(branding, Modifier.align(Alignment.TopCenter).padding(top = 4.dp))
+        BrandingBlock(branding, Modifier.align(Alignment.TopCenter).padding(top = 4.dp), onLogoTap)
 
         Row(
             Modifier.align(Alignment.Center).width(1024.dp).padding(top = 72.dp),

@@ -18,6 +18,7 @@ import com.aayush.diwaliplay.app.ui.PhotoCountdownScreen
 import com.aayush.diwaliplay.app.ui.SpinWheelScreen
 import com.aayush.diwaliplay.app.ui.StartScreen
 import com.aayush.diwaliplay.app.ui.Tags
+import com.aayush.diwaliplay.app.ui.admin.PerfOverlay
 import com.aayush.diwaliplay.branding.BrandingState
 import com.aayush.diwaliplay.game.FormattedPersonalizedWish
 import com.aayush.diwaliplay.game.PlayerAchievement
@@ -76,6 +77,31 @@ class OverlayRecompositionTest {
 
         compose.mainClock.advanceTimeBy(2_000)
         assertThat(composed).isEmpty()
+    }
+
+    /** Numbers changing faster than the eye could follow: it only samples them, twice a second. */
+    @Test
+    fun perfOverlaySamplesRatherThanFollowingFrames() {
+        var frame = 0
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            PerfOverlay(
+                status = { TrackingStatus.Running("GPU", frame.toDouble(), frame.toDouble()) },
+                renderFps = { frame.toFloat() },
+                lowEnd = { false },
+            )
+        }
+        compose.mainClock.advanceTimeBy(16)
+        composed.clear()
+
+        repeat(120) { // 2 s at 60 fps
+            frame++
+            compose.mainClock.advanceTimeBy(16)
+        }
+
+        val overlayCompositions = composed.count { it.contains("PerfOverlay") }
+        assertThat(overlayCompositions).isAtLeast(1) // it did update
+        assertThat(overlayCompositions).isAtMost(5)
     }
 
     @Test

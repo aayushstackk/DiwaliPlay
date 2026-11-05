@@ -93,8 +93,23 @@ class FakeGameApi : GameApi {
 
 class FakeResultSink : ResultSink {
     val queued = CopyOnWriteArrayList<CompleteSessionRequest>()
+    @Volatile var failEnqueue = false
     override fun start() = Unit
-    override fun enqueue(req: CompleteSessionRequest) { queued += req }
+    override fun enqueue(req: CompleteSessionRequest) {
+        if (failEnqueue) throw java.io.IOException("disk full")
+        queued += req
+    }
+}
+
+class FakeActiveSessionStore(@Volatile var leftover: String? = null) : ActiveSessionStore {
+    @Volatile var current: String? = null
+    val everSet = CopyOnWriteArrayList<String>()
+    override fun set(sessionId: String) {
+        current = sessionId
+        everSet += sessionId
+    }
+    override fun clear() { current = null }
+    override fun takeLeftover(): String? = leftover.also { leftover = null }
 }
 
 class FakeGameAudio : GameAudio {

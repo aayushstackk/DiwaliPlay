@@ -38,7 +38,7 @@ private const val MAX_BOMB_IMAGE_PX = 512
  * runs only while [active]; on the start screen the surface sits unused behind opaque UI.
  */
 @Composable
-fun GameSurfaceLayer(vm: GameViewModel, active: Boolean) {
+fun GameSurfaceLayer(vm: GameViewModel, active: Boolean, onSurface: (GameSurfaceView?) -> Unit = {}) {
     var view by remember { mutableStateOf<GameSurfaceView?>(null) }
 
     AndroidView(
@@ -59,6 +59,7 @@ fun GameSurfaceLayer(vm: GameViewModel, active: Boolean) {
     )
 
     val surface = view
+    LaunchedEffect(surface) { onSurface(surface) }
     LaunchedEffect(surface, active) {
         if (surface != null) {
             if (active) surface.start(vm.frameStepper::step) else surface.stop()

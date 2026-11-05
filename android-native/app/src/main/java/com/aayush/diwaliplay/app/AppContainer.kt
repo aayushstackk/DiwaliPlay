@@ -14,6 +14,7 @@ import com.aayush.diwaliplay.audio.SoundResolver
 import com.aayush.diwaliplay.branding.AssetCache
 import com.aayush.diwaliplay.branding.ServerConfig
 import com.aayush.diwaliplay.branding.SettingsRepository
+import com.aayush.diwaliplay.kiosk.AdminPin
 import com.aayush.diwaliplay.tracking.HandTracker
 import com.aayush.diwaliplay.tracking.camera.TrackingPipeline
 import java.io.File
@@ -27,6 +28,12 @@ class AppContainer(private val app: Application) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val http = kioskHttpClient()
     val serverConfig = ServerConfig(app.getSharedPreferences("server_config", Context.MODE_PRIVATE))
+
+    private val admin = AdminDependencies(
+        AdminPin(app.getSharedPreferences("admin_pin", Context.MODE_PRIVATE)),
+        serverConfig,
+    )
+    private val activeSession = PrefsActiveSessionStore(app.getSharedPreferences("active_session", Context.MODE_PRIVATE))
 
     private val api = ReachabilityGameApi(HttpGameApi({ serverConfig.apiBaseUrl }, http))
 
@@ -56,6 +63,8 @@ class AppContainer(private val app: Application) {
         branding = branding,
         serverReachable = api.reachable,
         publicWebUrl = { serverConfig.publicWebUrl },
+        activeSession = activeSession,
+        admin = admin,
     )
 
     private fun readManifest(): SoundManifest =

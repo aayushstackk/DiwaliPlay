@@ -132,7 +132,7 @@ private fun Viewport(phase: GamePhase.PhotoCountdown, ready: Boolean, captured: 
 
 /** The mirrored analysis frames: a PreviewView can't live under the game surface (BackdropSurfaceView's KDoc). */
 @Composable
-private fun LivePreview(frames: () -> CameraFrame?, modifier: Modifier) {
+internal fun LivePreview(frames: () -> CameraFrame?, modifier: Modifier) {
     var frameCount by remember { mutableIntStateOf(0) } // read only while drawing: no recomposition per frame
     LaunchedEffect(frames) {
         var last: CameraFrame? = null
