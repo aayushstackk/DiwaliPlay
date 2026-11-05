@@ -63,5 +63,7 @@ export interface CategoryValidationRules {
   allowedMimeTypes: string[];
   allowedExtensions: string[];
   maxSizeBytes: number;
+  /** Optional per-MIME caps that tighten maxSizeBytes for specific types. */
+  maxSizeBytesByMime?: Record<string, number>;
   readableLimit: string;
 }

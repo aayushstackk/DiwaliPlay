@@ -164,6 +164,9 @@ export interface SystemSettings {
   brandLogoUrl?: string; // dynamic company logo URL
   brandingDisplayMode?: BrandingDisplayMode; // 'both' (Name + Logo) | 'name' (Name Only) | 'logo' (Logo Only) (default: 'both')
   wallpaperUrl?: string; // dynamic full-screen wallpaper URL
+  startBackgroundUrl?: string | null; // kiosk start screen background (image or MP4) asset URL
+  startBackgroundType?: 'image' | 'video'; // media type of startBackgroundUrl
+  startBackgroundDim?: number; // dim overlay strength for the start background
   useBuiltInWallpaper?: boolean; // ON: show the built-in festive scene and ignore uploads (default: false)
   experienceTitle?: string; // Line 1: Experience Title (default: "DIWALI FUN PLAY")
   connectorText?: string; // Line 2: Connector Text (default: "by")
@@ -403,7 +406,7 @@ export interface UpdateAdminAccountResponse {
 // ============================================================================
 // Asset Storage & Management Models (Phase 4A)
 // ============================================================================
-export type AssetCategory = 'wallpapers' | 'brand_logos' | 'audio_tracks' | 'cracker_effects' | 'bomb_assets' | 'reward_images';
+export type AssetCategory = 'wallpapers' | 'brand_logos' | 'audio_tracks' | 'cracker_effects' | 'bomb_assets' | 'reward_images' | 'start_backgrounds';
 
 export type StorageProviderType = 'local' | 'gcs' | 's3' | 'gridfs';
 

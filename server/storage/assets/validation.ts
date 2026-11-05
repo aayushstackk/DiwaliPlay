@@ -47,6 +47,17 @@ export const CATEGORY_RULES: Record<AssetCategory, CategoryValidationRules> = {
     allowedExtensions: ['.png', '.svg', '.webp', '.jpg', '.jpeg'],
     maxSizeBytes: 5 * 1024 * 1024, // 5 MB
     readableLimit: '5 MB'
+  },
+  start_backgrounds: {
+    allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'video/mp4'],
+    allowedExtensions: ['.jpg', '.jpeg', '.png', '.webp', '.mp4'],
+    maxSizeBytes: 40 * 1024 * 1024, // 40 MB (video)
+    maxSizeBytesByMime: {
+      'image/jpeg': 15 * 1024 * 1024,
+      'image/png': 15 * 1024 * 1024,
+      'image/webp': 15 * 1024 * 1024
+    },
+    readableLimit: '15 MB for images, 40 MB for video'
   }
 };
 
@@ -114,6 +125,14 @@ export function verifyMagicBytes(buffer: Buffer, declaredMime: string, ext: stri
     return { valid: true };
   }
 
+  // MP4: ISO base media file, 'ftyp' box type at byte offset 4
+  if (declaredMime === 'video/mp4' || ext === '.mp4') {
+    if (buffer.length >= 8 && buffer.subarray(4, 8).toString('ascii') === 'ftyp') {
+      return { valid: true };
+    }
+    return { valid: false, reason: 'Binary header does not match MP4 signature (ftyp box).' };
+  }
+
   // 5. MP3: ID3 or MPEG sync frames (FF FB, FF F3, FF F2)
   if (declaredMime.includes('mpeg') || declaredMime.includes('mp3') || ext === '.mp3') {
     const isId3 = buffer.subarray(0, 3).toString('ascii') === 'ID3';
@@ -167,8 +186,10 @@ export function validateUploadedFile(
     return { valid: false, error: 'No file data provided in upload payload.' };
   }
 
-  // 1. File size check
-  if (file.size > rules.maxSizeBytes || file.buffer.length > rules.maxSizeBytes) {
+  // 1. File size check (per-MIME cap, when defined, tightens the category cap)
+  const sizeMime = (file.mimetype || '').toLowerCase();
+  const maxBytes = rules.maxSizeBytesByMime?.[sizeMime] ?? rules.maxSizeBytes;
+  if (file.size > maxBytes || file.buffer.length > maxBytes) {
     return {
       valid: false,
       error: `File size (${(file.size / (1024 * 1024)).toFixed(2)} MB) exceeds category limit of ${rules.readableLimit}.`
@@ -224,7 +245,8 @@ export function generateSafeObjectKey(category: AssetCategory, ext: string): str
     audio_tracks: 'audio',
     cracker_effects: 'fx',
     bomb_assets: 'bomb',
-    reward_images: 'reward'
+    reward_images: 'reward',
+    start_backgrounds: 'bg'
   };
 
   const prefix = prefixMap[category] || 'asset';

@@ -5,7 +5,7 @@
 
 import path from 'path';
 import crypto from 'crypto';
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import { db } from '../storage';
 import { authenticateAdmin, requireRole } from '../auth/middleware';
@@ -26,9 +26,24 @@ export const assetsRouter = Router();
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 16 * 1024 * 1024 // 16 MB max across any category
+    fileSize: 40 * 1024 * 1024 // 40 MB hard ceiling (start background video); per-type caps enforced in validation
   }
 });
+
+// Runs multer and turns an over-limit upload into a clear 413 instead of a generic 500.
+function uploadSingleFile(req: Request, res: Response, next: NextFunction) {
+  upload.single('file')(req, res, (err: any) => {
+    if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({
+        success: false,
+        error: 'FILE_TOO_LARGE',
+        message: 'File is too large. The maximum is 40 MB (15 MB for images).'
+      });
+    }
+    if (err) return next(err);
+    next();
+  });
+}
 
 // ============================================================================
 // Public Safe Asset Content Delivery Endpoint
@@ -179,7 +194,7 @@ assetsRouter.post(
   '/admin/assets/upload',
   authenticateAdmin,
   requireRole(['superadmin', 'operator']),
-  upload.single('file'),
+  uploadSingleFile,
   async (req: Request, res: Response) => {
     try {
       const file = req.file;
@@ -370,12 +385,16 @@ assetsRouter.delete(
         settings.wallpaperUrl &&
         (settings.wallpaperUrl === asset.url || settings.wallpaperUrl.includes(asset.id));
 
-      if (isUsedAsLogo || isUsedAsWallpaper) {
+      const isUsedAsStartBackground =
+        settings.startBackgroundUrl &&
+        (settings.startBackgroundUrl === asset.url || settings.startBackgroundUrl.includes(asset.id));
+
+      if (isUsedAsLogo || isUsedAsWallpaper || isUsedAsStartBackground) {
         return res.status(409).json({
           success: false,
           error: 'ASSET_IN_USE',
           message: `Cannot delete asset "${asset.displayName || asset.id}" because it is currently assigned as the active ${
-            isUsedAsLogo ? 'Brand Logo' : 'Wallpaper'
+            isUsedAsLogo ? 'Brand Logo' : isUsedAsWallpaper ? 'Wallpaper' : 'Start Screen Background'
           }. Please reassign or clear it in Branding / Settings first.`
         });
       }
