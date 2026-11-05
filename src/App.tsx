@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useHandTracking } from './hooks/useHandTracking';
+import { TrackingTimingOverlay } from './components/TrackingTimingOverlay';
 import { GameState } from './types/motion';
 import { HandTargetBoxes } from './components/HandTargetBoxes';
 import { CountdownOverlay } from './components/CountdownOverlay';
@@ -20,6 +21,9 @@ import { Camera, Sparkles, AlertTriangle, Timer, Trophy, RotateCcw, Maximize2, M
 import { gameApi } from './services/api';
 import { User, TRIAL_CODE, BombConfig, BombGameSettings, RewardItem, GameSession } from './types/backend';
 import { DEFAULT_BOMB_CONFIGS, DEFAULT_BOMB_SETTINGS } from './utils/bombDefaults';
+
+const showTimingOverlay =
+  typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('timing');
 
 export default function App() {
   const branding = useBranding();
@@ -65,6 +69,7 @@ export default function App() {
     unlockAudio,
     playSound,
     resetStats,
+    metrics: trackingMetrics,
   } = useHandTracking({ enabled: isCameraMode });
 
   const [phase, setPhase] = useState<GameState>('IDLE');
@@ -755,6 +760,7 @@ export default function App() {
 
   return (
     <div className="fixed inset-0 w-screen h-screen overflow-hidden bg-[#0A0713] text-neutral-100 flex flex-col font-['Plus_Jakarta_Sans',sans-serif] select-none">
+      {showTimingOverlay && <TrackingTimingOverlay metrics={trackingMetrics} />}
       {/* KIOSK START SCREEN: Full-screen registration & 4-digit code entry overlay */}
       {isKioskStartup && (
         <div className="fixed inset-0 z-50 bg-[#0A0713]">

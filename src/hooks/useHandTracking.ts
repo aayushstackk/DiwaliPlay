@@ -70,9 +70,25 @@ const DEFAULT_HAND = (side: 'left' | 'right'): TrackedHand => ({
   isPredicted: false,
 });
 
+const smoothTiming = (previous: number, sample: number) =>
+  previous > 0 ? previous * 0.8 + sample * 0.2 : sample;
+
+const describeCameraMode = (stream: MediaStream | null) => {
+  const settings = stream?.getVideoTracks()[0]?.getSettings();
+  if (!settings) return '';
+  return `${settings.width}x${settings.height} @ ${Math.round(settings.frameRate ?? 0)}`;
+};
+
 const DEFAULT_METRICS: PerformanceMetrics = {
   cameraFps: 0,
   processingFps: 0,
+  renderFps: 0,
+  detectionMs: 0,
+  frameToResultMs: 0,
+  cameraDelayMs: null,
+  cameraMode: '',
+  trackerMode: '',
+  lowEndMode: false,
   trackingConfidence: 0,
   leftSpeed: 0,
   rightSpeed: 0,
@@ -282,6 +298,11 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
     lastMeasureTime: performance.now(),
     measuredCamFps: 0,
     measuredProcFps: 0,
+    renderFrameCount: 0,
+    measuredRenderFps: 0,
+    detectionMs: 0,
+    frameToResultMs: 0,
+    cameraDelayMs: 0,
   });
 
   // Sound Engine Methods
@@ -495,16 +516,9 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
         }
 
         const lowEndCamera = isLowEndHardware();
-        const videoConstraints: MediaTrackConstraints = lowEndCamera
+        const videoConstraints: MediaTrackConstraints = lowEndCamera || isAndroid
           ? {
-              // Low-end: detection runs at 24fps, so don't pay to decode 60fps frames
-              width: { ideal: 640, max: 640 },
-              height: { ideal: 480, max: 480 },
-              frameRate: { ideal: LOW_END_INFERENCE_FPS, max: 30 },
-              facingMode: { ideal: 'user' },
-            }
-          : isAndroid
-          ? {
+              // Low-end: don't pay to decode 60fps frames, but a slower camera adds latency
               width: { ideal: 640, max: 640 },
               height: { ideal: 480, max: 480 },
               frameRate: { ideal: 30, max: 30 },
@@ -598,6 +612,12 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
     let lastThrottleCheck = 0;
     let lastRenderTime = 0;
 
+    const recordDetectionTiming = (detectionMs: number, frameToResultMs: number) => {
+      const counters = fpsCountersRef.current;
+      counters.detectionMs = smoothTiming(counters.detectionMs, detectionMs);
+      counters.frameToResultMs = smoothTiming(counters.frameToResultMs, frameToResultMs);
+    };
+
     const runInference = (currentTime: number) => {
       const video = videoRef.current;
       const canvas = canvasRef.current;
@@ -617,9 +637,10 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
         return;
       }
 
-      // Low-end: cap detection at ~24fps using a token bucket (with a 30fps camera this
-      // runs 4 of every 5 frames rather than every other frame)
-      if (isLowEndHardware()) {
+      // Low-end, main thread only: cap detection at ~24fps using a token bucket (with a 30fps
+      // camera this runs 4 of every 5 frames). The worker doesn't block rendering and only
+      // ever has one frame in flight, so capping it would just add lag.
+      if (!workerClient && isLowEndHardware()) {
         const elapsed = lastThrottleCheck > 0 ? currentTime - lastThrottleCheck : 1000;
         lastThrottleCheck = currentTime;
         inferenceTokens = Math.min(1, inferenceTokens + (elapsed * LOW_END_INFERENCE_FPS) / 1000);
@@ -631,7 +652,6 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
 
       lastVideoTime = video.currentTime;
       isInferringRef.current = true;
-      fpsCountersRef.current.camFrameCount++;
 
       // Monotonically increasing timestamp protection for MediaPipe Tasks Vision
       if (currentTime <= lastInferenceTime) {
@@ -653,6 +673,7 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
           })
           .then((results) => {
             if (results && !isCancelled) {
+              recordDetectionTiming(workerClient.lastInferenceMs, performance.now() - captureTime);
               processResults(results, captureTime);
             }
           })
@@ -681,7 +702,10 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
       }
 
       try {
+        const detectStart = performance.now();
         const results = landmarker.detectForVideo(video, currentTime);
+        const detectMs = performance.now() - detectStart;
+        recordDetectionTiming(detectMs, detectMs);
         processResults(results, currentTime);
       } catch (inferenceErr) {
         console.warn('Inference frame dropped:', inferenceErr);
@@ -1065,8 +1089,10 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
       if (elapsedMeasure >= 500) {
         fpsCounters.measuredCamFps = Math.round((fpsCounters.camFrameCount / elapsedMeasure) * 1000);
         fpsCounters.measuredProcFps = Math.round((fpsCounters.procFrameCount / elapsedMeasure) * 1000);
+        fpsCounters.measuredRenderFps = Math.round((fpsCounters.renderFrameCount / elapsedMeasure) * 1000);
         fpsCounters.camFrameCount = 0;
         fpsCounters.procFrameCount = 0;
+        fpsCounters.renderFrameCount = 0;
         fpsCounters.lastMeasureTime = currentTime;
       }
 
@@ -1077,6 +1103,15 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
         metrics: {
           cameraFps: fpsCounters.measuredCamFps,
           processingFps: fpsCounters.measuredProcFps,
+          renderFps: fpsCounters.measuredRenderFps,
+          detectionMs: Math.round(fpsCounters.detectionMs),
+          frameToResultMs: Math.round(fpsCounters.frameToResultMs),
+          cameraDelayMs: fpsCounters.cameraDelayMs > 0 ? Math.round(fpsCounters.cameraDelayMs) : null,
+          cameraMode: describeCameraMode(streamRef.current),
+          trackerMode: workerClientRef.current
+            ? `Worker ${workerClientRef.current.delegate}`
+            : 'Main thread',
+          lowEndMode: isLowEndHardware(),
           trackingConfidence: Math.round(avgConfidence * 100),
           leftSpeed: updatedLeft.movementSpeed,
           rightSpeed: updatedRight.movementSpeed,
@@ -1125,8 +1160,17 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
       const video = videoRef.current;
       if (video && 'requestVideoFrameCallback' in video && !rvfcActive) {
         rvfcActive = true;
-        const rvfcLoop = () => {
+        const rvfcLoop = (_now?: number, metadata?: { captureTime?: number }) => {
           if (isCancelled) return;
+          const counters = fpsCountersRef.current;
+          counters.camFrameCount++;
+          // Not every camera driver reports a capture time, so this can stay empty
+          if (metadata?.captureTime) {
+            const delay = performance.now() - metadata.captureTime;
+            if (delay >= 0 && delay < 2000) {
+              counters.cameraDelayMs = smoothTiming(counters.cameraDelayMs, delay);
+            }
+          }
           runInference(performance.now());
           const v = videoRef.current;
           if (v && 'requestVideoFrameCallback' in v && !isCancelled) {
@@ -1171,6 +1215,7 @@ export function useHandTracking(options?: UseHandTrackingOptions) {
       }
 
       const currentTime = performance.now();
+      fpsCountersRef.current.renderFrameCount++;
 
       // Feed adaptive quality monitor (auto-switches to low-end mode if FPS drops below ~42)
       if (lastRenderTime > 0) {
