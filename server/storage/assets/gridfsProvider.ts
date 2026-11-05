@@ -157,8 +157,13 @@ export class GridFSStorageProvider implements AssetStorageProvider {
     if (!found) {
       throw new Error(`Object not found in GridFS: "${key}"`);
     }
+    const stream = this.resolveBucket().openDownloadStream(found.fileDoc._id);
+    // destroy() leaves the cursor open, holding its fetched chunks until the server restarts. Only abort() closes it.
+    stream.once('close', () => {
+      stream.abort().catch((err) => console.warn(`[GridFS] Failed to close cursor for "${key}":`, err.message));
+    });
     return {
-      stream: this.resolveBucket().openDownloadStream(found.fileDoc._id),
+      stream,
       size: found.fileDoc.length,
       mimeType: found.mimeType
     };

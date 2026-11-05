@@ -71,6 +71,8 @@ export const StartBackground: React.FC<StartBackgroundProps> = ({ url, type, dim
     return () => {
       controller.abort();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
+      // Revoked, so a return to this same video can't pick it up again.
+      setVideo(null);
     };
   }, [kind, mediaUrl, mediaKey, fail]);
 
@@ -124,6 +126,7 @@ export const StartBackground: React.FC<StartBackgroundProps> = ({ url, type, dim
       <DiwaliWallpaper />
       {showMedia && choice.kind === 'image' && (
         <img
+          key={mediaKey}
           src={resolveAssetUrl(choice.url)}
           alt=""
           className="absolute inset-0 w-full h-full object-cover"

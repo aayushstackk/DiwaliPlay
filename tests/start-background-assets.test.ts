@@ -7,6 +7,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import express from 'express';
 import http from 'http';
 import assert from 'assert';
+import { Readable } from 'stream';
 import { MongoStorageAdapter } from '../server/storage/mongoAdapter';
 import { setStorageInstanceForTest } from '../server/storage/index';
 import { GridFSStorageProvider } from '../server/storage/assets/gridfsProvider';
@@ -106,6 +107,80 @@ function runValidationTests() {
   console.log('  ✅ validation PASSED\n');
 }
 
+/** Polls because the cursor closes just after the disconnect, not at the same moment. */
+async function waitUntil(check: () => Promise<boolean> | boolean, message: string) {
+  const deadline = Date.now() + 5000;
+  while (!(await check())) {
+    assert(Date.now() < deadline, message);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
+// An abandoned download must release its cursor: each one left open holds about 16 MB until the server restarts.
+async function runAbandonedDownloadTests(adapter: MongoStorageAdapter, baseUrl: string, auth: Record<string, string>) {
+  // Larger than one 16 MB cursor batch, or the server closes the cursor by itself and nothing here can fail.
+  const form = new FormData();
+  form.append('category', 'start_backgrounds');
+  form.append('file', new Blob([MP4, Buffer.alloc(30 * MB, 7)], { type: 'video/mp4' }), 'large.mp4');
+  const up = await fetch(`${baseUrl}/api/admin/assets/upload`, { method: 'POST', headers: auth, body: form });
+  assert.strictEqual(up.status, 201, `large upload status ${up.status}`);
+  const url = `${baseUrl}/api/assets/${((await up.json()) as any).asset.id}/content`;
+
+  const openCursors = async (): Promise<number> =>
+    (await adapter.getDb().admin().command({ serverStatus: 1 })).metrics.cursor.open.total;
+  const noOpenCursors = (when: string) =>
+    waitUntil(async () => (await openCursors()) === 0, `cursor left open after ${when}`);
+
+  for (let i = 0; i < 3; i++) {
+    await new Promise<void>((resolve, reject) => {
+      const request = http.get(url, (response) => {
+        response.once('data', () => {
+          request.destroy();
+          resolve();
+        });
+      });
+      request.on('error', () => {});
+      request.setTimeout(5000, () => reject(new Error('no data from the download')));
+    });
+  }
+  await noOpenCursors('disconnecting during a download');
+  console.log('  ✅ disconnecting during a download closes the cursor');
+
+  for (let i = 0; i < 3; i++) {
+    assert.strictEqual((await fetch(url, { method: 'HEAD' })).status, 200);
+  }
+  await noOpenCursors('HEAD');
+  console.log('  ✅ HEAD closes the cursor');
+
+  // The client goes while the object is still opening, so the response is already gone when the route gets to it.
+  const proto = GridFSStorageProvider.prototype;
+  const realOpen = proto.openReadStream;
+  const opened: Readable[] = [];
+  proto.openReadStream = async function (key: string) {
+    const result = await realOpen.call(this, key);
+    opened.push(result.stream);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    return result;
+  };
+  try {
+    const request = http.get(url);
+    request.on('error', () => {});
+    setTimeout(() => request.destroy(), 100);
+    await waitUntil(() => opened.length === 1 && opened[0].destroyed, 'read stream left open after an early disconnect');
+    await noOpenCursors('an early disconnect');
+    console.log('  ✅ disconnecting before the response starts closes the read stream');
+  } finally {
+    proto.openReadStream = realOpen;
+  }
+
+  // Still delivers normally after all of that.
+  const full = await fetch(url);
+  assert.strictEqual(full.status, 200);
+  assert.strictEqual((await full.arrayBuffer()).byteLength, MP4.length + 30 * MB);
+  await noOpenCursors('a full download');
+  console.log('  ✅ full download still complete');
+}
+
 async function runApiTests() {
   console.log('▶ Start background API');
   const mongod = await MongoMemoryServer.create();
@@ -186,6 +261,8 @@ async function runApiTests() {
   const wallpapers = await adapter.listAssets({ category: 'wallpapers' });
   assert.strictEqual(wallpapers.length, 0, 'rejected wallpaper stored nothing');
   console.log('  ✅ 20 MB wallpaper rejected through the route');
+
+  await runAbandonedDownloadTests(adapter, baseUrl, auth);
 
   await new Promise<void>((resolve) => server.close(() => resolve()));
   await adapter.close?.();

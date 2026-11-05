@@ -171,6 +171,12 @@ assetsRouter.get('/assets/:id/content', async (req: Request, res: Response) => {
 
     const source = await openAssetObject(asset);
 
+    // The client left while the object was opening. Piping to a closed response throws and leaves the source open.
+    if (res.destroyed) {
+      if (source && 'stream' in source) source.stream.destroy();
+      return;
+    }
+
     if (!source) {
       console.warn(
         `[Asset Delivery] Asset binary missing from storage: "${asset.id}" (key: "${asset.objectKey}", provider: "${asset.storageProvider}")`
