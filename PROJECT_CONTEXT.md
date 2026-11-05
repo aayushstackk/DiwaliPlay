@@ -40,7 +40,8 @@
 - `src/hooks/useHandTracking.ts`: Core vision hook managing webcam stream, MediaPipe `HandLandmarker` loop, landmark extrapolation, hand velocity, gesture recognition, and audio triggering.
 - `src/components/KioskStartupScreen.tsx`: Initial kiosk idle state displaying QR code, on-screen numeric keypad, and 4-digit code verification. Camera remains off until code is verified.
 - `src/components/MobileRegistrationPage.tsx`: Mobile registration view with name/phone validation and 4-digit code display.
-- `src/components/GameOverModal.tsx`: Commemorative card generation, score breakdown, envelope reveal, and souvenir PNG download.
+- `src/components/GameOverModal.tsx`: The single game-over screen: photo, achievement, wish and souvenir card download on the left; score, embedded spin wheel, one-tap feedback and Play Again on the right.
+- `src/components/SpinWheel.tsx`: The spin wheel itself (drawing, animation, sounds, spin API call), used by the game-over screen and the admin preview (`SpinWheelModal.tsx`).
 - `src/services/api.ts`: Frontend HTTP client for gameplay (`gameApi`) and admin operations (`adminApi`).
 - `src/admin/AdminApp.tsx`: Admin console root handling session check, section navigation, and telemetry data loading.
 - `src/admin/AdminLogin.tsx`: Admin login and initial setup form with feedback messages.

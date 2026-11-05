@@ -50,7 +50,7 @@ function sequence(seed: number, count: number): number[] {
 
 
 /**
- * Per-frame wheel angle, replicated from SpinWheelModal.tsx's animate loop (the maths lives inline in the
+ * Per-frame wheel angle, replicated from SpinWheel.tsx's animate loop (the maths lives inline in the
  * component, so it cannot be imported). Phase 1 = accel + cruise (elapsed since spin start);
  * phase 2 = deceleration (elapsed since decel start).
  */

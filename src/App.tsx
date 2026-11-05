@@ -11,14 +11,13 @@ import { CountdownOverlay } from './components/CountdownOverlay';
 import { GameOverModal } from './components/GameOverModal';
 import { PhotoCaptureModal } from './components/PhotoCaptureModal';
 import { KioskStartupScreen } from './components/KioskStartupScreen';
-import { SpinWheelModal } from './components/SpinWheelModal';
 import { DiwaliWallpaper } from './components/DiwaliWallpaper';
 import { BombGameOverlay } from './components/BombGameOverlay';
 import { useBranding, setBrandingPollingPaused } from './hooks/useBranding';
 import { GAME_DURATION_SECONDS, formatGameTimer } from './utils/scoreSystem';
 import { Camera, Sparkles, AlertTriangle, Timer, Trophy, RotateCcw, Maximize2, Minimize2, Target } from 'lucide-react';
 import { gameApi } from './services/api';
-import { User, TRIAL_CODE, BombConfig, BombGameSettings, RewardItem, GameSession } from './types/backend';
+import { User, TRIAL_CODE, BombConfig, BombGameSettings, RewardItem, GameSession, GameFeedback } from './types/backend';
 import { DEFAULT_BOMB_CONFIGS, DEFAULT_BOMB_SETTINGS } from './utils/bombDefaults';
 
 export default function App() {
@@ -79,11 +78,11 @@ export default function App() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [bombConfigs, setBombConfigs] = useState<BombConfig[]>(DEFAULT_BOMB_CONFIGS);
   const [bombSettings, setBombSettings] = useState<BombGameSettings>(DEFAULT_BOMB_SETTINGS);
-  const [isSpinWheelOpen, setIsSpinWheelOpen] = useState(false);
   const [earnedReward, setEarnedReward] = useState<GameSession['earnedReward'] | null>(null);
   const [rewardsEnabled, setRewardsEnabled] = useState(true);
   const activeSessionIdRef = useRef<string | null>(null);
   const isSessionCompletedRef = useRef<boolean>(false);
+  const sessionCompletionRef = useRef<Promise<void> | null>(null);
   const wasTargetAchievedRef = useRef<boolean>(false);
 
   // Time references for hands ready detection and dynamic gameplay timer
@@ -411,8 +410,9 @@ export default function App() {
 
       // Persist session completion to backend with captured photo
       const currentTargetSession = activeSessionIdRef.current || activeSessionId;
+      sessionCompletionRef.current = null;
       if (currentTargetSession) {
-        gameApi
+        sessionCompletionRef.current = gameApi
           .completeSession({
             sessionId: currentTargetSession,
             score: gameScore.score,
@@ -445,6 +445,15 @@ export default function App() {
     },
     [playSfx, activeCode, activeSessionId, gameScore, branding]
   );
+
+  // The server only accepts feedback for a completed session, and one-tap feedback can beat the upload
+  // of the photo, so it waits for the completion already under way.
+  const handleSubmitFeedback = useCallback(async (feedback: GameFeedback) => {
+    const sessionId = activeSessionIdRef.current || activeSessionId;
+    if (!sessionId) return;
+    await sessionCompletionRef.current;
+    await gameApi.submitFeedback(sessionId, feedback);
+  }, [activeSessionId]);
 
   const handlePlayTick = useCallback(() => {
     playCountdownStep(1);
@@ -479,7 +488,6 @@ export default function App() {
     setRemainingSeconds(gameDuration);
     setCapturedPhoto(null);
     setEarnedReward(null);
-    setIsSpinWheelOpen(false);
     resetStats();
     resetGameScore();
     setIsCrackerModeActive(false);
@@ -537,7 +545,6 @@ export default function App() {
     setRemainingSeconds(gameDuration);
     setCapturedPhoto(null);
     setEarnedReward(null);
-    setIsSpinWheelOpen(false);
     resetStats();
     resetGameScore();
     setIsCrackerModeActive(false);
@@ -1119,28 +1126,16 @@ export default function App() {
           onPlayAgain={handlePlayAgain}
           onClose={handleExitToHome}
           onUpdatePlayerName={(name) => setPlayerName(name)}
-          onPlayChime={() => playSound('FLOWER_POT')}
           sessionId={activeSessionIdRef.current || activeSessionId}
+          sessionCompletion={sessionCompletionRef.current}
+          onSubmitFeedback={handleSubmitFeedback}
           isTrial={activeCode === TRIAL_CODE || (activeSessionIdRef.current?.startsWith('trial_') ?? false) || (typeof window !== 'undefined' && sessionStorage.getItem('diwali_master_otp') === 'true')}
           targetScoreEnabled={branding.targetScoreEnabled}
           targetScore={branding.targetScore}
           achievementTiers={branding.achievementTiers}
           earnedReward={earnedReward}
           rewardsEnabled={rewardsEnabled}
-          onOpenSpinWheel={() => setIsSpinWheelOpen(true)}
           mobileNumber={currentUser?.mobileNumber || ''}
-        />
-      )}
-
-      {/* Lucky Spin Wheel Modal */}
-      {isSpinWheelOpen && (
-        <SpinWheelModal
-          isOpen={isSpinWheelOpen}
-          onClose={() => setIsSpinWheelOpen(false)}
-          playerName={playerName || currentUser?.name || 'Player'}
-          mobileNumber={currentUser?.mobileNumber || ''}
-          sessionId={activeSessionIdRef.current || activeSessionId}
-          isTestMode={activeCode === TRIAL_CODE || (typeof window !== 'undefined' && sessionStorage.getItem('diwali_master_otp') === 'true')}
         />
       )}
     </div>

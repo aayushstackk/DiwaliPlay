@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* The 1920x1080 kiosk: wide AND tall. A wide but short laptop keeps the regular sizes. */
+@custom-variant kiosk (@media (min-width: 1536px) and (min-height: 960px));
+
 @keyframes floatFade {
   0% {
     opacity: 0;
