@@ -63,6 +63,8 @@ fun StartScreen(
     onLogoTap: (() -> Unit)? = null,
     /** When this changes, the hardware keyboard comes back to the keypad. */
     refocusKey: Any? = Unit,
+    /** Black over the start video, behind everything here, 0..204. The backdrop draws its own dim for an image. */
+    videoDimAlpha: Int = 0,
 ) {
     val focus = remember { FocusRequester() }
     LaunchedEffect(refocusKey) { focus.requestFocus() }
@@ -85,6 +87,7 @@ fun StartScreen(
                 }
             }
             .focusable()
+            .background(Color(0, 0, 0, videoDimAlpha))
             .padding(20.dp),
     ) {
         BrandingBlock(branding, Modifier.align(Alignment.TopCenter).padding(top = 4.dp), onLogoTap)

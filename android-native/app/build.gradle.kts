@@ -110,6 +110,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.zxing.core)
     implementation(libs.androidsvg)
+    implementation(libs.media3.exoplayer)
 
     testImplementation(libs.junit)
     testImplementation(libs.truth)

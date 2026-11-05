@@ -14,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -46,10 +47,11 @@ import com.aayush.diwaliplay.kiosk.KioskController
 import com.aayush.diwaliplay.render.GameSurfaceView
 import com.aayush.diwaliplay.tracking.camera.TrackingStatus
 import kotlinx.coroutines.delay
+import java.io.File
 
 /**
- * The window, bottom to top: backdrop surface, game surface, then the Compose screen for the phase. Both surfaces sit
- * below the window and show through it (see [BackdropSurfaceView]).
+ * The window, bottom to top: backdrop surface, the start video's surface if there is one, game surface, then the Compose
+ * screen for the phase. The surfaces sit below the window and show through it (see [BackdropSurfaceView]).
  */
 @Composable
 fun GameApp(vm: GameViewModel, onRetryCamera: () -> Unit, kiosk: KioskController? = null, onExit: () -> Unit = {}) {
@@ -57,15 +59,27 @@ fun GameApp(vm: GameViewModel, onRetryCamera: () -> Unit, kiosk: KioskController
     val branding by vm.branding.collectAsState()
     val perfOverlay by vm.perfOverlay.collectAsState()
     var surface by remember { mutableStateOf<GameSurfaceView?>(null) }
+    // Stays failed across settings polls, until the background is a different file.
+    var failedVideo by remember { mutableStateOf<File?>(null) }
+    val startBackground = chooseStartBackground(branding.settings, branding.localFiles, failedVideo)
+    // Gone from the moment a code is accepted, not when the phase changes: the phase change starts the camera before
+    // Compose gets a frame to release the player, and a second round's camera opens within that frame.
+    val startUi = vm.startUi.collectAsState()
+    val roundStarting by remember { derivedStateOf { startUi.value.welcomeName != null } }
+    val startVideo = (startBackground as? StartBackgroundChoice.Video)?.takeIf { phase == GamePhase.Startup && !roundStarting }
 
     // Spec §9: Back is consumed, so a visitor can't back out of the kiosk.
     BackHandler {}
 
     DesignCanvas {
         Box(Modifier.fillMaxSize()) {
-            BackdropLayer(vm, branding)
+            BackdropLayer(vm, branding, startBackground)
+            if (startVideo != null) {
+                StartVideoSurface(startVideo.file, onFailed = { failedVideo = it }, Modifier.fillMaxSize())
+            }
             GameSurfaceLayer(vm, active = phase != GamePhase.Startup, onSurface = { surface = it })
-            PhaseContent(vm, phase, branding, onRetryCamera, kiosk, onExit)
+            val videoDimAlpha = if (startVideo != null) startDimAlpha(startVideo.dimPercent) else 0
+            PhaseContent(vm, phase, branding, videoDimAlpha, onRetryCamera, kiosk, onExit)
             if (perfOverlay) {
                 PerfOverlay(
                     status = { vm.cameraStatus.value },
@@ -79,7 +93,7 @@ fun GameApp(vm: GameViewModel, onRetryCamera: () -> Unit, kiosk: KioskController
 }
 
 @Composable
-private fun BackdropLayer(vm: GameViewModel, branding: BrandingState) {
+private fun BackdropLayer(vm: GameViewModel, branding: BrandingState, startBackground: StartBackgroundChoice) {
     var view by remember { mutableStateOf<BackdropSurfaceView?>(null) }
     val kind by vm.backdrop.collectAsState()
     AndroidView(
@@ -90,10 +104,9 @@ private fun BackdropLayer(vm: GameViewModel, branding: BrandingState) {
     val round by vm.round.collectAsState()
     val active = round
     val content = if (kind == BackdropKind.StartBackground) {
-        // A Video draws the built-in beneath it, for now.
-        val choice = chooseStartBackground(branding.settings, branding.localFiles, failedVideo = null)
-        if (choice is StartBackgroundChoice.Image) {
-            BackdropContent(kind, choice.file, 100.0, startDimAlpha(choice.dimPercent))
+        // A Video draws the built-in beneath it, undimmed: that's what shows until its first frame, or if it fails.
+        if (startBackground is StartBackgroundChoice.Image) {
+            BackdropContent(kind, startBackground.file, 100.0, startDimAlpha(startBackground.dimPercent))
         } else {
             BackdropContent(kind, null, 100.0)
         }
@@ -113,12 +126,13 @@ private fun PhaseContent(
     vm: GameViewModel,
     phase: GamePhase,
     branding: BrandingState,
+    videoDimAlpha: Int,
     onRetryCamera: () -> Unit,
     kiosk: KioskController?,
     onExit: () -> Unit,
 ) {
     when (phase) {
-        GamePhase.Startup -> StartupContent(vm, branding, onRetryCamera, kiosk, onExit)
+        GamePhase.Startup -> StartupContent(vm, branding, videoDimAlpha, onRetryCamera, kiosk, onExit)
         is GamePhase.Calibrating -> Box(Modifier.fillMaxSize()) {
             val status by vm.cameraStatus.collectAsState()
             val ui by produceState(CalibrationUi(), phase.ready) {
@@ -197,6 +211,7 @@ private fun PhaseContent(
 private fun StartupContent(
     vm: GameViewModel,
     branding: BrandingState,
+    videoDimAlpha: Int,
     onRetryCamera: () -> Unit,
     kiosk: KioskController?,
     onExit: () -> Unit,
@@ -215,6 +230,7 @@ private fun StartupContent(
         ui, branding, vm.registrationUrl, vm::onKeypad, vm::onClear, vm::onBackspace, vm::onPlay,
         onLogoTap = if (canTap) ({ if (taps.onTap(SystemClock.uptimeMillis())) stage = AdminStage.EnterPin }) else null,
         refocusKey = stage,
+        videoDimAlpha = videoDimAlpha,
     )
     if (admin != null && stage != AdminStage.Closed) {
         AdminPinDialog(
