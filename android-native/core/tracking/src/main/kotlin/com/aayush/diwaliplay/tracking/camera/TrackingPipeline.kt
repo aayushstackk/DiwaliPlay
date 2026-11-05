@@ -354,7 +354,10 @@ class TrackingPipeline(
         }
         val timestampMs = timestamps.next(SystemClock.uptimeMillis())
         if (!runs.onFrame(gen, timestampMs)) return
-        host.detectAsync(bitmap, timestampMs, rotation)
+        // Only detection gets the smaller copy: the backdrop and the photo keep the full frame.
+        val (detectW, detectH) = detectionSize(bitmap.width, bitmap.height)
+        val input = if (detectW == bitmap.width) bitmap else Bitmap.createScaledBitmap(bitmap, detectW, detectH, true)
+        host.detectAsync(input, timestampMs, rotation)
         activeDelegate = host.delegate // detectAsync may have fallen back to CPU
         consecutiveFrameFailures = 0
     }

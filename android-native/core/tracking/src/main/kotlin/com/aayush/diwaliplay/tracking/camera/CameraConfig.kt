@@ -9,6 +9,13 @@ val PREFERRED_RESOLUTION = 1280 to 720
 /** Fallback when the camera cannot deliver 1280×720; landmarks then go through [cropToSixteenNine]. */
 val FALLBACK_RESOLUTION = 640 to 480
 
+/** Width of the frame handed to the landmarker; measured on the WAF, 1280 wide cost about 35 ms more per detection. */
+private const val DETECTION_WIDTH = 640
+
+/** The size hand detection sees: full-size frames scale down, keeping their shape; smaller ones pass through. */
+fun detectionSize(width: Int, height: Int): Pair<Int, Int> =
+    if (width <= DETECTION_WIDTH) width to height else DETECTION_WIDTH to height * DETECTION_WIDTH / width
+
 /** Puts 1280×720 first, then 640×480, then the camera's other sizes in their original order. */
 fun orderResolutions(supported: List<Pair<Int, Int>>): List<Pair<Int, Int>> {
     val preferred = listOf(PREFERRED_RESOLUTION, FALLBACK_RESOLUTION).filter { it in supported }
